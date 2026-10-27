@@ -4,10 +4,11 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import type { UpdateInfo } from "../shared/types";
-import { downloadFile, extractZip } from "./downloader";
+import { downloadFile } from "./downloader";
 import type { Logger } from "./logger";
 
 const UPDATE_MANIFEST =
+  process.env.OPENBRIDGE_UPDATE_MANIFEST?.trim() ||
   "https://github.com/example-owner/openbridge/releases/latest/download/latest.json";
 
 function versionParts(version: string): number[] {
@@ -42,6 +43,42 @@ async function findFile(root: string, name: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+function extractUpdateZip(zipPath: string, destination: string): Promise<void> {
+  const tar =
+    process.platform === "win32"
+      ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+      : "tar";
+  return new Promise((resolve, reject) => {
+    const child = spawn(tar, ["-xf", zipPath, "-C", destination], {
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+    let stderr = "";
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve();
+    };
+    child.stderr?.on("data", chunk => {
+      if (stderr.length < 4000) stderr += String(chunk);
+    });
+    child.on("error", error =>
+      finish(new Error(`Could not run tar: ${error.message}`))
+    );
+    child.on("exit", code => {
+      if (code === 0) finish();
+      else
+        finish(
+          new Error(
+            `Update extraction failed (tar exit ${code})${stderr ? `: ${stderr.trim()}` : ""}`
+          )
+        );
+    });
+  });
 }
 
 export class UpdateService {
@@ -111,9 +148,11 @@ export class UpdateService {
 
     const extracted = join(tempRoot, "extracted");
     await mkdir(extracted, { recursive: true });
-    await extractZip(zipPath, extracted);
+    this.logger.info("Extracting update", { zipPath });
+    await extractUpdateZip(zipPath, extracted);
     const exe = await findFile(extracted, "OpenBridge.exe");
     if (!exe) throw new Error("Update package did not contain OpenBridge.exe");
+    this.logger.info("Update extracted", { exe });
 
     const sourceRoot = dirname(exe);
     const targetRoot = dirname(app.getPath("exe"));

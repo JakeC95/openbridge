@@ -1,6 +1,6 @@
 # Validation log
 
-## v1.1.1 (current)
+## v1.1.2 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
@@ -8,7 +8,7 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 - `npm run typecheck`, `npm run build`, `npm run dist:portable` and `npm run dist:win` completed
   successfully.
-- Packaged portable reports `1.1.1`, title `OpenBridge`, 48 catalogue cards, 18,835 catalogue
+- Packaged portable reports `1.1.2`, title `OpenBridge`, 48 catalogue cards, 18,835 catalogue
   assets and 5 local assets.
 - Portable `OpenBridge.exe` is byte-identical to Electron 45 and passes Smart App Control.
 - The NSIS installer is unsigned and remains blocked on this machine.
@@ -61,7 +61,15 @@ portable zip             0687C0061AD1B9164B67D6FA4D3721E5CF34A751985EAC7F4BA8489
 unsigned NSIS installer  2BE66FEE9B082348B42922984E34EEFF3EBEA02353ED1B188010C906C5201446
 ```
 
-### Not tested in v1.1.1
+### Updater test
+
+- A local HTTP manifest served a 1.1.3 test payload to the 1.1.2 portable build.
+- The app downloaded it, tar-extracted all 89 files, wrote `install-update.ps1`, and logged the
+  source and target roots.
+- Running the generated install script directly copied the payload and restarted the app as 1.1.3.
+- The test harness terminates detached children when the calling process exits, so the final
+  unattended helper handoff was not observed end-to-end in this environment.
+### Not tested in v1.1.2
 
 - Installing a newer release through the auto-updater (no newer published release existed at test
   time). The published 1.1.0 manifest check was verified; the app reported `current: 1.1.0`,
