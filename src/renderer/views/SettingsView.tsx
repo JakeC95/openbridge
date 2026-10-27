@@ -6,8 +6,8 @@ import type {
   DownloadPreset
 } from "../../shared/types";
 import {
-  DEFAULT_MAP_TYPES,
-  KNOWN_MAP_TYPES,
+  commonMapTypesForKind,
+  mapTypesForKind,
   recommendedDownloadDefaults
 } from "../../shared/download-defaults";
 import { CheckIcon, FolderIcon, SyncIcon, UserIcon } from "../icons";
@@ -261,7 +261,7 @@ export function SettingsView() {
                           onClick={() =>
                             patch(
                               updatePreset(draft, section.kind, {
-                                selectedMaps: [...DEFAULT_MAP_TYPES]
+                                selectedMaps: [...commonMapTypesForKind(section.kind)]
                               })
                             )
                           }
@@ -274,7 +274,7 @@ export function SettingsView() {
                           onClick={() =>
                             patch(
                               updatePreset(draft, section.kind, {
-                                selectedMaps: [...KNOWN_MAP_TYPES]
+                                selectedMaps: [...mapTypesForKind(section.kind)]
                               })
                             )
                           }
@@ -293,7 +293,7 @@ export function SettingsView() {
                       </div>
                     </div>
                     <div className="preset-map-grid">
-                      {KNOWN_MAP_TYPES.map(type => {
+                      {mapTypesForKind(section.kind).map(type => {
                         const active = preset.selectedMaps.includes(type);
                         return (
                           <button
@@ -514,7 +514,7 @@ export function SettingsView() {
           <h2>Updates</h2>
           <div className="inline-status">
             <span>
-              OpenBridge v{versions?.app ?? "1.2.1"}
+              OpenBridge v{versions?.app ?? "1.2.2"}
               {update?.available ? ` — version ${update.latest} is available` : ""}
               {update?.error ? ` — ${update.error}` : ""}
             </span>

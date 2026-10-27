@@ -1,5 +1,6 @@
 import {
   assetDefaultsKind,
+  canonicalMapType,
   DEFAULT_MAP_TYPES,
   KNOWN_MAP_TYPES
 } from "../shared/download-defaults";
@@ -65,6 +66,7 @@ export function savePreferences(preferences: DownloadPreferences): void {
 export function mapTypeLabel(type: string): string {
   switch (type.toLowerCase()) {
     case "ao":
+    case "occlusion":
       return "AO";
     case "normalbump":
       return "Normal Bump";
@@ -173,7 +175,7 @@ export function buildDownloadOptions(
     if (mimeType !== "image/jpeg" && !canUseExr(asset, type)) mimeType = "image/jpeg";
     return {
       type,
-      selected: saved?.selected ?? selectedMaps.has(type),
+      selected: saved?.selected ?? selectedMaps.has(canonicalMapType(type)),
       mimeType
     };
   });

@@ -1,13 +1,13 @@
 # Validation log
 
-## v1.2.1 (current)
+## v1.2.2 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 ### Build and package
 
 - `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
-- Packaged portable reports `1.2.1` and starts with 48 catalogue cards and 5 local assets.
+- Packaged portable reports `1.2.2` and starts with 48 catalogue cards and 5 local assets.
 - The packaged Electron runtime successfully loads `node:sqlite` and the FTS5 index.
 
 ### Indexed library
@@ -25,6 +25,17 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 - Single-asset validation, drawer export and selected-asset export now resolve rows through the
   index instead of scanning the whole library; deletion also targets indexed paths directly.
 
+### Surface map audit
+
+- Cross-referenced 96 general surfaces, 48 metal-focused surfaces and 42 keyword-diverse surfaces.
+- The dominant surface set is nine maps: albedo, AO, normal, displacement, roughness, specular,
+  gloss, bump and cavity (80 of the 96 general samples).
+- A small number used occlusion instead of AO, or added opacity/translucency/transmission.
+- Metal surfaces added metalness; rare special cases added diffuse, mask or fuzz.
+- Surfaces never showed normal-bump, normal-object, thickness, curvature or brush maps in this
+  sample.
+- The Surfaces preset now exposes 16 real map choices and defaults to the 10 core/metal maps.
+  `occlusion` is displayed and selected as AO while the original download type is preserved.
 ### Scale and virtualization
 
 - A synthetic 5,000-row index was used to test large-library behavior without creating files.
@@ -52,7 +63,7 @@ electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B
 portable zip             FB4C2EB0AA70A7DAD998A47CAC4AD5541E7FB71C0759C9D548BB4EF2CCB1E7AD
 ```
 
-### Not tested in v1.2.1
+### Not tested in v1.2.2
 
 - A real library with tens of thousands of files; scale behavior was measured with synthetic index
   rows plus the 5-asset validation library.

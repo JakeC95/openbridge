@@ -4,6 +4,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import {
   assetDefaultsKind,
+  canonicalMapType,
   DEFAULT_MAP_TYPES
 } from "../shared/download-defaults";
 import type {
@@ -226,7 +227,7 @@ function defaultComponents(
       type === "displacement" ? "jpeg+exr" : baseMime;
     const mimeType =
       preferred !== "image/jpeg" && !canDownloadExr(asset, type) ? "image/jpeg" : preferred;
-    return { type, selected: selected.has(type), mimeType };
+    return { type, selected: selected.has(canonicalMapType(type)), mimeType };
   });
 }
 

@@ -44,6 +44,50 @@ export const DEFAULT_MAP_TYPES = [
   "brush"
 ];
 
+export const SURFACE_MAP_TYPES = [
+  "albedo",
+  "ao",
+  "normal",
+  "displacement",
+  "roughness",
+  "specular",
+  "gloss",
+  "metalness",
+  "bump",
+  "cavity",
+  "diffuse",
+  "mask",
+  "opacity",
+  "translucency",
+  "transmission",
+  "fuzz"
+];
+
+export const SURFACE_COMMON_MAP_TYPES = [
+  "albedo",
+  "ao",
+  "normal",
+  "displacement",
+  "roughness",
+  "specular",
+  "gloss",
+  "metalness",
+  "bump",
+  "cavity"
+];
+
+export function mapTypesForKind(kind: AssetDefaultsKind): readonly string[] {
+  return kind === "surface" ? SURFACE_MAP_TYPES : KNOWN_MAP_TYPES;
+}
+
+export function commonMapTypesForKind(kind: AssetDefaultsKind): readonly string[] {
+  return kind === "surface" ? SURFACE_COMMON_MAP_TYPES : DEFAULT_MAP_TYPES;
+}
+
+export function canonicalMapType(type: string): string {
+  const value = type.trim().toLowerCase();
+  return value === "occlusion" ? "ao" : value;
+}
 export const RECOMMENDED_PRESET: DownloadPreset = {
   resolution: 8192,
   textureFormat: "jpg",
@@ -62,7 +106,7 @@ export function recommendedDownloadDefaults(): Record<AssetDefaultsKind, Downloa
   return {
     "3d": { ...RECOMMENDED_PRESET, selectedMaps: [...DEFAULT_MAP_TYPES], lods: [...LODS] },
     "3dplant": { ...RECOMMENDED_PRESET, selectedMaps: [...DEFAULT_MAP_TYPES], lods: [...LODS] },
-    surface: { ...RECOMMENDED_PRESET, selectedMaps: [...DEFAULT_MAP_TYPES], lods: [...LODS] },
+    surface: { ...RECOMMENDED_PRESET, selectedMaps: [...SURFACE_COMMON_MAP_TYPES], lods: [...LODS] },
     other: { ...RECOMMENDED_PRESET, selectedMaps: [...DEFAULT_MAP_TYPES], lods: [...LODS] }
   };
 }
