@@ -21,6 +21,14 @@ import { parseSearchQuery } from "./search-utils";
 
 type View = "discover" | "library" | "downloads" | "settings";
 type LocalRepo = "all" | RepoKind;
+type SizeFilter = "any" | "small" | "medium" | "large" | "huge";
+
+const SIZE_FILTERS: Record<Exclude<SizeFilter, "any">, { minSize?: number; maxSize?: number }> = {
+  small: { maxSize: 0.5 },
+  medium: { minSize: 0.5, maxSize: 2 },
+  large: { minSize: 2, maxSize: 5 },
+  huge: { minSize: 5 }
+};
 
 let catalogRequest = 0;
 let libraryRequest = 0;
@@ -57,6 +65,7 @@ interface State {
   favorites: string[];
   favoritesOnly: boolean;
   freeOnly: boolean;
+  sizeFilter: SizeFilter;
   facets: Record<string, Record<string, number>>;
   facetFilters: Record<string, string[]>;
   query: string;
@@ -94,6 +103,7 @@ interface State {
   setCategoryPath(path: string[]): void;
   setFavoritesOnly(value: boolean): void;
   setFreeOnly(value: boolean): void;
+  setSizeFilter(value: SizeFilter): void;
   setStateFilter(value: "all" | "free" | "favorites"): void;
   toggleFacet(group: string, value: string): void;
   clearFacetFilters(): void;
@@ -163,6 +173,7 @@ export const useStore = create<State>((set, get) => ({
   favorites: [],
   favoritesOnly: false,
   freeOnly: false,
+  sizeFilter: "any",
   facets: {},
   facetFilters: {},
   query: "",
@@ -338,6 +349,11 @@ export const useStore = create<State>((set, get) => ({
     void get().search(true);
   },
 
+  setSizeFilter(sizeFilter) {
+    set({ sizeFilter });
+    void get().search(true);
+  },
+
   setStateFilter(value) {
     set({
       freeOnly: value === "free",
@@ -367,6 +383,7 @@ export const useStore = create<State>((set, get) => ({
       categoryPath: [],
       favoritesOnly: false,
       freeOnly: false,
+      sizeFilter: "any",
       facetFilters: {}
     });
     void get().search(true);
@@ -381,6 +398,7 @@ export const useStore = create<State>((set, get) => ({
       favoritesOnly,
       favorites,
       freeOnly,
+      sizeFilter,
       facetFilters,
       nextCursor
     } = get();
@@ -396,6 +414,7 @@ export const useStore = create<State>((set, get) => ({
         categoryPath: categoryPath.length ? categoryPath : undefined,
         ids: favoritesOnly ? favorites : undefined,
         points: freeOnly ? 0 : undefined,
+        ...(sizeFilter === "any" ? {} : SIZE_FILTERS[sizeFilter]),
         facetFilters,
         facets: ["biome", "region", "resolution", "color", "environment", "theme"],
         page,

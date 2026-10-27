@@ -1,4 +1,4 @@
-﻿import { net } from "electron";
+import { net } from "electron";
 import type {
   CatalogHit,
   CatalogIdResult,
@@ -430,6 +430,10 @@ function buildAlgoliaParams(
     filters.push(`points:${params.points}`);
   }
   if (filters.length) query.set("filters", filters.join(" AND "));
+  const numericFilters: string[] = [];
+  if (typeof params.minSize === "number") numericFilters.push(`minSize>=${params.minSize}`);
+  if (typeof params.maxSize === "number") numericFilters.push(`maxSize<=${params.maxSize}`);
+  if (numericFilters.length) query.set("numericFilters", JSON.stringify(numericFilters));
   if (params.facetFilters) {
     const facetFilters = Object.entries(params.facetFilters)
       .filter(([, values]) => values.length > 0)

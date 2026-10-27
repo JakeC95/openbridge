@@ -34,6 +34,32 @@ export interface DownloadMapOption {
   mimeType: DownloadMapFormat;
 }
 
+export interface AssetTechnicalSummary {
+  resolution: number | null;
+  mapTypes: string[];
+  mapCount: number;
+  lodCount: number;
+  maxTris: number;
+  variationCount: number;
+  billboardCount: number;
+  tileable: boolean | null;
+  tilingDirections: string[];
+  scanArea: string | null;
+  texelDensity: string | null;
+  physicalSize: string | null;
+  dimensions: string | null;
+  height: string | null;
+  variationDimensions: Array<{
+    variation: number;
+    width: string;
+    length: string;
+    height: string;
+  }>;
+  meshType: string | null;
+  hasHighpoly: boolean;
+  hasZtool: boolean;
+}
+
 export interface AssetRecord {
   id: string;
   name: string;
@@ -48,6 +74,10 @@ export interface AssetRecord {
   mtime: number;
   previewRelativeSize: string;
   searchStr: string;
+  technical?: AssetTechnicalSummary;
+  sizeBytes?: number;
+  fileCount?: number;
+  issueCount?: number;
 }
 
 export interface LegacyConfig {
@@ -144,6 +174,8 @@ export interface CatalogQuery {
   categoryPath?: string[];
   ids?: string[];
   points?: number;
+  minSize?: number;
+  maxSize?: number;
   sortBy?: string;
   facets?: string[];
   facetFilters?: Record<string, string[]>;
@@ -194,9 +226,9 @@ export interface AssetMapDescriptor {
     resolutions?: Array<{
       resolution?: string;
       physicalSize?: string;
-      formats?: Array<{ mimeType?: string; uri?: string; tris?: number; contentLength?: number }>;
+      formats?: Array<{ mimeType?: string; uri?: string; tris?: number; contentLength?: number; lodType?: string }>;
     }>;
-    formats?: Array<{ mimeType?: string; uri?: string; tris?: number; contentLength?: number }>;
+    formats?: Array<{ mimeType?: string; uri?: string; tris?: number; contentLength?: number; lodType?: string }>;
   }>;
   textureSets?: string[];
   lodType?: string;

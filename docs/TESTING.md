@@ -1,16 +1,33 @@
 # Validation log
 
-## v1.2.3 (current)
+## v1.3.0 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 ### Build and package
 
 - `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
-- Packaged portable reports `1.2.3` and starts with 48 catalogue cards and 5 local assets.
+- Packaged portable reports `1.3.0` and starts with 48 catalogue cards and 5 local assets.
 - The packaged Electron runtime successfully loads `node:sqlite` and the FTS5 index.
 - Asset cards and the drawer no longer display point prices; free/owned states remain.
 
+### Asset intelligence
+
+- Gallery cards show type-aware facts: physical size or size range, resolution and biome/region.
+  Examples: `0.19-0.62m · 8K · desert biome` and `0.07-1.05m · 8K · Americas`.
+- A physical-size filter was added: `5 m+` reduced the catalogue from 18,835 assets to 117.
+- The drawer shows a download plan with total size and texture/mesh file counts:
+  - `xgmpcby`: ~206.1 MB+, 5 maps / 5 files, 6 LODs / 6 files.
+  - `xjekccn` surface: ~490.4 MB, 9 maps / 10 files.
+- LOD rows show triangle counts and selected-format sizes, e.g. LOD 0 = 8,022 tris / 616.6 KB
+  and LOD 5 = 572 tris / 47.2 KB for `xgmpcby` in ABC.
+- The plant variation explorer showed eight variants with dimensions from 0.65 x 0.64 x 0.91 m
+  to 3.75 x 4.21 x 3.25 m.
+- Map rows show resolution, format, bit depth and byte size, e.g. `4096x4096 · EXR · 16-bit · 53.3 MB`.
+- The technical panel exposes dimensions, scan area, height, texel density, tileability, mesh type,
+  LOD count, max triangles, variations, billboards, map types and average colour.
+- Local library cards now show actual on-disk size, dimensions, triangle count and health status
+  after a health pass, e.g. `7.6 MB · 0.62m x 0.47m x 0.19m · 8,022 tris · Healthy`.
 ### Indexed library
 
 - The index is created at `%APPDATA%\openbridge\library-index.sqlite` in WAL mode; schema version 2
@@ -65,7 +82,7 @@ electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B
 portable zip             FE7951CFCD0A7EF79A11B92D74FC6BEA6769957988915ADB52642F2EE574AB53
 ```
 
-### Not tested in v1.2.3
+### Not tested in v1.3.0
 
 - A real library with tens of thousands of files; scale behavior was measured with synthetic index
   rows plus the 5-asset validation library.

@@ -14,7 +14,7 @@ import type {
 } from "../shared/types";
 import type { Logger } from "./logger";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 interface AssetRow {
   rowid: number;
@@ -39,6 +39,9 @@ interface AssetRow {
   meshes: number;
   textures: number;
   health_mtime: number;
+  health_at: number;
+  technical_json: string | null;
+  issue_count?: number;
 }
 
 interface HealthRow {
@@ -87,7 +90,13 @@ function rowToAsset(row: AssetRow): AssetRecord {
     thumb: row.thumb,
     mtime: row.mtime,
     previewRelativeSize: row.preview_relative_size,
-    searchStr: row.search_str
+    searchStr: row.search_str,
+    technical: row.technical_json
+      ? (JSON.parse(row.technical_json) as AssetRecord["technical"])
+      : undefined,
+    sizeBytes: row.health_at > 0 ? row.bytes : undefined,
+    fileCount: row.health_at > 0 ? row.files : undefined,
+    issueCount: row.health_at > 0 ? row.issue_count ?? 0 : undefined
   };
 }
 
@@ -156,8 +165,8 @@ export class LibraryIndex {
     const statement = this.db.prepare(
       `INSERT INTO assets (
         path, id, name, type, categories, tags, repo, json_path, preview, thumb,
-        mtime, preview_relative_size, search_str, folder_mtime, json_mtime
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        mtime, preview_relative_size, search_str, folder_mtime, json_mtime, technical_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         id = excluded.id,
         name = excluded.name,
@@ -173,6 +182,7 @@ export class LibraryIndex {
         search_str = excluded.search_str,
         folder_mtime = excluded.folder_mtime,
         json_mtime = excluded.json_mtime,
+        technical_json = excluded.technical_json,
         health_mtime = 0`
     );
     this.transaction(() => {
@@ -192,7 +202,8 @@ export class LibraryIndex {
           asset.previewRelativeSize,
           asset.searchStr,
           Math.trunc(folderMtime),
-          Math.trunc(jsonMtime)
+          Math.trunc(jsonMtime),
+          asset.technical ? JSON.stringify(asset.technical) : null
         );
       }
     });
@@ -250,7 +261,7 @@ export class LibraryIndex {
 
   getById(id: string): AssetRecord | null {
     const row = this.db
-      .prepare("SELECT * FROM assets WHERE id = ? ORDER BY mtime DESC LIMIT 1")
+      .prepare("SELECT a.*, (SELECT COUNT(*) FROM issues i WHERE i.path = a.path) AS issue_count FROM assets a WHERE a.id = ? ORDER BY a.mtime DESC LIMIT 1")
       .get(id) as unknown as AssetRow | undefined;
     return row ? rowToAsset(row) : null;
   }
@@ -264,7 +275,7 @@ export class LibraryIndex {
       const placeholders = chunk.map(() => "?").join(",");
       const found = this.db
         .prepare(
-          `SELECT * FROM assets WHERE id IN (${placeholders}) ORDER BY mtime DESC`
+          `SELECT a.*, (SELECT COUNT(*) FROM issues i WHERE i.path = a.path) AS issue_count FROM assets a WHERE a.id IN (${placeholders}) ORDER BY a.mtime DESC`
         )
         .all(...chunk) as unknown as AssetRow[];
       rows.push(...found);
@@ -273,7 +284,7 @@ export class LibraryIndex {
   }
   allAssets(): AssetRecord[] {
     const rows = this.db
-      .prepare("SELECT * FROM assets ORDER BY mtime DESC")
+      .prepare("SELECT a.*, (SELECT COUNT(*) FROM issues i WHERE i.path = a.path) AS issue_count FROM assets a ORDER BY a.mtime DESC")
       .all() as unknown as AssetRow[];
     return rows.map(rowToAsset);
   }
@@ -289,7 +300,7 @@ export class LibraryIndex {
     const total = Number(totalRow?.total ?? 0);
     const rows = this.db
       .prepare(
-        `SELECT a.* ${parts.from} ${parts.where}
+        `SELECT a.*, (SELECT COUNT(*) FROM issues i WHERE i.path = a.path) AS issue_count ${parts.from} ${parts.where}
          ORDER BY ${parts.order}
          LIMIT ? OFFSET ?`
       )
@@ -547,7 +558,8 @@ export class LibraryIndex {
         meshes INTEGER NOT NULL DEFAULT 0,
         textures INTEGER NOT NULL DEFAULT 0,
         health_at INTEGER NOT NULL DEFAULT 0,
-        health_mtime INTEGER NOT NULL DEFAULT 0
+        health_mtime INTEGER NOT NULL DEFAULT 0,
+        technical_json TEXT
       );
 
       CREATE INDEX assets_id_idx ON assets(id);

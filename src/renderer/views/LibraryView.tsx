@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { typeLabel } from "../catalog-utils";
 import { CheckIcon, CloseIcon, FolderIcon, SearchIcon, UploadIcon } from "../icons";
-import type { LibraryHealthReport, RepoKind } from "../../shared/types";
+import type { AssetRecord, LibraryHealthReport, RepoKind } from "../../shared/types";
 import { VirtualGrid } from "../components/VirtualGrid";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
@@ -17,6 +17,24 @@ function formatBytes(value: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
   return `${(value / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function localFacts(asset: AssetRecord): string {
+  const facts: string[] = [];
+  if (asset.sizeBytes != null) facts.push(formatBytes(asset.sizeBytes));
+  const technical = asset.technical;
+  if (technical?.dimensions) facts.push(technical.dimensions);
+  else if (technical?.scanArea) facts.push(technical.scanArea);
+  if (technical?.maxTris) facts.push(`${technical.maxTris.toLocaleString()} tris`);
+  if (asset.issueCount != null) {
+    facts.push(asset.issueCount === 0 ? "Healthy" : `${asset.issueCount} issue${asset.issueCount === 1 ? "" : "s"}`);
+  } else if (technical?.resolution) {
+    facts.push(`${technical.resolution / 1024}K`);
+  }
+  if (technical?.lodCount) facts.push(`${technical.lodCount} LOD${technical.lodCount === 1 ? "" : "s"}`);
+  if (technical?.mapCount) facts.push(`${technical.mapCount} maps`);
+  if (technical?.tileable) facts.push("Tileable");
+  return facts.slice(0, 4).join(" · ");
 }
 
 export function LibraryView() {
@@ -271,6 +289,7 @@ export function LibraryView() {
             gap={28}
             renderItem={asset => {
               const selected = selectedIds.has(asset.id);
+              const facts = localFacts(asset);
               return (
                 <div
                   role="button"
@@ -330,6 +349,7 @@ export function LibraryView() {
                     <strong>{asset.name}</strong>
                     <span>{asset.id}</span>
                     <em>{asset.repo}</em>
+                    {facts && <span className="asset-facts">{facts}</span>}
                   </div>
                 </div>
               );

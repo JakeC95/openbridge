@@ -2,6 +2,7 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import type { CatalogHit, DownloadProgress } from "../../shared/types";
 import {
   hitId,
+  galleryFacts,
   hitThumb,
   typeLabel
 } from "../catalog-utils";
@@ -49,6 +50,7 @@ export function AssetCard({
   const id = hitId(hit);
   const thumb = hitThumb(hit);
   const free = (hit.points ?? 0) === 0;
+  const facts = galleryFacts(hit);
   const primaryBadge = downloaded ? "" : owned ? "OWNED" : free ? "FREE" : "";
   const active =
     progress &&
@@ -202,6 +204,7 @@ export function AssetCard({
             hit.asset_type ||
             id}
         </span>
+        {facts.length > 0 && <span className="asset-facts">{facts.join(" · ")}</span>}
       </div>
     </div>
   );

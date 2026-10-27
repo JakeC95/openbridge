@@ -12,6 +12,7 @@ import type {
   RepoKind,
   ScanResult
 } from "../shared/types";
+import { assetTechnicalFacts } from "../shared/asset-metadata";
 import { LibraryIndex } from "./library-index";
 import type { Logger } from "./logger";
 
@@ -107,7 +108,8 @@ async function readAssetFolder(folder: string, repo: RepoKind): Promise<AssetRec
       thumb,
       mtime,
       previewRelativeSize: json.previews?.relativeSize ?? "1x1",
-      searchStr
+      searchStr,
+      technical: assetTechnicalFacts(json as Parameters<typeof assetTechnicalFacts>[0])
     };
   }
   return null;

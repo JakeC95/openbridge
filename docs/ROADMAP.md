@@ -37,6 +37,9 @@
 - Removed offline-library, stall-timeout, parallel-file and update-feed settings.
 - Per-type download presets for 3D Assets, 3D Plants, Surfaces and Other 2D assets, including
   selectable default maps with Common/All/None shortcuts.
+- Asset intelligence: type-aware gallery facts, physical-size filters, download plans with
+  estimated bytes/files, per-LOD mesh sizes, plant variation dimensions, per-map technical details,
+  scale/texel panels and local library health facts.
 - Download Engine 2.0: file concurrency, retries, HTTP Range resume, size verification, disk
   preflight, persistent queue, queue restore, pause/resume-all and clear finished.
 - Library health report: storage totals, per-type stats, missing preview/mesh/texture detection,

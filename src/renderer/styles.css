@@ -1,4 +1,4 @@
-﻿@font-face {
+@font-face {
   font-family: "Source Sans 3";
   src: url("./fonts/SourceSans3-Regular.ttf") format("truetype");
   font-weight: 400;
@@ -1055,6 +1055,71 @@ code {
   overflow-wrap: anywhere;
 }
 
+.technical-panel {
+  padding: 12px 0;
+  border-bottom: 1px solid #303030;
+}
+
+.technical-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.technical-head h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.color-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.color-swatch i {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.technical-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+
+.technical-grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.technical-grid span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.technical-grid strong {
+  overflow: hidden;
+  color: #ddd;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .meta-grid.compact {
   border-bottom: none;
   padding-bottom: 0;
@@ -1587,6 +1652,22 @@ code {
   min-height: 30px;
 }
 
+.map-row-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.map-facts {
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .toggle.inline {
   margin-bottom: 0;
   min-width: 0;
@@ -1640,6 +1721,84 @@ code {
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.download-plan {
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid #303030;
+  border-radius: 4px;
+  background: #191919;
+  font-size: 11px;
+}
+
+.download-plan-head,
+.download-plan-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.download-plan-head {
+  margin-bottom: 7px;
+  color: var(--text);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.download-plan-row {
+  padding: 3px 0;
+  color: var(--muted);
+}
+
+.download-plan-row strong {
+  color: #e6e6e6;
+  font-weight: 600;
+  text-align: right;
+}
+
+.variation-explorer {
+  margin-top: 10px;
+}
+
+.variation-chips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.variation-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid #363636;
+  border-radius: 4px;
+  background: #1c1c1c;
+  color: var(--muted);
+  text-align: left;
+}
+
+.variation-chip strong {
+  color: #ddd;
+  font-size: 10px;
+}
+
+.variation-chip em {
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 9px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.variation-chip:hover,
+.variation-chip.active {
+  border-color: var(--blue);
+  background: rgba(38, 187, 255, 0.1);
 }
 
 .button-row.horizontal {
@@ -2591,6 +2750,13 @@ body {
   font-size: 10px;
   font-style: normal;
   font-weight: 600;
+}
+
+.asset-facts {
+  color: rgba(255, 255, 255, 0.44) !important;
+  font-size: 9px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
 }
 
 .asset-card-actions {

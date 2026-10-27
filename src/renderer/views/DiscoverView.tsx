@@ -55,6 +55,7 @@ interface SavedSearch {
   categoryPath: string[];
   freeOnly: boolean;
   favoritesOnly: boolean;
+  sizeFilter: "any" | "small" | "medium" | "large" | "huge";
   facetFilters: Record<string, string[]>;
 }
 
@@ -90,6 +91,7 @@ export function DiscoverView() {
   const favorites = useStore(state => state.favorites);
   const favoritesOnly = useStore(state => state.favoritesOnly);
   const freeOnly = useStore(state => state.freeOnly);
+  const sizeFilter = useStore(state => state.sizeFilter);
   const facets = useStore(state => state.facets);
   const facetFilters = useStore(state => state.facetFilters);
   const localRefs = useStore(state => state.localRefs);
@@ -98,6 +100,7 @@ export function DiscoverView() {
 
   const setCategoryPath = useStore(state => state.setCategoryPath);
   const setStateFilter = useStore(state => state.setStateFilter);
+  const setSizeFilter = useStore(state => state.setSizeFilter);
   const toggleFacet = useStore(state => state.toggleFacet);
   const clearFacetFilters = useStore(state => state.clearFacetFilters);
   const clearFilters = useStore(state => state.clearFilters);
@@ -128,6 +131,16 @@ export function DiscoverView() {
   const selectedCategoryLabel = categoryPathLabel(categories, categoryPath);
   const activeTab = TABS.find(isTabActive) ?? TABS[0];
   const stateFilter = freeOnly ? "free" : favoritesOnly ? "favorites" : "all";
+  const sizeRange =
+    sizeFilter === "small"
+      ? { maxSize: 0.5 }
+      : sizeFilter === "medium"
+        ? { minSize: 0.5, maxSize: 2 }
+        : sizeFilter === "large"
+          ? { minSize: 2, maxSize: 5 }
+          : sizeFilter === "huge"
+            ? { minSize: 5 }
+            : {};
 
   function selectTab(tab: (typeof TABS)[number]): void {
     setCategoryPath(tab.path);
@@ -213,7 +226,8 @@ export function DiscoverView() {
         page: 0,
         categoryPath: categoryPath.length ? categoryPath : undefined,
         ids: favoritesOnly ? favorites : undefined,
-        points: freeOnly ? 0 : undefined
+        points: freeOnly ? 0 : undefined,
+        ...sizeRange
       });
       if (result.entries.length === 0) {
         toast("No assets matched this category or filter", true);
@@ -324,6 +338,7 @@ export function DiscoverView() {
         categoryPath,
         freeOnly,
         favoritesOnly,
+        sizeFilter,
         facetFilters
       },
       ...savedSearches
@@ -340,6 +355,7 @@ export function DiscoverView() {
       categoryPath: saved.categoryPath,
       freeOnly: saved.freeOnly,
       favoritesOnly: saved.favoritesOnly,
+      sizeFilter: saved.sizeFilter ?? "any",
       facetFilters: saved.facetFilters
     });
     void search(true);
@@ -387,7 +403,22 @@ export function DiscoverView() {
             ]}
           />
 
-              <button
+              <Dropdown
+            className="filter-select"
+            value={sizeFilter}
+            onChange={value =>
+              setSizeFilter(value as "any" | "small" | "medium" | "large" | "huge")
+            }
+            ariaLabel="Filter by physical size"
+            options={[
+              { value: "any", label: "Any Size" },
+              { value: "small", label: "Up to 0.5 m" },
+              { value: "medium", label: "0.5-2 m" },
+              { value: "large", label: "2-5 m" },
+              { value: "huge", label: "5 m+" }
+            ]}
+          />
+          <button
                 type="button"
                 className={selectMode ? "filter-action active" : "filter-action"}
                 onClick={() => setSelectMode(value => !value)}

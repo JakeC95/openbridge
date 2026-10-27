@@ -47,6 +47,37 @@ export function typeLabel(type: string | undefined): string {
   }
 }
 
+function formatResolution(resolution: unknown): string | null {
+  if (typeof resolution === "number" && Number.isFinite(resolution)) {
+    return resolution >= 1024 ? `${Math.round(resolution / 1024)}K` : `${resolution}px`;
+  }
+  if (typeof resolution === "string" && resolution.trim()) return resolution;
+  return null;
+}
+
+export function galleryFacts(hit: CatalogHit): string[] {
+  const facts: string[] = [];
+  const hasRange =
+    typeof hit.minSize === "number" || typeof hit.maxSize === "number";
+  const size = hasRange
+    ? hit.minSize === hit.maxSize
+      ? `${hit.minSize ?? hit.maxSize}m`
+      : `${hit.minSize ?? "?"}-${hit.maxSize ?? "?"}m`
+    : hit.physicalSize && hit.physicalSize !== "undefined"
+      ? hit.physicalSize
+      : null;
+  if (size) facts.push(size);
+  const resolution = formatResolution(hit.resolution);
+  if (resolution) facts.push(resolution);
+  const environment =
+    hit.biome && hit.biome !== "undefined"
+      ? hit.biome
+      : hit.region && hit.region !== "undefined"
+        ? hit.region
+        : null;
+  if (environment) facts.push(environment);
+  return facts.slice(0, 3);
+}
 export function hitBadges(hit: CatalogHit, owned: boolean): string[] {
   const badges: string[] = [];
   if (owned) badges.push("OWNED");

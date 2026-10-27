@@ -10,6 +10,12 @@ import type {
   MeshFormat
 } from "../../shared/types";
 import {
+  assetTechnicalFacts,
+  downloadPlan,
+  lodMeshBytes,
+  mapTechnicalDetails
+} from "../../shared/asset-metadata";
+import {
   aclResolution,
   hitId,
   hitPreview,
@@ -20,7 +26,6 @@ import {
   MAP_FORMAT_OPTIONS,
   buildDownloadOptions,
   canUseExr,
-  estimateBytes,
   formatBytes,
   lodInfo,
   mapTypeLabel,
@@ -229,11 +234,53 @@ export function AssetDrawer() {
     update(defaults);
   }
 
-  const estimate = options ? estimateBytes(extended, options) : 0;
+  const plan = options ? downloadPlan(extended, options) : null;
+  const technical = assetTechnicalFacts(extended);
+  const lodBytes = lodMeshBytes(extended, options?.meshFormat ?? "fbx");
   const selectedMaps = options?.components.filter(component => component.selected).length ?? 0;
   const selectedLods = options
     ? lods.filter(lod => (plant && options.downloadAllPlantLods) || options.lods[lod.index]).length
     : 0;
+
+  const averageColor =
+    typeof extended?.averageColor === "string" && extended.averageColor
+      ? extended.averageColor
+      : null;
+  const texelDensity = technical.texelDensity
+    ? /^\d+$/.test(technical.texelDensity)
+      ? `${technical.texelDensity} px/m`
+      : technical.texelDensity
+    : null;
+  const techRows: Array<[string, string]> = [];
+  if (technical.dimensions) techRows.push(["Dimensions", technical.dimensions]);
+  if (technical.scanArea) techRows.push(["Scan area", technical.scanArea]);
+  if (technical.height && !technical.dimensions) techRows.push(["Height", technical.height]);
+  if (texelDensity) techRows.push(["Texel density", texelDensity]);
+  if (technical.tileable !== null) {
+    techRows.push([
+      "Tileable",
+      technical.tilingDirections.length > 0
+        ? `Yes (${technical.tilingDirections.join(", ")})`
+        : technical.tileable
+          ? "Yes"
+          : "No"
+    ]);
+  }
+  if (technical.meshType) techRows.push(["Mesh type", technical.meshType]);
+  if (technical.lodCount > 0) techRows.push(["LODs", String(technical.lodCount)]);
+  if (technical.maxTris > 0) {
+    techRows.push(["Max triangles", technical.maxTris.toLocaleString()]);
+  }
+  if (technical.variationCount > 1) {
+    techRows.push(["Variations", String(technical.variationCount)]);
+  }
+  if (technical.billboardCount > 0) {
+    techRows.push(["Billboards", String(technical.billboardCount)]);
+  }
+  if (technical.resolution) {
+    techRows.push(["Max resolution", `${technical.resolution / 1024}K`]);
+  }
+  if (technical.mapCount > 0) techRows.push(["Map types", String(technical.mapCount)]);
 
   return (
     <>
@@ -349,6 +396,28 @@ export function AssetDrawer() {
             )}
           </div>
 
+          {(techRows.length > 0 || averageColor) && (
+            <section className="technical-panel">
+              <div className="technical-head">
+                <h3>Technical</h3>
+                {averageColor && (
+                  <span className="color-swatch" title={`Average color ${averageColor}`}>
+                    <i style={{ background: averageColor }} />
+                    {averageColor}
+                  </span>
+                )}
+              </div>
+              <div className="technical-grid">
+                {techRows.map(([label, value]) => (
+                  <div key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {extended?.similarAssets && extended.similarAssets.length > 0 && (
             <div className="related-assets">
               <h3>Related assets</h3>
@@ -455,22 +524,32 @@ export function AssetDrawer() {
                     <div className="map-options">
                       {options.components.map(component => {
                         const exrAllowed = canUseExr(extended, component.type);
+                        const mapDetails = mapTechnicalDetails(extended, component, options.resolution);
+                        const mapFacts = [
+                          mapDetails.resolution,
+                          mapDetails.formats.join("/"),
+                          mapDetails.bitDepth ? `${mapDetails.bitDepth}-bit` : null,
+                          mapDetails.bytes > 0 ? formatBytes(mapDetails.bytes) : null
+                        ].filter(Boolean).join(" · ");
                         return (
                           <div className="map-row" key={component.type}>
-                            <label className="toggle inline">
-                              <input
-                                type="checkbox"
-                                checked={component.selected}
-                                onChange={event =>
-                                  update(
-                                    updateMapOption(options, component.type, {
-                                      selected: event.target.checked
-                                    })
-                                  )
-                                }
-                              />
-                              <span>{mapTypeLabel(component.type)}</span>
-                            </label>
+                            <div className="map-row-main">
+                              <label className="toggle inline">
+                                <input
+                                  type="checkbox"
+                                  checked={component.selected}
+                                  onChange={event =>
+                                    update(
+                                      updateMapOption(options, component.type, {
+                                        selected: event.target.checked
+                                      })
+                                    )
+                                  }
+                                />
+                                <span>{mapTypeLabel(component.type)}</span>
+                              </label>
+                              {mapFacts && <span className="map-facts">{mapFacts}</span>}
+                            </div>
                             <Dropdown
                               className="select-dropdown small"
                               value={component.mimeType}
@@ -539,7 +618,12 @@ export function AssetDrawer() {
                                 }}
                               />
                               <span>LOD {lod.index}</span>
-                              <em>{lod.tris ? `${lod.tris.toLocaleString()} tris` : ""}</em>
+                              <em>
+                                {lod.tris ? `${lod.tris.toLocaleString()} tris` : ""}
+                                {lodBytes[lod.index] > 0
+                                  ? ` · ${formatBytes(lodBytes[lod.index])}`
+                                  : ""}
+                              </em>
                             </label>
                           ))}
                           {plant && (
@@ -609,15 +693,82 @@ export function AssetDrawer() {
                           />
                         </div>
                       )}
+                      {technical.variationDimensions.length > 1 && (
+                        <div className="variation-explorer">
+                          <span className="label">Variation dimensions</span>
+                          <div className="variation-chips">
+                            {technical.variationDimensions.map(item => {
+                              const dims = [item.length, item.width, item.height]
+                                .filter(Boolean)
+                                .join(" x ");
+                              return (
+                                <button
+                                  type="button"
+                                  key={item.variation}
+                                  className={
+                                    options.variation === item.variation
+                                      ? "variation-chip active"
+                                      : "variation-chip"
+                                  }
+                                  onClick={() => patch({ variation: item.variation })}
+                                >
+                                  <strong>Var {item.variation}</strong>
+                                  {dims && <em>{dims}</em>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       <p className="hint">
                         All settings are preferred options and will be downloaded when available.
                       </p>
                     </div>
                   )}
 
+                  {plan && (
+                    <div className="download-plan">
+                      <div className="download-plan-head">
+                        <strong>Download plan</strong>
+                        <span>
+                          {plan.bytes > 0
+                            ? `~${formatBytes(plan.bytes)}${plan.partial ? "+" : ""}`
+                            : "Size unavailable"}
+                        </span>
+                      </div>
+                      <div className="download-plan-row">
+                        <span>Textures</span>
+                        <strong>
+                          {plan.mapCount} maps · {plan.mapFiles} files
+                          {plan.textureBytes > 0 ? ` · ${formatBytes(plan.textureBytes)}` : ""}
+                        </strong>
+                      </div>
+                      {threeD && (
+                        <div className="download-plan-row">
+                          <span>Mesh</span>
+                          <strong>
+                            {plan.lodCount} LOD{plan.lodCount === 1 ? "" : "s"} · {plan.meshFiles} files
+                            {plan.meshBytes > 0 ? ` · ${formatBytes(plan.meshBytes)}` : ""}
+                          </strong>
+                        </div>
+                      )}
+                      {technical.hasHighpoly && options.highpoly && (
+                        <div className="download-plan-row">
+                          <span>Highpoly</span>
+                          <strong>included</strong>
+                        </div>
+                      )}
+                      {technical.hasZtool && options.ztool && (
+                        <div className="download-plan-row">
+                          <span>ZTool</span>
+                          <strong>included</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="download-summary">
                     <span>
-                      ~{formatBytes(estimate)} - {selectedMaps} maps
+                      {plan?.bytes ? `~${formatBytes(plan.bytes)}${plan.partial ? "+" : ""}` : "Size unavailable"} - {selectedMaps} maps
                       {threeD ? ` - ${selectedLods} LOD${selectedLods === 1 ? "" : "s"}` : ""}
                     </span>
                     <span>{options.meshFormat.toUpperCase()}</span>
