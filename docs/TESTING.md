@@ -1,6 +1,66 @@
 # Validation log
 
-## v1.1.2 (current)
+## v1.2.0 (current)
+
+Environment: Windows 11 Pro, Electron 45, live legacy services.
+
+### Build and package
+
+- `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
+- Packaged portable reports `1.2.0` and starts with 48 catalogue cards and 5 local assets.
+- The packaged Electron runtime successfully loads `node:sqlite` and the FTS5 index.
+
+### Indexed library
+
+- The index is created at `%APPDATA%\openbridge\library-index.sqlite` in WAL mode; schema version 2
+  includes assets, issues, metadata and an FTS5 virtual table.
+- The first scan indexed 5 assets. A subsequent scan skipped all 5 unchanged folders without
+  re-reading their JSON, completing in 3-4 ms.
+- Local search uses FTS5 prefix terms:
+  - `rock` returned 3 assets in about 0.4 ms.
+  - `rock small` returned 2 assets.
+  - `desert-western` normalized to two terms and returned 3 assets.
+- Repository filters and counts are evaluated by SQLite; selecting Custom returned 0 while the
+  global library count stayed 5.
+
+### Scale and virtualization
+
+- A synthetic 5,000-row index was used to test large-library behavior without creating files.
+- FTS5 search over 5,000 rows returned in about 4.6 ms.
+- The Library rendered only 36 cards for the 5,000-row result set, with a 20,147 px virtual scroll
+  surface; scrolling to 5,000 px moved the window to row offset 4,035 px.
+- Load more appended the next 300 rows, showing 600 loaded without increasing the rendered card
+  count.
+- Select-all-filtered selected all 5,000 matching rows.
+- The catalogue grid rendered 36 of 48 loaded cards and updated its virtual window on scroll.
+- Synthetic rows were deleted after the test; the library returned to its 5 real assets.
+
+### Health
+
+- Health progress events report `checked / total / percent`.
+- The final report matched the previous run: 5 assets, 102 files, 1.4 GB, one missing-mesh issue.
+- Health updates are written in batches of 25 assets inside a transaction.
+- Library table sizes remain unchanged until a health pass refreshes them.
+
+### Packaging hashes
+
+```
+portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
+electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
+```
+
+The portable zip hash is added after the release workflow publishes the artifact.
+
+### Not tested in v1.2.0
+
+- A real library with tens of thousands of files; scale behavior was measured with synthetic index
+  rows plus the 5-asset validation library.
+- Cancellable background health jobs and duplicate/orphan repair.
+- A forced-quit scan while SQLite WAL writes are in flight.
+- Microsoft Store-style packaging or any non-portable distribution.
+
+## v1.1.2
+
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 

@@ -395,6 +395,46 @@ export interface ScanResult {
   libraryPath: string;
 }
 
+export interface LibraryRef {
+  id: string;
+  path: string;
+}
+
+export interface LibraryCounts {
+  all: number;
+  downloaded: number;
+  custom: number;
+  dhi: number;
+}
+
+export type LibrarySort = "recent" | "name" | "type";
+
+export interface LibraryQuery {
+  query?: string;
+  repo?: RepoKind | "all";
+  sort?: LibrarySort;
+  limit?: number;
+  offset?: number;
+}
+
+export interface LibraryQueryResult {
+  assets: AssetRecord[];
+  total: number;
+  counts: LibraryCounts;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  tookMs: number;
+}
+
+export interface LibrarySnapshot {
+  refs: LibraryRef[];
+  total: number;
+  counts: LibraryCounts;
+  scannedAt: number;
+  libraryPath: string;
+}
+
 export type LibraryIssueKind =
   | "invalid-json"
   | "missing-preview"
@@ -419,6 +459,12 @@ export interface LibraryTypeStats {
   files: number;
 }
 
+export interface LibraryHealthProgress {
+  checked: number;
+  total: number;
+  percent: number;
+}
+
 export interface LibraryHealthReport {
   libraryPath: string;
   scannedAt: number;
@@ -435,7 +481,11 @@ export interface OpenBridgeApi {
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   chooseDirectory(): Promise<string | null>;
   listAssets(force?: boolean): Promise<ScanResult>;
-  libraryHealth(): Promise<LibraryHealthReport>;
+  librarySnapshot(force?: boolean): Promise<LibrarySnapshot>;
+  queryLibrary(query: LibraryQuery): Promise<LibraryQueryResult>;
+  queryLibraryIds(query: LibraryQuery): Promise<string[]>;
+  libraryHealth(force?: boolean): Promise<LibraryHealthReport>;
+  onLibraryHealthProgress(callback: (progress: LibraryHealthProgress) => void): () => void;
   removeLibraryAssets(assetIds: string[]): Promise<{ removed: number }>;
   exportLibraryAssets(assetIds: string[], folder: string): Promise<string>;
   openPath(target: string): Promise<void>;
@@ -449,7 +499,7 @@ export interface OpenBridgeApi {
   importZip(): Promise<string | null>;
   validateAssetJson(assetId: string): Promise<JsonValidationReport>;
   toFileUrl(target: string): string;
-  onLibraryUpdated(callback: (result: ScanResult) => void): () => void;
+  onLibraryUpdated(callback: (result: LibrarySnapshot) => void): () => void;
   onNotification(callback: (message: { message: string; error: boolean }) => void): () => void;
   onSearchPaste(callback: (payload: { text: string; search: boolean }) => void): () => void;
   contextMenu: {

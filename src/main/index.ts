@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
 import { cp, mkdir, readFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { AuthService } from "./auth";
@@ -27,6 +27,8 @@ import type {
   DownloadOptions,
   ExportAsset,
   JsonValidationReport,
+  LibraryQuery,
+  LibrarySnapshot,
   ScanResult
 } from "../shared/types";
 
@@ -138,10 +140,10 @@ async function validateAssetJson(assetId: string): Promise<JsonValidationReport>
   }
 }
 
-async function broadcastLibrary(force = false): Promise<ScanResult | null> {
+async function broadcastLibrary(force = false): Promise<LibrarySnapshot | null> {
   if (!library) return null;
   try {
-    const result = await library.scan(force);
+    const result = await library.snapshot(force);
     mainWindow?.webContents.send("library:updated", result);
     return result;
   } catch (error) {
@@ -390,18 +392,32 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("library:list", async (_event, force?: boolean) => {
-    return (
-      (await broadcastLibrary(Boolean(force))) ?? {
-        assets: [],
-        scannedAt: Date.now(),
-        libraryPath: settings().libraryPath
-      }
-    );
+    if (!library) throw new Error("Library service is not ready");
+    return library.scan(Boolean(force));
   });
 
-  ipcMain.handle("library:health", async () => {
+  ipcMain.handle("library:snapshot", async (_event, force?: boolean) => {
     if (!library) throw new Error("Library service is not ready");
-    return library.health();
+    return library.snapshot(Boolean(force));
+  });
+
+  ipcMain.handle("library:query", async (_event, query: LibraryQuery) => {
+    if (!library) throw new Error("Library service is not ready");
+    await library.snapshot(false);
+    return library.query(query);
+  });
+
+  ipcMain.handle("library:ids", async (_event, query: LibraryQuery) => {
+    if (!library) throw new Error("Library service is not ready");
+    await library.snapshot(false);
+    return library.ids(query);
+  });
+
+  ipcMain.handle("library:health", async (_event, force?: boolean) => {
+    if (!library) throw new Error("Library service is not ready");
+    return library.health(Boolean(force), progress => {
+      mainWindow?.webContents.send("library:healthProgress", progress);
+    });
   });
 
   ipcMain.handle("library:removeAssets", async (_event, assetIds: string[]) => {
@@ -671,7 +687,7 @@ async function init(): Promise<void> {
   settingsStore = new SettingsStore(join(userData, "settings.json"), defaults);
   library = new LibraryService(
     () => settings().libraryPath,
-    join(userData, "library-cache.json"),
+    join(userData, "library-index.sqlite"),
     logger
   );
 

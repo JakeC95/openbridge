@@ -18,7 +18,7 @@ export function Sidebar() {
   const categoryPath = useStore(state => state.categoryPath);
   const setCategoryPath = useStore(state => state.setCategoryPath);
   const nbHits = useStore(state => state.nbHits);
-  const localAssets = useStore(state => state.localAssets);
+  const libraryTotal = useStore(state => state.libraryTotal);
   const downloads = useStore(state => state.downloads);
   const openLogs = window.openbridge.openLogs;
 
@@ -33,7 +33,7 @@ export function Sidebar() {
       id: "library" as const,
       label: "Library",
       icon: <LibraryIcon />,
-      count: localAssets.length
+      count: libraryTotal
     },
     {
       id: "downloads" as const,

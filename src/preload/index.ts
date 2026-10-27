@@ -13,7 +13,11 @@ import type {
   ExportAsset,
   ExtendedAsset,
   JsonValidationReport,
+  LibraryHealthProgress,
   LibraryHealthReport,
+  LibraryQuery,
+  LibraryQueryResult,
+  LibrarySnapshot,
   MapPreview,
   OpenBridgeApi,
   Profile,
@@ -28,7 +32,19 @@ const api: OpenBridgeApi = {
     ipcRenderer.invoke("settings:update", patch) as Promise<AppSettings>,
   chooseDirectory: () => ipcRenderer.invoke("dialog:selectDirectory") as Promise<string | null>,
   listAssets: (force = false) => ipcRenderer.invoke("library:list", force) as Promise<ScanResult>,
-  libraryHealth: () => ipcRenderer.invoke("library:health") as Promise<LibraryHealthReport>,
+  librarySnapshot: (force = false) =>
+    ipcRenderer.invoke("library:snapshot", force) as Promise<LibrarySnapshot>,
+  queryLibrary: (query: LibraryQuery) =>
+    ipcRenderer.invoke("library:query", query) as Promise<LibraryQueryResult>,
+  queryLibraryIds: (query: LibraryQuery) =>
+    ipcRenderer.invoke("library:ids", query) as Promise<string[]>,
+  libraryHealth: (force = false) =>
+    ipcRenderer.invoke("library:health", force) as Promise<LibraryHealthReport>,
+  onLibraryHealthProgress: callback => {
+    const listener = (_event: unknown, progress: LibraryHealthProgress): void => callback(progress);
+    ipcRenderer.on("library:healthProgress", listener);
+    return () => ipcRenderer.removeListener("library:healthProgress", listener);
+  },
   removeLibraryAssets: (assetIds: string[]) =>
     ipcRenderer.invoke("library:removeAssets", assetIds) as Promise<{ removed: number }>,
   exportLibraryAssets: (assetIds: string[], folder: string) =>
@@ -51,7 +67,7 @@ const api: OpenBridgeApi = {
     ipcRenderer.invoke("library:validateJson", assetId) as Promise<JsonValidationReport>,
   toFileUrl: target => pathToFileURL(target).href,
   onLibraryUpdated: callback => {
-    const listener = (_event: unknown, result: ScanResult): void => callback(result);
+    const listener = (_event: unknown, result: LibrarySnapshot): void => callback(result);
     ipcRenderer.on("library:updated", listener);
     return () => ipcRenderer.removeListener("library:updated", listener);
   },

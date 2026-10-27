@@ -52,13 +52,20 @@
   cards and 120 px drawer.
 - Tagged-release workflow builds the portable zip and publishes `latest.json`.
 
-## Phase 4 - Library indexing and scale (next)
+## Phase 4 - Library indexing and scale (done in 1.2)
 
-- Add an indexed library database (Electron's `node:sqlite` is available) for large libraries.
-- Incremental scan/update instead of full filesystem walks.
-- Background health checks with cancellable progress and issue filters.
-- Duplicate repair and orphan-folder cleanup.
+- SQLite/WAL library index using Electron's `node:sqlite`.
+- FTS5 search with prefix tokens, repository filters, sorted queries and server-side counts.
+- Incremental scans: unchanged asset folders skip JSON re-reading; removed folders are pruned.
+- Virtualized local-library and catalogue grids with 300-row paging.
+- Select-all-filtered, queued page loading and health progress events.
+- Batch health updates with cached file/byte statistics.
+
+Still open from this area:
+
+- Duplicate repair and orphan-folder cleanup (detection is implemented).
 - Persist download history in the index instead of only the queue file.
+- Cancellable background health jobs and richer issue filters.
 
 ## Phase 5 - Export pipeline (deferred)
 

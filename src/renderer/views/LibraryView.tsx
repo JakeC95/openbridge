@@ -1,9 +1,9 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { typeLabel } from "../catalog-utils";
-import { localSearchTokens, matchesLocalSearch } from "../search-utils";
 import { CheckIcon, CloseIcon, FolderIcon, SearchIcon, UploadIcon } from "../icons";
 import type { LibraryHealthReport, RepoKind } from "../../shared/types";
+import { VirtualGrid } from "../components/VirtualGrid";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
   { value: "all", label: "All" },
@@ -20,11 +20,17 @@ function formatBytes(value: number): string {
 }
 
 export function LibraryView() {
-  const assets = useStore(state => state.localAssets);
+  const assets = useStore(state => state.libraryAssets);
+  const counts = useStore(state => state.libraryCounts);
+  const allTotal = useStore(state => state.libraryTotal);
+  const total = useStore(state => state.libraryFilteredTotal);
+  const loading = useStore(state => state.libraryLoading);
+  const hasMore = useStore(state => state.libraryHasMore);
   const query = useStore(state => state.localQuery);
   const repo = useStore(state => state.localRepo);
   const setQuery = useStore(state => state.setLocalQuery);
   const setRepo = useStore(state => state.setLocalRepo);
+  const queryLocalLibrary = useStore(state => state.queryLocalLibrary);
   const openLocal = useStore(state => state.openLocal);
   const importFolder = useStore(state => state.importFolder);
   const importZip = useStore(state => state.importZip);
@@ -37,25 +43,31 @@ export function LibraryView() {
   const [health, setHealth] = useState<LibraryHealthReport | null>(null);
   const [healthOpen, setHealthOpen] = useState(false);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [healthProgress, setHealthProgress] = useState<{ checked: number; total: number; percent: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [selectingAll, setSelectingAll] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const firstQuery = useRef(true);
 
   useEffect(() => {
     return window.openbridge.onSearchPaste(({ text }) => setQuery(text));
   }, [setQuery]);
 
-  const counts = useMemo(() => {
-    const result: Record<string, number> = { all: assets.length };
-    for (const asset of assets) result[asset.repo] = (result[asset.repo] ?? 0) + 1;
-    return result;
-  }, [assets]);
+  useEffect(() => {
+    return window.openbridge.onLibraryHealthProgress(setHealthProgress);
+  }, []);
 
-  const filtered = useMemo(() => {
-    const tokens = localSearchTokens(query);
-    return assets.filter(asset => {
-      if (repo !== "all" && asset.repo !== repo) return false;
-      return matchesLocalSearch(asset.searchStr, tokens);
-    });
-  }, [assets, query, repo]);
+  useEffect(() => {
+    if (firstQuery.current) {
+      firstQuery.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      bodyRef.current?.scrollTo({ top: 0 });
+      void queryLocalLibrary(true);
+    }, 140);
+    return () => clearTimeout(timer);
+  }, [query, repo, queryLocalLibrary]);
 
   function toggleSelected(id: string): void {
     setSelectedIds(current => {
@@ -67,14 +79,28 @@ export function LibraryView() {
   }
 
   function selectVisible(): void {
-    setSelectedIds(new Set(filtered.map(asset => asset.id)));
+    setSelectedIds(new Set(assets.map(asset => asset.id)));
+  }
+  async function selectAllFiltered(): Promise<void> {
+    if (selectingAll) return;
+    setSelectingAll(true);
+    try {
+      const ids = await window.openbridge.queryLibraryIds({ query, repo });
+      setSelectedIds(new Set(ids));
+      toast(`Selected ${ids.length.toLocaleString()} asset(s)`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setSelectingAll(false);
+    }
   }
 
-  async function loadHealth(): Promise<void> {
+  async function loadHealth(force = false): Promise<void> {
     setHealthOpen(true);
+    setHealthProgress(null);
     setHealthLoading(true);
     try {
-      setHealth(await window.openbridge.libraryHealth());
+      setHealth(await window.openbridge.libraryHealth(force));
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
     } finally {
@@ -176,7 +202,9 @@ export function LibraryView() {
             ))}
           </div>
           <span className="result-count">
-            {filtered.length} of {assets.length}
+            {loading && assets.length === 0
+              ? "Searching..."
+              : `${total.toLocaleString()} assets${assets.length < total ? `, ${assets.length.toLocaleString()} loaded` : ""}`}
           </span>
         </div>
 
@@ -184,7 +212,15 @@ export function LibraryView() {
           <div className="bulk-bar">
             <span className="bulk-count">{selectedIds.size} selected</span>
             <button type="button" className="text-btn" onClick={selectVisible}>
-              Select visible
+              Select loaded
+            </button>
+            <button
+              type="button"
+              className="text-btn"
+              disabled={selectingAll || total === 0}
+              onClick={() => void selectAllFiltered()}
+            >
+              {selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()}`}
             </button>
             <button
               type="button"
@@ -226,84 +262,115 @@ export function LibraryView() {
         </div>
       </div>
 
-      <div className="view-body">
-        <div className="asset-grid local-grid">
-          {filtered.map(asset => {
-            const selected = selectedIds.has(asset.id);
-            return (
-              <div
-                role="button"
-                tabIndex={0}
-                className={selected ? "asset-card selected" : "asset-card"}
-                key={`${asset.repo}:${asset.id}`}
-                data-asset-id={asset.id}
-                onClick={() => {
-                  if (selectMode) toggleSelected(asset.id);
-                  else void openLocal(asset);
-                }}
-                onKeyDown={event => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
+      <div className="view-body" ref={bodyRef}>
+        {assets.length > 0 && (
+          <VirtualGrid
+            items={assets}
+            minItemWidth={220}
+            gap={28}
+            renderItem={asset => {
+              const selected = selectedIds.has(asset.id);
+              return (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className={selected ? "asset-card selected" : "asset-card"}
+                  key={`${asset.repo}:${asset.id}`}
+                  data-asset-id={asset.id}
+                  onClick={() => {
                     if (selectMode) toggleSelected(asset.id);
                     else void openLocal(asset);
-                  }
-                }}
-                onContextMenu={event => {
-                  event.preventDefault();
-                  void window.openbridge.contextMenu.asset({
-                    assetId: asset.id,
-                    localPath: asset.path
-                  });
-                }}
-                title={asset.name}
-              >
-                <div className="asset-thumb">
-                  {asset.preview ? (
-                    <img
-                      src={window.openbridge.toFileUrl(asset.preview)}
-                      alt=""
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="asset-placeholder">{typeLabel(asset.type)}</span>
-                  )}
-                  <span className="asset-type">{typeLabel(asset.type)}</span>
-                  <span className="asset-flag owned">LOCAL</span>
-                  {selectMode && (
-                    <button
-                      type="button"
-                      className={selected ? "asset-select selected" : "asset-select"}
-                      aria-label={selected ? `Deselect ${asset.name}` : `Select ${asset.name}`}
-                      aria-pressed={selected}
-                      onClick={event => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleSelected(asset.id);
-                      }}
-                    >
-                      {selected && <CheckIcon width={14} height={14} />}
-                    </button>
-                  )}
+                  }}
+                  onKeyDown={event => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      if (selectMode) toggleSelected(asset.id);
+                      else void openLocal(asset);
+                    }
+                  }}
+                  onContextMenu={event => {
+                    event.preventDefault();
+                    void window.openbridge.contextMenu.asset({
+                      assetId: asset.id,
+                      localPath: asset.path
+                    });
+                  }}
+                  title={asset.name}
+                >
+                  <div className="asset-thumb">
+                    {asset.preview ? (
+                      <img
+                        src={window.openbridge.toFileUrl(asset.preview)}
+                        alt=""
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="asset-placeholder">{typeLabel(asset.type)}</span>
+                    )}
+                    <span className="asset-type">{typeLabel(asset.type)}</span>
+                    <span className="asset-flag owned">LOCAL</span>
+                    {selectMode && (
+                      <button
+                        type="button"
+                        className={selected ? "asset-select selected" : "asset-select"}
+                        aria-label={selected ? `Deselect ${asset.name}` : `Select ${asset.name}`}
+                        aria-pressed={selected}
+                        onClick={event => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          toggleSelected(asset.id);
+                        }}
+                      >
+                        {selected && <CheckIcon width={14} height={14} />}
+                      </button>
+                    )}
+                  </div>
+                  <div className="asset-meta">
+                    <strong>{asset.name}</strong>
+                    <span>{asset.id}</span>
+                    <em>{asset.repo}</em>
+                  </div>
                 </div>
-                <div className="asset-meta">
-                  <strong>{asset.name}</strong>
-                  <span>{asset.id}</span>
-                  <em>{asset.repo}</em>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            }}
+          />
+        )}
 
-        {filtered.length === 0 && (
+        {loading && assets.length === 0 && (
+          <div className="loading-line">Searching indexed library...</div>
+        )}
+
+        {!loading && assets.length === 0 && (
           <div className="empty">
-            <h2>No local assets</h2>
+            <h2>{allTotal === 0 ? "No local assets" : "No matching assets"}</h2>
             <p>
-              Point OpenBridge at an existing Megascans library or import a custom asset folder/zip.
-              Downloaded assets land in <code>Downloaded/&#123;3d,atlas,surface,3dplant,brush&#125;</code>.
+              {allTotal === 0
+                ? "Point OpenBridge at an existing Megascans library or import a custom asset folder/zip."
+                : "Try a different search or repository filter."}
             </p>
-            <button type="button" className="btn btn-primary" onClick={() => void importFolder()}>
-              Import a folder
+            {allTotal === 0 ? (
+              <button type="button" className="btn btn-primary" onClick={() => void importFolder()}>
+                Import a folder
+              </button>
+            ) : (
+              <button type="button" className="btn btn-ghost" onClick={() => setQuery("")}>
+                Clear search
+              </button>
+            )}
+          </div>
+        )}
+
+        {hasMore && (
+          <div className="load-more">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={loading}
+              onClick={() => void queryLocalLibrary(false)}
+            >
+              {loading
+                ? "Loading..."
+                : `Load more (${Math.max(0, total - assets.length).toLocaleString()} left)`}
             </button>
           </div>
         )}
@@ -327,7 +394,14 @@ export function LibraryView() {
               </button>
             </div>
 
-            {healthLoading && <div className="loading-line">Scanning library...</div>}
+            {healthLoading && (
+              <div className="loading-line">
+                Scanning library...
+                {healthProgress
+                  ? ` ${healthProgress.checked.toLocaleString()} / ${healthProgress.total.toLocaleString()} (${healthProgress.percent}%)`
+                  : ""}
+              </div>
+            )}
             {health && !healthLoading && (
               <>
                 <div className="health-summary">
@@ -381,7 +455,7 @@ export function LibraryView() {
                   )}
                 </div>
                 <div className="health-actions">
-                  <button type="button" className="btn btn-ghost" onClick={() => void loadHealth()}>
+                  <button type="button" className="btn btn-ghost" onClick={() => void loadHealth(true)}>
                     Rescan
                   </button>
                 </div>

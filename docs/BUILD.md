@@ -27,6 +27,16 @@ The portable app requires no administrator rights. Settings, the Epic session, t
 and the download queue live in `%APPDATA%\openbridge`; the app folder itself can be moved or
 deleted without removing user data.
 
+## Library index
+
+Local library metadata is stored in `%APPDATA%\openbridge\library-index.sqlite` in WAL mode.
+The schema uses an `assets` table, an FTS5 index for local search, cached health statistics and an
+`issues` table. Asset filenames and previews stay in the normal Megascans folder layout; the
+database is an index, not a replacement for the library.
+
+- Delete `library-index.sqlite*` and run Rescan to rebuild it.
+- The schema version is tracked with `PRAGMA user_version`.
+- Unchanged folders skip JSON re-reading unless Rescan forces a full refresh.
 ## Legacy service configuration
 
 Copy `config.local.example.json` to `config.local.json` and fill in the Epic OAuth client ID and
@@ -62,7 +72,7 @@ Manual release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.1.2 "dist\OpenBridge-1.1.2-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.2.0 "dist\OpenBridge-1.2.0-win-x64-portable.zip"
 ```
 
 Upload that zip and `latest.json` to a GitHub release. OpenBridge checks
@@ -73,8 +83,8 @@ portable files after the app exits and restarts it.
 ## Verified artifact
 
 ```
-dist/OpenBridge-1.1.2-win-x64-portable/OpenBridge.exe
-dist/OpenBridge-1.1.2-win-x64-portable.zip   158,993,935 bytes
+dist/OpenBridge-1.2.0-win-x64-portable/OpenBridge.exe
+dist/OpenBridge-1.2.0-win-x64-portable.zip   158,994,000 bytes
 ```
 
 SHA-256:

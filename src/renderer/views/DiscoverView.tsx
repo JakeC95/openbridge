@@ -1,9 +1,10 @@
-﻿import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { AssetCard } from "../components/AssetCard";
 import { hitId } from "../catalog-utils";
 import { CloseIcon, UserIcon } from "../icons";
 import { Dropdown } from "../components/Dropdown";
+import { VirtualGrid } from "../components/VirtualGrid";
 
 const TABS: Array<{ label: string; path: string[] }> = [
   { label: "All", path: [] },
@@ -91,7 +92,7 @@ export function DiscoverView() {
   const freeOnly = useStore(state => state.freeOnly);
   const facets = useStore(state => state.facets);
   const facetFilters = useStore(state => state.facetFilters);
-  const localAssets = useStore(state => state.localAssets);
+  const localRefs = useStore(state => state.localRefs);
   const downloads = useStore(state => state.downloads);
   const auth = useStore(state => state.auth);
 
@@ -121,8 +122,8 @@ export function DiscoverView() {
   const ownSet = useMemo(() => new Set(acquired), [acquired]);
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
   const localMap = useMemo(
-    () => new Map(localAssets.map(asset => [asset.id, asset])),
-    [localAssets]
+    () => new Map(localRefs.map(ref => [ref.id, ref.path])),
+    [localRefs]
   );
   const selectedCategoryLabel = categoryPathLabel(categories, categoryPath);
   const activeTab = TABS.find(isTabActive) ?? TABS[0];
@@ -242,7 +243,7 @@ export function DiscoverView() {
       return;
     }
 
-    const localIds = new Set(localAssets.map(asset => asset.id));
+    const localIds = new Set(localRefs.map(ref => ref.id));
     const completed = new Set(
       Object.values(downloads)
         .filter(item => item.status === "complete")
@@ -587,40 +588,46 @@ export function DiscoverView() {
             {query ? "Search results" : categoryPath.length > 0 ? selectedCategoryLabel : "Catalogue"}
           </div>
 
-          <div className="asset-grid">
-            {hits.map(hit => {
-              const id = hitId(hit);
-              const local = localMap.get(id);
-              return (
-                <AssetCard
-                  key={id}
-                  hit={hit}
-                  owned={ownSet.has(id)}
-                  downloaded={Boolean(local)}
-                  favorited={favoriteSet.has(id)}
-                  canFavorite={auth.loggedIn}
-                  localPath={local?.path ?? null}
-                  progress={downloads[id]}
-                  selectionMode={selectMode}
-                  selected={selectedIds.has(id)}
-                  onPauseResume={() => {
-                    const active = downloads[id];
-                    if (!active) return;
-                    if (active.status === "paused")
-                      void window.openbridge.downloads.resume(id);
-                    else void window.openbridge.downloads.pause(id);
-                  }}
-                  onSelect={event => toggleSelection(id, hit.points, event)}
-                  onOpen={hitToOpen => void openHit(hitToOpen)}
-                  onToggleFavorite={() => void toggleFavorite(id)}
-                  onDownload={() => void downloadHit(hit)}
-                />
-              );
-            })}
+          {hits.length > 0 && (
+            <VirtualGrid
+              items={hits}
+              minItemWidth={220}
+              gap={28}
+              renderItem={hit => {
+                const id = hitId(hit);
+                const local = localMap.get(id);
+                return (
+                  <AssetCard
+                    key={id}
+                    hit={hit}
+                    owned={ownSet.has(id)}
+                    downloaded={Boolean(local)}
+                    favorited={favoriteSet.has(id)}
+                    canFavorite={auth.loggedIn}
+                    localPath={local ?? null}
+                    progress={downloads[id]}
+                    selectionMode={selectMode}
+                    selected={selectedIds.has(id)}
+                    onPauseResume={() => {
+                      const active = downloads[id];
+                      if (!active) return;
+                      if (active.status === "paused")
+                        void window.openbridge.downloads.resume(id);
+                      else void window.openbridge.downloads.pause(id);
+                    }}
+                    onSelect={event => toggleSelection(id, hit.points, event)}
+                    onOpen={hitToOpen => void openHit(hitToOpen)}
+                    onToggleFavorite={() => void toggleFavorite(id)}
+                    onDownload={() => void downloadHit(hit)}
+                  />
+                );
+              }}
+            />
+          )}
 
-            {loading &&
-              hits.length === 0 &&
-              Array.from({ length: 18 }, (_, index) => (
+          {loading && hits.length === 0 && (
+            <div className="asset-grid">
+              {Array.from({ length: 18 }, (_, index) => (
                 <div className="asset-card skeleton" key={index}>
                   <div className="asset-thumb" />
                   <div className="asset-meta">
@@ -629,7 +636,8 @@ export function DiscoverView() {
                   </div>
                 </div>
               ))}
-          </div>
+            </div>
+          )}
 
           {!loading && !error && hits.length === 0 && (
             <div className="empty">

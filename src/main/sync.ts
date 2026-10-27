@@ -1,4 +1,4 @@
-﻿import type { AppSettings, SyncStatus } from "../shared/types";
+import type { AppSettings, SyncStatus } from "../shared/types";
 import type { DownloadManager } from "./download-manager";
 import type { LegacyApi } from "./legacy-api";
 import type { LibraryService } from "./library";
@@ -54,8 +54,9 @@ export class SyncService {
 
     try {
       const acquired = await this.api.acquired();
-      const library = await this.library.scan(true);
-      const local = new Set(library.assets.map(asset => asset.id));
+      this.library.invalidate();
+      const library = await this.library.snapshot(false);
+      const local = new Set(library.refs.map(ref => ref.id));
       const missing = acquired.filter(id => !local.has(id));
 
       this.update({

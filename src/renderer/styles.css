@@ -717,6 +717,18 @@ code {
   gap: 14px;
 }
 
+.virtual-grid {
+  position: relative;
+  width: 100%;
+  contain: layout style;
+}
+
+.virtual-grid-window {
+  position: absolute;
+  right: 0;
+  left: 0;
+}
+
 .asset-card {
   display: flex;
   flex-direction: column;

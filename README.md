@@ -12,19 +12,19 @@ The Windows shell follows the 2025 Bridge proportions: a responsive 320/280 px s
 nested category tree, header search, 48 px filter bar, image-first asset cards with hover labels,
 and a 120 px right-side asset drawer.
 
-## Windows v1.1.2 artifact
+## Windows v1.2.0 artifact
 
 OpenBridge is distributed as a portable app. No installer is built or published:
 
 ```
-dist\OpenBridge-1.1.2-win-x64-portable\OpenBridge.exe
-dist\OpenBridge-1.1.2-win-x64-portable.zip
+dist\OpenBridge-1.2.0-win-x64-portable\OpenBridge.exe
+dist\OpenBridge-1.2.0-win-x64-portable.zip
 ```
 
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
-Release: <https://github.com/example-owner/openbridge/releases/tag/v1.1.2>
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.2.0>
 
 SHA-256:
 
@@ -34,7 +34,7 @@ electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B
 portable zip             382E3F15F588E2D2A03C52C1D4405191DB78256A3CB5B341BDB22048BAE55F88
 ```
 
-## v1.1 features (Windows)
+## v1.2 features (Windows)
 
 Verified against the live legacy services on this machine:
 
@@ -43,7 +43,7 @@ Verified against the live legacy services on this machine:
 - **Catalogue + smart search**: 18,835 legacy Megascans assets, thumbnails, broad type tabs,
   infinite results and owned/free badges. Search accepts names, asset IDs, `quixel.com` asset URLs,
   bare UUIDs and prefixed IDs, normalizes whitespace, strips URL noise, and uses request timeouts,
-  retries and stale-request guards. Local library search is token-based.
+  retries and stale-request guards. Local search uses a SQLite FTS5 index.
 - **Discovery filters and saved searches**: biome, region, resolution, color, environment and theme
   facet filters; saved searches in local storage; active-facet counts; clear-all.
 - **Related assets**: the asset drawer shows similar catalogue entries and opens them in place.
@@ -65,6 +65,9 @@ Verified against the live legacy services on this machine:
 - **Library health and bulk tools**: asset/file/byte totals, per-type storage, missing
   preview/mesh/texture detection, zero-byte files, empty folders, duplicate IDs, multi-select,
   JSON export and safe folder deletion under the library root.
+- **Indexed library at scale**: SQLite/WAL index with FTS5 search, incremental scans,
+  server-side counts and 300-row paging, virtualized local and catalogue grids, select-all-filtered
+  and health progress. Unchanged assets skip JSON re-reading on subsequent scans.
 - **Texture map previews**: Render and Maps views, signed 1K previews, map labels/resolutions,
   arrow/keyboard cycling and texture-set handling. No asset folder is created by previewing.
 - **Multi-select and bulk download**: shift-click ranges, select loaded, select all in the current
@@ -84,7 +87,7 @@ Verified against the live legacy services on this machine:
 - **Legacy interoperability**: local HTTP API (`127.0.0.1:28241`), discovery (`28852`), Mixer
   live-link sockets (`28456/28457/28458/28459`), DCC export inventory and plugin JSON shape.
 
-## Not in v1.1
+## Not in v1.2
 
 - Fab catalogue/browsing and Fab package downloads. The Fab tab and Fab-specific code were
   removed; owned assets remain available through the legacy Megascans catalogue.
@@ -127,7 +130,7 @@ For a local release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.1.2 "dist\OpenBridge-1.1.2-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.2.0 "dist\OpenBridge-1.2.0-win-x64-portable.zip"
 ```
 
 OpenBridge checks
@@ -198,7 +201,7 @@ tools/                    portable RE toolchain (git-ignored)
 
 ## Documentation
 
-- [docs/TESTING.md](docs/TESTING.md) - v1.0 and v1.1 validation results.
+- [docs/TESTING.md](docs/TESTING.md) - v1.0-v1.2 validation results.
 - [docs/BUILD.md](docs/BUILD.md) - build, packaging and release instructions.
 - [docs/ROADMAP.md](docs/ROADMAP.md) - current scope and next phases.
 - [docs/PROTOCOL.md](docs/PROTOCOL.md) - legacy local API/socket protocol.

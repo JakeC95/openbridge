@@ -1,20 +1,29 @@
-import { existsSync } from "node:fs";
-import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import type {
   AssetJson,
   AssetRecord,
+  LibraryHealthProgress,
   LibraryHealthReport,
   LibraryIssue,
-  LibraryTypeStats,
+  LibraryQuery,
+  LibraryQueryResult,
+  LibrarySnapshot,
   RepoKind,
   ScanResult
 } from "../shared/types";
+import { LibraryIndex } from "./library-index";
 import type { Logger } from "./logger";
 
 const DOWNLOADED_TYPES = ["3d", "atlas", "surface", "3dplant", "brush"];
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg"]);
 const MESH_EXT = new Set([".fbx", ".obj", ".abc", ".usd", ".usdz", ".gltf", ".glb"]);
+
+interface AssetFolder {
+  folder: string;
+  repo: RepoKind;
+  folderMtime: number;
+}
 
 function isAssetJson(name: string): boolean {
   const lower = name.toLowerCase();
@@ -104,49 +113,52 @@ async function readAssetFolder(folder: string, repo: RepoKind): Promise<AssetRec
   return null;
 }
 
-async function readAssetRoot(root: string, repo: RepoKind): Promise<AssetRecord[]> {
-  const records: AssetRecord[] = [];
-  if (!existsSync(root)) return records;
+async function listDirectories(parent: string): Promise<AssetFolder[]> {
+  const entries = await readdir(parent, { withFileTypes: true }).catch(() => []);
+  const output: AssetFolder[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const folder = join(parent, entry.name);
+    const info = await stat(folder).catch(() => null);
+    if (!info) continue;
+    output.push({ folder, repo: "custom", folderMtime: info.mtimeMs });
+  }
+  return output;
+}
 
-  const pushFolders = async (parent: string): Promise<void> => {
-    let entries: string[];
-    try {
-      entries = await readdir(parent);
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const folder = join(parent, entry);
-      try {
-        if (!(await stat(folder)).isDirectory()) continue;
-      } catch {
-        continue;
-      }
-      const record = await readAssetFolder(folder, repo);
-      if (record) records.push(record);
+async function collectAssetFolders(libraryPath: string): Promise<AssetFolder[]> {
+  const output: AssetFolder[] = [];
+  const seen = new Set<string>();
+  const add = (folders: AssetFolder[], repo: RepoKind): void => {
+    for (const folder of folders) {
+      if (seen.has(folder.folder)) continue;
+      seen.add(folder.folder);
+      output.push({ ...folder, repo });
     }
   };
 
-  if (repo === "dhi" || repo === "custom") {
-    await pushFolders(root);
-    for (const entry of await readdir(root).catch(() => [])) {
-      const child = join(root, entry);
-      if (entry.toLowerCase() === "support") continue;
-      try {
-        if ((await stat(child)).isDirectory()) await pushFolders(child);
-      } catch {
-        // ignore
-      }
-    }
-  } else {
-    for (const type of DOWNLOADED_TYPES) {
-      await pushFolders(join(root, type));
-    }
+  for (const type of DOWNLOADED_TYPES) {
+    add(await listDirectories(join(libraryPath, "Downloaded", type)), "downloaded");
   }
 
-  return records;
-}
+  const customRoot = join(libraryPath, "Custom");
+  const customTop = (await listDirectories(customRoot)).filter(
+    folder => basename(folder.folder).toLowerCase() !== "support"
+  );
+  add(customTop, "custom");
+  for (const folder of customTop) {
+    add(await listDirectories(folder.folder), "custom");
+  }
 
+  const dhiRoot = join(libraryPath, "Downloaded", "DHI");
+  const dhiTop = await listDirectories(dhiRoot);
+  add(dhiTop, "dhi");
+  for (const folder of dhiTop) {
+    add(await listDirectories(folder.folder), "dhi");
+  }
+
+  return output;
+}
 
 async function walkAssetFolder(folder: string): Promise<{
   files: number;
@@ -175,7 +187,11 @@ async function walkAssetFolder(folder: string): Promise<{
       if (info.size === 0) zeroBytes += 1;
       const ext = extname(entry.name).toLowerCase();
       if (MESH_EXT.has(ext)) meshes += 1;
-      if (IMAGE_EXT.has(ext) && !entry.name.toLowerCase().includes("preview") && !entry.name.toLowerCase().includes("thumb")) {
+      if (
+        IMAGE_EXT.has(ext) &&
+        !entry.name.toLowerCase().includes("preview") &&
+        !entry.name.toLowerCase().includes("thumb")
+      ) {
         textures += 1;
       }
     }
@@ -184,167 +200,206 @@ async function walkAssetFolder(folder: string): Promise<{
   return { files, bytes, zeroBytes, meshes, textures };
 }
 
+function issuesForAsset(
+  row: { path: string; id: string; name: string; type: string; preview: string | null },
+  walked: Awaited<ReturnType<typeof walkAssetFolder>>
+): LibraryIssue[] {
+  const issues: LibraryIssue[] = [];
+  const type = (row.type || "unknown").toLowerCase();
+  if (!row.preview) {
+    issues.push({
+      kind: "missing-preview",
+      severity: "warning",
+      assetId: row.id,
+      name: row.name,
+      path: row.path,
+      message: "No preview or thumbnail found"
+    });
+  }
+  if (walked.zeroBytes > 0) {
+    issues.push({
+      kind: "zero-byte",
+      severity: "error",
+      assetId: row.id,
+      name: row.name,
+      path: row.path,
+      message: `${walked.zeroBytes} zero-byte file(s)`
+    });
+  }
+  if (walked.files === 0) {
+    issues.push({
+      kind: "empty-folder",
+      severity: "error",
+      assetId: row.id,
+      name: row.name,
+      path: row.path,
+      message: "Asset folder is empty"
+    });
+  }
+  if ((type.startsWith("3d") || type === "3dplant") && walked.meshes === 0) {
+    issues.push({
+      kind: "missing-mesh",
+      severity: "warning",
+      assetId: row.id,
+      name: row.name,
+      path: row.path,
+      message: "No mesh file found"
+    });
+  }
+  if (["surface", "atlas", "decal"].includes(type) && walked.textures === 0) {
+    issues.push({
+      kind: "missing-texture",
+      severity: "warning",
+      assetId: row.id,
+      name: row.name,
+      path: row.path,
+      message: "No texture file found"
+    });
+  }
+  return issues;
+}
+
 export class LibraryService {
-  private cache: ScanResult | null = null;
+  private readonly index: LibraryIndex;
+  private snapshotCache: LibrarySnapshot | null = null;
+  private closed = false;
 
   constructor(
     private readonly getLibraryPath: () => string,
-    private readonly cacheFile: string,
+    indexPath: string,
     private readonly logger: Logger
-  ) {}
-
-  async scan(force = false): Promise<ScanResult> {
-    const libraryPath = this.getLibraryPath();
-    if (!force && this.cache && this.cache.libraryPath === libraryPath) {
-      return this.cache;
-    }
-
-    const started = Date.now();
-    const roots: Array<[string, RepoKind]> = [
-      [join(libraryPath, "Downloaded"), "downloaded"],
-      [join(libraryPath, "Custom"), "custom"],
-      [join(libraryPath, "Downloaded", "DHI"), "dhi"]
-    ];
-
-    const seen = new Set<string>();
-    const assets: AssetRecord[] = [];
-    for (const [root, repo] of roots) {
-      const found = await readAssetRoot(root, repo);
-      for (const asset of found) {
-        if (seen.has(asset.id)) continue;
-        seen.add(asset.id);
-        assets.push(asset);
-      }
-    }
-
-    assets.sort((a, b) => b.mtime - a.mtime);
-    this.cache = { assets, scannedAt: Date.now(), libraryPath };
-    void this.writeCache(this.cache);
-
-    this.logger.info("Library scan complete", {
-      libraryPath,
-      assets: assets.length,
-      milliseconds: Date.now() - started
-    });
-    return this.cache;
+  ) {
+    this.index = new LibraryIndex(indexPath, logger);
   }
 
-
-  async health(): Promise<LibraryHealthReport> {
+  async scan(force = false, includeAssets = true): Promise<ScanResult> {
     const libraryPath = this.getLibraryPath();
-    const roots: Array<[string, RepoKind]> = [
-      [join(libraryPath, "Downloaded"), "downloaded"],
-      [join(libraryPath, "Custom"), "custom"],
-      [join(libraryPath, "Downloaded", "DHI"), "dhi"]
-    ];
-    const records: AssetRecord[] = [];
-    for (const [root, repo] of roots) {
-      records.push(...(await readAssetRoot(root, repo)));
-    }
+    const started = Date.now();
+    this.index.ensureLibraryPath(libraryPath);
+    const folders = await collectAssetFolders(libraryPath);
+    const seen = new Set<string>();
+    const changes: Array<{ asset: AssetRecord; folderMtime: number; jsonMtime: number }> = [];
+    let skipped = 0;
 
-    const issues: LibraryIssue[] = [];
-    const byType: Record<string, LibraryTypeStats> = {};
-    const ids = new Map<string, string[]>();
-    let files = 0;
-    let totalBytes = 0;
+    for (const folder of folders) {
+      seen.add(folder.folder);
+      const cached = this.index.getCachedRow(folder.folder);
+      if (!force && cached && Math.trunc(cached.folder_mtime) === Math.trunc(folder.folderMtime)) {
+        const jsonInfo = await stat(cached.json_path).catch(() => null);
+        if (jsonInfo && Math.trunc(jsonInfo.mtimeMs) === Math.trunc(cached.json_mtime)) {
+          skipped += 1;
+          continue;
+        }
+      }
 
-    for (const asset of records) {
-      const paths = ids.get(asset.id) ?? [];
-      paths.push(asset.path);
-      ids.set(asset.id, paths);
-
-      const walked = await walkAssetFolder(asset.path);
-      files += walked.files;
-      totalBytes += walked.bytes;
-      const type = (asset.type || "unknown").toLowerCase();
-      const stats = byType[type] ?? { assets: 0, bytes: 0, files: 0 };
-      stats.assets += 1;
-      stats.bytes += walked.bytes;
-      stats.files += walked.files;
-      byType[type] = stats;
-
-      if (!asset.preview) {
-        issues.push({
-          kind: "missing-preview",
-          severity: "warning",
-          assetId: asset.id,
-          name: asset.name,
-          path: asset.path,
-          message: "No preview or thumbnail found"
-        });
+      const asset = await readAssetFolder(folder.folder, folder.repo);
+      if (!asset) {
+        seen.delete(folder.folder);
+        continue;
       }
-      if (walked.zeroBytes > 0) {
-        issues.push({
-          kind: "zero-byte",
-          severity: "error",
-          assetId: asset.id,
-          name: asset.name,
-          path: asset.path,
-          message: walked.zeroBytes + " zero-byte file(s)"
-        });
-      }
-      if (walked.files === 0) {
-        issues.push({
-          kind: "empty-folder",
-          severity: "error",
-          assetId: asset.id,
-          name: asset.name,
-          path: asset.path,
-          message: "Asset folder is empty"
-        });
-      }
-      if ((type.startsWith("3d") || type === "3dplant") && walked.meshes === 0) {
-        issues.push({
-          kind: "missing-mesh",
-          severity: "warning",
-          assetId: asset.id,
-          name: asset.name,
-          path: asset.path,
-          message: "No mesh file found"
-        });
-      }
-      if (["surface", "atlas", "decal"].includes(type) && walked.textures === 0) {
-        issues.push({
-          kind: "missing-texture",
-          severity: "warning",
-          assetId: asset.id,
-          name: asset.name,
-          path: asset.path,
-          message: "No texture file found"
-        });
-      }
-    }
-
-    const duplicates: Array<{ assetId: string; paths: string[] }> = [];
-    for (const [assetId, paths] of ids) {
-      if (paths.length < 2) continue;
-      duplicates.push({ assetId, paths });
-      issues.push({
-        kind: "duplicate-id",
-        severity: "warning",
-        assetId,
-        path: paths.join("; "),
-        message: "Asset ID appears in " + paths.length + " locations"
+      const jsonInfo = await stat(asset.jsonPath).catch(() => null);
+      changes.push({
+        asset,
+        folderMtime: folder.folderMtime,
+        jsonMtime: jsonInfo?.mtimeMs ?? 0
       });
     }
 
-    return {
+    this.index.upsertMany(changes);
+    const deleted = this.index.deleteMissing(seen);
+    const scannedAt = Date.now();
+    this.index.setScannedAt(scannedAt);
+    this.snapshotCache = null;
+
+    const assets = includeAssets ? this.index.allAssets() : [];
+    this.logger.info("Library scan complete", {
       libraryPath,
-      scannedAt: Date.now(),
-      assets: records.length,
-      files,
-      totalBytes,
-      byType,
-      issues,
-      duplicates
-    };
+      assets: includeAssets ? assets.length : this.index.counts().all,
+      changed: changes.length,
+      skipped,
+      deleted,
+      milliseconds: scannedAt - started,
+      indexed: true
+    });
+    return { assets, scannedAt, libraryPath };
+  }
+
+  async snapshot(force = false): Promise<LibrarySnapshot> {
+    if (!force && this.snapshotCache) return this.snapshotCache;
+    await this.scan(force, false);
+    const snapshot = this.index.getSnapshot(this.getLibraryPath());
+    this.snapshotCache = snapshot;
+    return snapshot;
+  }
+
+  query(options: LibraryQuery): LibraryQueryResult {
+    return this.index.query(options);
+  }
+  ids(options: LibraryQuery): string[] {
+    return this.index.ids(options);
+  }
+
+  async health(
+    force = false,
+    onProgress?: (progress: LibraryHealthProgress) => void
+  ): Promise<LibraryHealthReport> {
+    const libraryPath = this.getLibraryPath();
+    const started = Date.now();
+    await this.scan(false, false);
+    this.snapshotCache = this.index.getSnapshot(libraryPath);
+    const rows = this.index.healthRows(force);
+    const total = rows.length;
+    let checked = 0;
+    let batch: Array<{
+      path: string;
+      stats: { files: number; bytes: number; zeroBytes: number; meshes: number; textures: number };
+      issues: LibraryIssue[];
+    }> = [];
+    onProgress?.({ checked: 0, total, percent: 0 });
+    for (const row of rows) {
+      const walked = await walkAssetFolder(row.path);
+      batch.push({
+        path: row.path,
+        stats: {
+          files: walked.files,
+          bytes: walked.bytes,
+          zeroBytes: walked.zeroBytes,
+          meshes: walked.meshes,
+          textures: walked.textures
+        },
+        issues: issuesForAsset(row, walked)
+      });
+      checked += 1;
+      if (batch.length >= 25) {
+        this.index.setHealthMany(batch);
+        batch = [];
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      if (checked % 10 === 0 || checked === total) {
+        onProgress?.({
+          checked,
+          total,
+          percent: total > 0 ? Math.round((checked / total) * 100) : 100
+        });
+      }
+    }
+    if (batch.length > 0) this.index.setHealthMany(batch);
+    const report = this.index.healthReport(libraryPath);
+    this.logger.info("Library health complete", {
+      libraryPath,
+      checked,
+      assets: report.assets,
+      issues: report.issues.length,
+      milliseconds: Date.now() - started
+    });
+    return report;
   }
 
   async removeAssets(assetIds: string[]): Promise<{ removed: number }> {
     const wanted = new Set(assetIds);
-    const result = await this.scan(true);
-    let removed = 0;
+    const result = await this.scan(false);
     const libraryRoot = resolve(this.getLibraryPath());
+    let removed = 0;
     for (const asset of result.assets) {
       if (!wanted.has(asset.id)) continue;
       const target = resolve(asset.path);
@@ -352,20 +407,20 @@ export class LibraryService {
       await rm(target, { recursive: true, force: true });
       removed += 1;
     }
-    this.invalidate();
+    if (removed > 0) {
+      await this.scan(false);
+      this.snapshotCache = null;
+    }
     return { removed };
   }
 
   invalidate(): void {
-    this.cache = null;
+    this.snapshotCache = null;
   }
-
-  private async writeCache(result: ScanResult): Promise<void> {
-    try {
-      await writeFile(this.cacheFile, JSON.stringify(result), "utf8");
-    } catch (error) {
-      this.logger.warn("Could not write library cache", { error });
-    }
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.index.close();
   }
 }
 

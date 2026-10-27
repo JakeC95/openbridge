@@ -9,6 +9,8 @@ import type {
   DownloadOptions,
   DownloadProgress,
   ExtendedAsset,
+  LibraryCounts,
+  LibraryRef,
   Profile,
   RepoKind,
   SyncStatus,
@@ -21,6 +23,7 @@ type View = "discover" | "library" | "downloads" | "settings";
 type LocalRepo = "all" | RepoKind;
 
 let catalogRequest = 0;
+let libraryRequest = 0;
 
 interface Versions {
   app: string;
@@ -67,7 +70,14 @@ interface State {
   nbHits: number;
   catalogLoading: boolean;
   catalogError: string | null;
-  localAssets: AssetRecord[];
+  localRefs: LibraryRef[];
+  libraryAssets: AssetRecord[];
+  libraryCounts: LibraryCounts;
+  libraryTotal: number;
+  libraryFilteredTotal: number;
+  libraryLoading: boolean;
+  libraryHasMore: boolean;
+  libraryScannedAt: number | null;
   localQuery: string;
   localRepo: LocalRepo;
   selection: Selection | null;
@@ -90,6 +100,7 @@ interface State {
   clearFilters(): void;
   search(reset?: boolean): Promise<void>;
   refreshLibrary(force?: boolean): Promise<void>;
+  queryLocalLibrary(reset?: boolean): Promise<void>;
   setLocalQuery(query: string): void;
   setLocalRepo(repo: LocalRepo): void;
   openHit(hit: CatalogHit): Promise<void>;
@@ -165,7 +176,14 @@ export const useStore = create<State>((set, get) => ({
   nbHits: 0,
   catalogLoading: false,
   catalogError: null,
-  localAssets: [],
+  localRefs: [],
+  libraryAssets: [],
+  libraryCounts: { all: 0, downloaded: 0, custom: 0, dhi: 0 },
+  libraryTotal: 0,
+  libraryFilteredTotal: 0,
+  libraryLoading: false,
+  libraryHasMore: false,
+  libraryScannedAt: null,
   localQuery: "",
   localRepo: "all",
   selection: null,
@@ -178,15 +196,21 @@ export const useStore = create<State>((set, get) => ({
   async init() {
     if (initPromise) return initPromise;
     initPromise = (async () => {
-      const [settings, auth, library, categories, downloads, sync, versions] = await Promise.all([
+      const [settings, auth, categories, downloads, sync, versions] = await Promise.all([
         window.openbridge.getSettings(),
         window.openbridge.auth.state(),
-        window.openbridge.listAssets(false),
         window.openbridge.catalog.categories().catch(() => []),
         window.openbridge.downloads.list().catch(() => []),
         window.openbridge.sync.status().catch(() => emptySync),
         window.openbridge.versions()
       ]);
+      const library = await window.openbridge.librarySnapshot(false);
+      const firstPage = await window.openbridge.queryLibrary({
+        query: "",
+        repo: "all",
+        limit: 300,
+        offset: 0
+      });
 
       const downloadMap: Record<string, DownloadProgress> = {};
       for (const item of downloads) downloadMap[item.assetId] = item;
@@ -194,7 +218,13 @@ export const useStore = create<State>((set, get) => ({
       set({
         settings,
         auth,
-        localAssets: library.assets,
+        localRefs: library.refs,
+        libraryAssets: firstPage.assets,
+        libraryCounts: firstPage.counts,
+        libraryTotal: firstPage.counts.all,
+        libraryFilteredTotal: firstPage.total,
+        libraryHasMore: firstPage.hasMore,
+        libraryScannedAt: library.scannedAt,
         categories,
         downloads: downloadMap,
         sync,
@@ -210,7 +240,14 @@ export const useStore = create<State>((set, get) => ({
 
       unsubscribers = [
         window.openbridge.onLibraryUpdated(result => {
-          set({ localAssets: result.assets });
+          set({
+            localRefs: result.refs,
+            libraryCounts: result.counts,
+            libraryTotal: result.total,
+            libraryFilteredTotal: 0,
+            libraryScannedAt: result.scannedAt
+          });
+          void get().queryLocalLibrary(true);
         }),
         window.openbridge.onNotification(payload => {
           get().toast(payload.message, payload.error);
@@ -230,7 +267,7 @@ export const useStore = create<State>((set, get) => ({
           set({ downloads: { ...current, [progress.assetId]: progress } });
           if (progress.status === "complete") {
             get().toast(`${progress.name ?? progress.assetId} downloaded`);
-            void get().refreshLibrary(false);
+            void get().refreshLibrary(true);
           }
           if (progress.status === "error" && progress.message) {
             get().toast(progress.message, true);
@@ -387,9 +424,43 @@ export const useStore = create<State>((set, get) => ({
 
   async refreshLibrary(force = false) {
     try {
-      const result = await window.openbridge.listAssets(force);
-      set({ localAssets: result.assets });
+      const result = await window.openbridge.librarySnapshot(force);
+      set({
+        localRefs: result.refs,
+        libraryCounts: result.counts,
+        libraryTotal: result.counts.all,
+        libraryScannedAt: result.scannedAt
+      });
+      await get().queryLocalLibrary(true);
     } catch (error) {
+      get().toast(error instanceof Error ? error.message : String(error), true);
+    }
+  },
+
+  async queryLocalLibrary(reset = true) {
+    const requestId = ++libraryRequest;
+    const { localQuery, localRepo, libraryAssets } = get();
+    const offset = reset ? 0 : libraryAssets.length;
+    set({ libraryLoading: true });
+    try {
+      const result = await window.openbridge.queryLibrary({
+        query: localQuery,
+        repo: localRepo,
+        limit: 300,
+        offset
+      });
+      if (requestId !== libraryRequest) return;
+      set(state => ({
+        libraryAssets: reset ? result.assets : [...state.libraryAssets, ...result.assets],
+        libraryCounts: result.counts,
+        libraryTotal: result.counts.all,
+        libraryFilteredTotal: result.total,
+        libraryHasMore: result.hasMore,
+        libraryLoading: false
+      }));
+    } catch (error) {
+      if (requestId !== libraryRequest) return;
+      set({ libraryLoading: false });
       get().toast(error instanceof Error ? error.message : String(error), true);
     }
   },
