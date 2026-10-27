@@ -7,6 +7,10 @@ import { createRequire } from "node:module";
 // Uses an isolated Electron profile and a fixture preload; never opens the real app/library/session.
 const directory = await mkdtemp(join(tmpdir(), "openbridge-ui-"));
 const require = createRequire(import.meta.url);
+// Hosted runners expose a small virtual desktop, so clamp every requested size to the work area.
+// Set OPENBRIDGE_UI_WIDTH/HEIGHT to reproduce a narrower layout locally.
+const viewportWidth = Number(process.env.OPENBRIDGE_UI_WIDTH) || 1440;
+const viewportHeight = Number(process.env.OPENBRIDGE_UI_HEIGHT) || 1000;
 const preload = `
 const { contextBridge } = require('electron');
 const image = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="sienna"/></svg>');
@@ -61,11 +65,14 @@ contextBridge.exposeInMainWorld('fixtureDownloading',()=>progressListener(downlo
 contextBridge.exposeInMainWorld('fixtureProgress',value=>progressListener({...downloadItem,diagnostics:{...downloadItem.diagnostics,receiveBytesPerSecond:value,writeBytesPerSecond:value*0.9}}));
 `;
 const main = `
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, screen } = require('electron');
 const assert = require('node:assert/strict');
 app.setPath('userData', ${JSON.stringify(join(directory, "profile"))});
 app.whenReady().then(async()=>{
- const win = new BrowserWindow({show:false,width:1440,height:1000,webPreferences:{preload:${JSON.stringify(join(directory, "preload.cjs"))},contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false,offscreen:true}});
+ const area = screen.getPrimaryDisplay().workAreaSize;
+ const width = Math.min(${viewportWidth}, area.width);
+ const height = Math.min(${viewportHeight}, area.height);
+ const win = new BrowserWindow({show:false,width,height,webPreferences:{preload:${JSON.stringify(join(directory, "preload.cjs"))},contextIsolation:true,nodeIntegration:false,sandbox:false,backgroundThrottling:false,offscreen:true}});
  const errors=[];
  win.webContents.on('console-message',event=>{if(event.level==='error')errors.push(event.message)});
  try {
@@ -175,9 +182,12 @@ app.whenReady().then(async()=>{
     assert(document.querySelector('.image-viewer-canvas img').naturalWidth===4096,'Retry did not load high-res image');
     clickText(document.querySelector('.image-viewer'),'Close preview');await wait(50);
     document.querySelector('.drawer [title="Close"]').click();
+    const columnCount=()=>getComputedStyle(root().querySelector('.virtual-grid-window')).gridTemplateColumns.split(' ').length;
+    const comfortableColumns=columnCount();
     await choose('Thumbnail size','Compact thumbnails');
-    const grid=root().querySelector('.virtual-grid-window');
-    assert(getComputedStyle(grid).gridTemplateColumns.split(' ').length>=5,'Compact density not applied');
+    const compactColumns=columnCount();
+    assert(compactColumns>comfortableColumns,'Compact density did not add columns: '+comfortableColumns+' -> '+compactColumns);
+    assert(compactColumns>=3,'Compact density produced too few columns: '+compactColumns);
     const summary=[...root().querySelectorAll('summary')].find(item=>item.textContent.startsWith('Packs'));summary.click();await wait(30);
     const packButton=[...summary.parentElement.querySelectorAll('button')].find(item=>item.textContent.startsWith('Forest'));packButton.click();await wait(100);
     assert(root().querySelector('.asset-heading').textContent.includes('Forest'),'Pack results heading missing');
@@ -226,8 +236,8 @@ app.whenReady().then(async()=>{
     await win.webContents.executeJavaScript(\`document.querySelector('.library .asset-card').click();\`);
     await new Promise(resolve => setTimeout(resolve, 150));
     await win.webContents.executeJavaScript(\`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent.trim()==='Maps').click();\`);
-    for (const [name, width, height, drawer] of [['maps-wide',1440,1000,480],['maps-narrow',1024,768,320],['maps-long-label',1024,768,320],['render-narrow',1024,768,320]]) {
-      win.setSize(width,height);
+    for (const [name, requestedWidth, requestedHeight, drawer] of [['maps-wide',1440,1000,480],['maps-narrow',1024,768,320],['maps-long-label',1024,768,320],['render-narrow',1024,768,320]]) {
+      win.setSize(Math.min(requestedWidth,width),Math.min(requestedHeight,height));
       await win.webContents.executeJavaScript(\`document.documentElement.style.setProperty('--drawer', '\${drawer}px');\`);
       if (name === 'maps-long-label') await win.webContents.executeJavaScript(\`document.querySelector('.map-nav-label strong').textContent='Texture set foliage / Billboard / Translucency variation 24';\`);
       if (name === 'render-narrow') await win.webContents.executeJavaScript(\`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent.trim()==='Render').click();\`);

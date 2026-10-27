@@ -54,6 +54,10 @@ responses, then exercises range resume, ignored/bad ranges, compression, stalled
 transfer telemetry against a loopback server, including Electron's real network stack. See
 [NETWORKING.md](NETWORKING.md) for policy, cache lifetimes, limits and comparison caveats.
 
+The UI check clamps its window to the desktop work area, so it also runs on small CI desktops. Set
+`OPENBRIDGE_UI_WIDTH` and `OPENBRIDGE_UI_HEIGHT` to reproduce a narrower layout locally, and set
+`OPENBRIDGE_UI_SCREENSHOTS` to a directory to write preview-layout screenshots.
+
 For manual download verification, start a real download and confirm the statistics line shows a
 moving download rate and a plausible write rate, and that expanding the source summary lists the
 actual serving host. Treat the reported location as a CDN edge hint, not proof of where the asset
