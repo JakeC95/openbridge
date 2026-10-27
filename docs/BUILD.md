@@ -105,16 +105,16 @@ downloads the zip, verifies size and SHA-256, then replaces the portable files a
 
 ```
 dist/OpenBridge-1.1.2-win-x64-portable/OpenBridge.exe   working portable build
-dist/OpenBridge-1.1.2-win-x64-portable.zip               158,992,855 bytes
-dist/OpenBridge Setup 1.1.2.exe                          122,512,714 bytes (unsigned)
+dist/OpenBridge-1.1.2-win-x64-portable.zip               158,993,935 bytes
+dist/OpenBridge Setup 1.1.2.exe                          122,513,211 bytes (unsigned)
 ```
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             0687C0061AD1B9164B67D6FA4D3721E5CF34A751985EAC7F4BA848935556E7ED
-NSIS installer           2BE66FEE9B082348B42922984E34EEFF3EBEA02353ED1B188010C906C5201446
+portable zip             382E3F15F588E2D2A03C52C1D4405191DB78256A3CB5B341BDB22048BAE55F88
+NSIS installer           FB8869D1E13B023C07113CD46305E914A19860652B193D5DDEAB3252D0D5E521
 ```
 
 See [TESTING.md](TESTING.md) for the runtime validation log.

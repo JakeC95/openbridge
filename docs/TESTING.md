@@ -11,6 +11,8 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 - Packaged portable reports `1.1.2`, title `OpenBridge`, 48 catalogue cards, 18,835 catalogue
   assets and 5 local assets.
 - Portable `OpenBridge.exe` is byte-identical to Electron 45 and passes Smart App Control.
+- The packaged 1.1.2 build checked the published GitHub manifest and returned `current: 1.1.2`,
+  `latest: 1.1.2`, `available: false`.
 - The NSIS installer is unsigned and remains blocked on this machine.
 
 ### Settings and per-type defaults
@@ -57,8 +59,8 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             0687C0061AD1B9164B67D6FA4D3721E5CF34A751985EAC7F4BA848935556E7ED
-unsigned NSIS installer  2BE66FEE9B082348B42922984E34EEFF3EBEA02353ED1B188010C906C5201446
+portable zip             382E3F15F588E2D2A03C52C1D4405191DB78256A3CB5B341BDB22048BAE55F88
+unsigned NSIS installer  FB8869D1E13B023C07113CD46305E914A19860652B193D5DDEAB3252D0D5E521
 ```
 
 ### Updater test
