@@ -77,10 +77,10 @@ Still open from this area:
 - Remote card readiness badges and drawer semantic/pack/revision/technical sections.
 - Library refinements for readiness, triangle budget, colour, condition and setting.
 - Schema v4 local index with readiness and semantic fields, rebuilt from local JSON.
+- Plant billboard previews via the authenticated download signing endpoint.
 
 Still open:
 
-- Billboard texture previews currently cannot be signed through the map-preview base URL.
 - Sampled material/texture-set payloads are empty, so a material explorer needs a data audit first.
 
 ## Phase 5 - Export pipeline (deferred)

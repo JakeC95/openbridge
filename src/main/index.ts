@@ -6,7 +6,7 @@ import { LocalApiServer } from "./api-server";
 import { BridgeLink } from "./bridge-link";
 import { CatalogMetadataProvider } from "./catalog-metadata";
 import { CatalogPackBuilder } from "./catalog-pack-builder";
-import { DownloadManager } from "./download-manager";
+import { buildDownloadPayload, DownloadManager } from "./download-manager";
 import { downloadFile, extractZip } from "./downloader";
 import { buildExportAsset, sendToSocket, writeMegascansJson } from "./exporter";
 import {
@@ -15,7 +15,7 @@ import {
   searchCatalog,
   searchCatalogIds
 } from "./legacy-api";
-import { buildMapPreviews } from "./map-previews";
+import { buildBillboardPreviews, buildMapPreviews } from "./map-previews";
 import { recommendedDownloadDefaults } from "../shared/download-defaults";
 import { LibraryService } from "./library";
 import { Logger } from "./logger";
@@ -531,7 +531,32 @@ function registerIpc(): void {
   ipcMain.handle("catalog:mapPreviews", async (_event, assetId: string) => {
     const asset = await requireApi().extended(assetId);
     const signedBase = await requireApi().signedMapsUrl();
-    return buildMapPreviews(asset, signedBase);
+    const previews = buildMapPreviews(asset, signedBase);
+    if ((asset.billboards?.length ?? 0) > 0) {
+      try {
+        const options: DownloadOptions = {
+          resolution: 1024,
+          textureFormat: "jpg",
+          components: [],
+          meshFormat: "fbx",
+          lods: Array.from({ length: 9 }, () => false),
+          downloadAllPlantLods: false,
+          highpoly: false,
+          ztool: false,
+          brushes: false,
+          uniqueMapsPerLod: false,
+          billboards: true,
+          variation: 1
+        };
+        const response = await requireApi().requestDownload(
+          buildDownloadPayload(asset, assetId, options)
+        );
+        previews.push(...buildBillboardPreviews(response));
+      } catch (error) {
+        logger?.warn("Billboard preview signing failed", { assetId, error });
+      }
+    }
+    return previews;
   });
   ipcMain.handle("catalog:acquired", () => requireApi().acquired());
   ipcMain.handle("catalog:favorites", () => requireApi().favorites());

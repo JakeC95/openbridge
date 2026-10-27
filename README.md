@@ -12,26 +12,26 @@ The Windows shell follows the 2025 Bridge proportions: a responsive 320/280 px s
 nested category tree, header search, 48 px filter bar, image-first asset cards with hover labels,
 and a 120 px right-side asset drawer.
 
-## Windows v1.4.0 artifact
+## Windows v1.4.1 artifact
 
 OpenBridge is distributed as a portable app. No installer is built or published:
 
 ```
-dist\OpenBridge-1.4.0-win-x64-portable\OpenBridge.exe
-dist\OpenBridge-1.4.0-win-x64-portable.zip
+dist\OpenBridge-1.4.1-win-x64-portable\OpenBridge.exe
+dist\OpenBridge-1.4.1-win-x64-portable.zip
 ```
 
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
-Release: <https://github.com/example-owner/openbridge/releases/tag/v1.4.0>
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.4.1>
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             7A2D56D5F9F7798D24FAFC4940320101AB2192B1FB6A538D2D6AC2A7496E5244
+portable zip             6428DD227E883530C5143647EE42B402FDC7D413A7E3F7DAC7AA76E43E0AE5AF
 catalog-metadata.json.gz EDF1237AD02A3B4DF82FE58C2A0A677859DA6E0CCD6A42509533710037A02411
 ```
 
@@ -78,8 +78,9 @@ Verified against the live legacy services on this machine:
 - **Indexed library at scale**: SQLite/WAL index with FTS5 search, incremental scans,
   server-side counts and 300-row paging, virtualized local and catalogue grids, select-all-filtered
   and health progress. Unchanged assets skip JSON re-reading on subsequent scans.
-- **Texture map previews**: Render and Maps views, signed 1K previews, map labels/resolutions,
-  arrow/keyboard cycling and texture-set handling. No asset folder is created by previewing.
+- **Texture map previews**: Render and Maps views, signed 1K previews, plant billboard previews,
+  map labels/resolutions, arrow/keyboard cycling and texture-set handling. No asset folder is
+  created by previewing.
 - **Multi-select and bulk download**: shift-click ranges, select loaded, select all in the current
   category/filter, add/clear, confirmation above 100 items, skip already-owned assets, and a
   capped 300-row Downloads view.
@@ -142,7 +143,7 @@ For a local release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.4.0 "dist\OpenBridge-1.4.0-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.4.1 "dist\OpenBridge-1.4.1-win-x64-portable.zip"
 ```
 
 OpenBridge checks

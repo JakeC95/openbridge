@@ -1,3 +1,4 @@
+import type { DownloadResponse } from "./legacy-api";
 import type { ExtendedAsset, MapPreview } from "../shared/types";
 
 const MAP_LABELS: Record<string, string> = {
@@ -58,9 +59,47 @@ function signedFileUrl(base: string, uri: string): string {
   return `${base.replace(/\/+$/, "")}/${file}`;
 }
 
+function billboardMapType(descriptor: {
+  type?: unknown;
+  uri?: unknown;
+}): string {
+  if (typeof descriptor.type === "string" && descriptor.type) {
+    return descriptor.type.toLowerCase();
+  }
+  const uri = typeof descriptor.uri === "string" ? descriptor.uri : "";
+  const match = uri.match(/Billboard_\d+K_([A-Za-z0-9]+)\./i);
+  return match?.[1]?.toLowerCase() ?? "";
+}
+
+export function buildBillboardPreviews(
+  response: DownloadResponse | undefined
+): MapPreview[] {
+  const seen = new Set<string>();
+  const output: MapPreview[] = [];
+  for (const descriptor of response?.billboards ?? []) {
+    const uri = typeof descriptor.uri === "string" ? descriptor.uri : "";
+    const mimeType =
+      typeof descriptor.mimeType === "string" ? descriptor.mimeType : "";
+    if (!uri || !mimeType.startsWith("image/") || mimeType.includes("exr")) continue;
+    const type = billboardMapType(descriptor);
+    if (!type || seen.has(type)) continue;
+    seen.add(type);
+    output.push({
+      type: `billboard:${type}`,
+      label: `Billboard / ${mapLabel(type)}`,
+      url: uri,
+      resolution:
+        typeof descriptor.resolution === "number"
+          ? String(descriptor.resolution)
+          : typeof descriptor.resolution === "string"
+            ? descriptor.resolution
+            : undefined
+    });
+  }
+  return output.sort((a, b) => a.label.localeCompare(b.label));
+}
 export function buildMapPreviews(asset: ExtendedAsset, signedBase: string): MapPreview[] {
   const maps = asset.referencePreviews?.maps ?? [];
-  if (maps.length === 0) return [];
 
   const textureSets = new Set<string>();
   for (const map of maps) {

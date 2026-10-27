@@ -1,6 +1,6 @@
 # Validation log
 
-## v1.4.0 (current)
+## v1.4.1 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
@@ -28,9 +28,9 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 - Remote drawers show semantic tags, pack, revision, mesh readiness, material workflow,
   alpha/opacity and billboards.
 - Materials and texture sets render only when the extended payload contains non-empty data.
-- Billboard texture previews were prototyped but the returned `/quixel-megascans-assets/` signed
-  URLs return 403; the carousel is limited to the working reference maps until a signed billboard
-  endpoint is found.
+- Plant billboard previews now use the authenticated download signing endpoint. Xeric Grass
+  exposes 11 billboard maps after the reference maps, labeled `Billboard / Albedo`, etc., and the
+  1024x1024 JPEGs load successfully.
 
 ## v1.3.2
 

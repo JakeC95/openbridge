@@ -94,7 +94,7 @@ Manual release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.4.0 "dist\OpenBridge-1.4.0-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.4.1 "dist\OpenBridge-1.4.1-win-x64-portable.zip"
 ```
 
 Upload that zip and `latest.json` to a GitHub release. If the optional catalogue metadata pack is
@@ -107,15 +107,15 @@ portable files after the app exits and restarts it.
 ## Verified artifact
 
 ```
-dist/OpenBridge-1.4.0-win-x64-portable/OpenBridge.exe
-dist/OpenBridge-1.4.0-win-x64-portable.zip   159,056,990 bytes
+dist/OpenBridge-1.4.1-win-x64-portable/OpenBridge.exe
+dist/OpenBridge-1.4.1-win-x64-portable.zip   159,058,427 bytes
 ```
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             7A2D56D5F9F7798D24FAFC4940320101AB2192B1FB6A538D2D6AC2A7496E5244
+portable zip             6428DD227E883530C5143647EE42B402FDC7D413A7E3F7DAC7AA76E43E0AE5AF
 catalog-metadata.json.gz EDF1237AD02A3B4DF82FE58C2A0A677859DA6E0CCD6A42509533710037A02411
 ```
 
