@@ -1,13 +1,13 @@
 # Validation log
 
-## v1.2.0 (current)
+## v1.2.1 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 ### Build and package
 
 - `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
-- Packaged portable reports `1.2.0` and starts with 48 catalogue cards and 5 local assets.
+- Packaged portable reports `1.2.1` and starts with 48 catalogue cards and 5 local assets.
 - The packaged Electron runtime successfully loads `node:sqlite` and the FTS5 index.
 
 ### Indexed library
@@ -22,6 +22,8 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
   - `desert-western` normalized to two terms and returned 3 assets.
 - Repository filters and counts are evaluated by SQLite; selecting Custom returned 0 while the
   global library count stayed 5.
+- Single-asset validation, drawer export and selected-asset export now resolve rows through the
+  index instead of scanning the whole library; deletion also targets indexed paths directly.
 
 ### Scale and virtualization
 
@@ -47,11 +49,10 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
+portable zip             B98324278EDC8A6350C40961B8FD6F816BCBDC4F5B2F9E3B8C5E2B37ABF23F20
 ```
 
-The portable zip hash is added after the release workflow publishes the artifact.
-
-### Not tested in v1.2.0
+### Not tested in v1.2.1
 
 - A real library with tens of thousands of files; scale behavior was measured with synthetic index
   rows plus the 5-asset validation library.
@@ -60,7 +61,6 @@ The portable zip hash is added after the release workflow publishes the artifact
 - Microsoft Store-style packaging or any non-portable distribution.
 
 ## v1.1.2
-
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 

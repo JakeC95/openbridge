@@ -12,26 +12,26 @@ The Windows shell follows the 2025 Bridge proportions: a responsive 320/280 px s
 nested category tree, header search, 48 px filter bar, image-first asset cards with hover labels,
 and a 120 px right-side asset drawer.
 
-## Windows v1.2.0 artifact
+## Windows v1.2.1 artifact
 
 OpenBridge is distributed as a portable app. No installer is built or published:
 
 ```
-dist\OpenBridge-1.2.0-win-x64-portable\OpenBridge.exe
-dist\OpenBridge-1.2.0-win-x64-portable.zip
+dist\OpenBridge-1.2.1-win-x64-portable\OpenBridge.exe
+dist\OpenBridge-1.2.1-win-x64-portable.zip
 ```
 
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
-Release: <https://github.com/example-owner/openbridge/releases/tag/v1.2.0>
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.2.1>
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             382E3F15F588E2D2A03C52C1D4405191DB78256A3CB5B341BDB22048BAE55F88
+portable zip             B98324278EDC8A6350C40961B8FD6F816BCBDC4F5B2F9E3B8C5E2B37ABF23F20
 ```
 
 ## v1.2 features (Windows)
@@ -130,7 +130,7 @@ For a local release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.2.0 "dist\OpenBridge-1.2.0-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.2.1 "dist\OpenBridge-1.2.1-win-x64-portable.zip"
 ```
 
 OpenBridge checks

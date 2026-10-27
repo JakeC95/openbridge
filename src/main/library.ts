@@ -332,6 +332,13 @@ export class LibraryService {
     return snapshot;
   }
 
+  getAsset(id: string): AssetRecord | null {
+    return this.index.getById(id);
+  }
+
+  getAssets(ids: string[]): AssetRecord[] {
+    return this.index.getByIds(ids);
+  }
   query(options: LibraryQuery): LibraryQueryResult {
     return this.index.query(options);
   }
@@ -396,19 +403,17 @@ export class LibraryService {
   }
 
   async removeAssets(assetIds: string[]): Promise<{ removed: number }> {
-    const wanted = new Set(assetIds);
-    const result = await this.scan(false);
+    const records = this.index.getByIds(assetIds);
     const libraryRoot = resolve(this.getLibraryPath());
     let removed = 0;
-    for (const asset of result.assets) {
-      if (!wanted.has(asset.id)) continue;
+    for (const asset of records) {
       const target = resolve(asset.path);
       if (!target.startsWith(libraryRoot + sep)) continue;
       await rm(target, { recursive: true, force: true });
       removed += 1;
     }
     if (removed > 0) {
-      await this.scan(false);
+      await this.scan(false, false);
       this.snapshotCache = null;
     }
     return { removed };

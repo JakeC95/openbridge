@@ -248,6 +248,29 @@ export class LibraryIndex {
     return counts;
   }
 
+  getById(id: string): AssetRecord | null {
+    const row = this.db
+      .prepare("SELECT * FROM assets WHERE id = ? ORDER BY mtime DESC LIMIT 1")
+      .get(id) as unknown as AssetRow | undefined;
+    return row ? rowToAsset(row) : null;
+  }
+
+  getByIds(ids: string[]): AssetRecord[] {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return [];
+    const rows: AssetRow[] = [];
+    for (let index = 0; index < unique.length; index += 500) {
+      const chunk = unique.slice(index, index + 500);
+      const placeholders = chunk.map(() => "?").join(",");
+      const found = this.db
+        .prepare(
+          `SELECT * FROM assets WHERE id IN (${placeholders}) ORDER BY mtime DESC`
+        )
+        .all(...chunk) as unknown as AssetRow[];
+      rows.push(...found);
+    }
+    return rows.map(rowToAsset);
+  }
   allAssets(): AssetRecord[] {
     const rows = this.db
       .prepare("SELECT * FROM assets ORDER BY mtime DESC")

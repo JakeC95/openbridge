@@ -62,6 +62,7 @@ export function LibraryView() {
       firstQuery.current = false;
       return;
     }
+    setSelectedIds(new Set());
     const timer = setTimeout(() => {
       bodyRef.current?.scrollTo({ top: 0 });
       void queryLocalLibrary(true);

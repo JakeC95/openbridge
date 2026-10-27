@@ -93,7 +93,7 @@ async function validateAssetJson(assetId: string): Promise<JsonValidationReport>
   if (!library) {
     return { ok: false, assetId, jsonPath: "", error: "Library service is not ready" };
   }
-  const record = (await library.scan(true)).assets.find(asset => asset.id === assetId);
+  const record = library.getAsset(assetId);
   if (!record) {
     return { ok: false, assetId, jsonPath: "", error: "Asset is not in the local library" };
   }
@@ -431,9 +431,7 @@ function registerIpc(): void {
     "library:exportAssets",
     async (_event, assetIds: string[], folder: string) => {
       if (!library) throw new Error("Library service is not ready");
-      const wanted = new Set(assetIds);
-      const result = await library.scan(true);
-      const records = result.assets.filter(asset => wanted.has(asset.id));
+      const records = library.getAssets(assetIds);
       const payload = await Promise.all(
         records.map(asset => buildExportAsset(asset, exportPath()))
       );
@@ -490,14 +488,14 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("export:assetToFolder", async (_event, assetId: string, folder: string) => {
-    const record = (await library?.scan())?.assets.find(asset => asset.id === assetId);
+    const record = library?.getAsset(assetId);
     if (!record) throw new Error(`Asset ${assetId} is not in the library`);
     const payload = await buildExportAsset(record, exportPath());
     return writeMegascansJson(folder, [payload]);
   });
 
   ipcMain.handle("export:assetToPort", async (_event, assetId: string, port: number) => {
-    const record = (await library?.scan())?.assets.find(asset => asset.id === assetId);
+    const record = library?.getAsset(assetId);
     if (!record) throw new Error(`Asset ${assetId} is not in the library`);
     const payload = await buildExportAsset(record, exportPath());
     await sendToSocket(port, [payload]);
