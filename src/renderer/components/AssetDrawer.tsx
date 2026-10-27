@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { Dropdown } from "./Dropdown";
 import type {
@@ -11,7 +11,6 @@ import type {
 } from "../../shared/types";
 import {
   aclResolution,
-  formatPoints,
   hitId,
   hitPreview,
   hitThumb,
@@ -348,8 +347,6 @@ export function AssetDrawer() {
                 <strong>{extended.acl.exrAccess}</strong>
               </>
             )}
-            <span>Price</span>
-            <strong>{owned ? "Owned" : formatPoints(points)}</strong>
           </div>
 
           {extended?.similarAssets && extended.similarAssets.length > 0 && (

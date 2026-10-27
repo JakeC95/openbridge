@@ -1,14 +1,15 @@
 # Validation log
 
-## v1.2.2 (current)
+## v1.2.3 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 ### Build and package
 
 - `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
-- Packaged portable reports `1.2.2` and starts with 48 catalogue cards and 5 local assets.
+- Packaged portable reports `1.2.3` and starts with 48 catalogue cards and 5 local assets.
 - The packaged Electron runtime successfully loads `node:sqlite` and the FTS5 index.
+- Asset cards and the drawer no longer display point prices; free/owned states remain.
 
 ### Indexed library
 
@@ -64,7 +65,7 @@ electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B
 portable zip             261F6A5E53C5FBDC304D0E0A1AE5547B5B34CEEE9FD866A1B0E83FF531F13E6F
 ```
 
-### Not tested in v1.2.2
+### Not tested in v1.2.3
 
 - A real library with tens of thousands of files; scale behavior was measured with synthetic index
   rows plus the 5-asset validation library.

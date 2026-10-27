@@ -72,7 +72,7 @@ Manual release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.2.2 "dist\OpenBridge-1.2.2-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.2.3 "dist\OpenBridge-1.2.3-win-x64-portable.zip"
 ```
 
 Upload that zip and `latest.json` to a GitHub release. OpenBridge checks
@@ -83,8 +83,8 @@ portable files after the app exits and restarts it.
 ## Verified artifact
 
 ```
-dist/OpenBridge-1.2.2-win-x64-portable/OpenBridge.exe
-dist/OpenBridge-1.2.2-win-x64-portable.zip   159,011,927 bytes
+dist/OpenBridge-1.2.3-win-x64-portable/OpenBridge.exe
+dist/OpenBridge-1.2.3-win-x64-portable.zip   159,011,000 bytes
 ```
 
 SHA-256:

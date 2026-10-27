@@ -80,7 +80,4 @@ export function mapTypes(asset: ExtendedAsset | undefined): string[] {
   return [...types].sort();
 }
 
-export function formatPoints(points: number | undefined): string {
-  if (!points) return "Free";
-  return `${points.toLocaleString()} pts`;
-}
+
