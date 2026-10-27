@@ -1,4 +1,8 @@
-﻿import { assetDefaultsKind } from "../shared/download-defaults";
+import {
+  assetDefaultsKind,
+  DEFAULT_MAP_TYPES,
+  KNOWN_MAP_TYPES
+} from "../shared/download-defaults";
 import type {
   AppSettings,
   DownloadMapFormat,
@@ -9,43 +13,7 @@ import type {
   TextureFormat
 } from "../shared/types";
 
-export const DEFAULT_SELECTED_MAPS = new Set([
-  "albedo",
-  "ao",
-  "displacement",
-  "fuzz",
-  "metalness",
-  "normal",
-  "opacity",
-  "roughness",
-  "translucency",
-  "transmission",
-  "brush"
-]);
-
-const CANONICAL = [
-  "albedo",
-  "ao",
-  "normal",
-  "normalbump",
-  "normalobject",
-  "displacement",
-  "bump",
-  "roughness",
-  "metalness",
-  "specular",
-  "gloss",
-  "diffuse",
-  "cavity",
-  "curvature",
-  "opacity",
-  "translucency",
-  "transmission",
-  "fuzz",
-  "thickness",
-  "mask",
-  "brush"
-];
+const CANONICAL = KNOWN_MAP_TYPES;
 
 export const MAP_FORMAT_OPTIONS: Array<{ value: DownloadMapFormat; label: string }> = [
   { value: "image/jpeg", label: "JPG" },
@@ -197,6 +165,7 @@ export function buildDownloadOptions(
     preferences.textureFormat ?? preset?.textureFormat ?? "jpg";
   const baseMime = textureMime(textureFormat);
   const types = availableMapTypes(asset);
+  const selectedMaps = new Set(preset?.selectedMaps ?? DEFAULT_MAP_TYPES);
   const components: DownloadMapOption[] = types.map(type => {
     const saved = preferences.components?.[type];
     let mimeType: DownloadMapFormat =
@@ -204,7 +173,7 @@ export function buildDownloadOptions(
     if (mimeType !== "image/jpeg" && !canUseExr(asset, type)) mimeType = "image/jpeg";
     return {
       type,
-      selected: saved?.selected ?? DEFAULT_SELECTED_MAPS.has(type),
+      selected: saved?.selected ?? selectedMaps.has(type),
       mimeType
     };
   });

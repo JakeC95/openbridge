@@ -93,8 +93,8 @@ Manual release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.1.0 "dist\OpenBridge-1.1.0-win-x64-portable.zip"
-gh release create v1.1.0 "dist\OpenBridge-1.1.0-win-x64-portable.zip" latest.json --title "OpenBridge 1.1.0"
+node scripts/make-update-manifest.mjs 1.1.1 "dist\OpenBridge-1.1.1-win-x64-portable.zip"
+gh release create v1.1.1 "dist\OpenBridge-1.1.1-win-x64-portable.zip" latest.json --title "OpenBridge 1.1.1"
 ```
 
 OpenBridge checks
@@ -104,17 +104,17 @@ downloads the zip, verifies size and SHA-256, then replaces the portable files a
 ## Verified artifacts
 
 ```
-dist/OpenBridge-1.1.0-win-x64-portable/OpenBridge.exe   working portable build
-dist/OpenBridge-1.1.0-win-x64-portable.zip               158,991,301 bytes
-dist/OpenBridge Setup 1.1.0.exe                          122,511,592 bytes (unsigned)
+dist/OpenBridge-1.1.1-win-x64-portable/OpenBridge.exe   working portable build
+dist/OpenBridge-1.1.1-win-x64-portable.zip               158,992,855 bytes
+dist/OpenBridge Setup 1.1.1.exe                          122,512,714 bytes (unsigned)
 ```
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             1B3CA76F127EE3C037C6D20FA5443D9897215F1379A7F6300DC75F09DFC00E80
-NSIS installer           BB51C181B96051BF997605B53B36B9ECA70DD10B1F5E7B9CE7FAF64D430CFAE6
+portable zip             0687C0061AD1B9164B67D6FA4D3721E5CF34A751985EAC7F4BA848935556E7ED
+NSIS installer           2BE66FEE9B082348B42922984E34EEFF3EBEA02353ED1B188010C906C5201446
 ```
 
 See [TESTING.md](TESTING.md) for the runtime validation log.

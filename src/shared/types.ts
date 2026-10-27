@@ -7,6 +7,7 @@ export interface DownloadPreset {
   resolution: number;
   textureFormat: TextureFormat;
   meshFormat: MeshFormat;
+  selectedMaps: string[];
   lods: boolean[];
   highpoly: boolean;
   ztool: boolean;

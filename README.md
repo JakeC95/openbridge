@@ -12,28 +12,28 @@ The Windows shell follows the 2025 Bridge proportions: a responsive 320/280 px s
 nested category tree, header search, 48 px filter bar, image-first asset cards with hover labels,
 and a 120 px right-side asset drawer.
 
-## Windows v1.1.0 artifact
+## Windows v1.1.1 artifact
 
 The working build is the portable app (the NSIS installer is also built but is unsigned and is
 blocked by this machine's Application Control policy):
 
 ```
-dist\OpenBridge-1.1.0-win-x64-portable\OpenBridge.exe
-dist\OpenBridge-1.1.0-win-x64-portable.zip
+dist\OpenBridge-1.1.1-win-x64-portable\OpenBridge.exe
+dist\OpenBridge-1.1.1-win-x64-portable.zip
 ```
 
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
-Release: <https://github.com/example-owner/openbridge/releases/tag/v1.1.0>
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.1.1>
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             1B3CA76F127EE3C037C6D20FA5443D9897215F1379A7F6300DC75F09DFC00E80
-unsigned NSIS installer  BB51C181B96051BF997605B53B36B9ECA70DD10B1F5E7B9CE7FAF64D430CFAE6
+portable zip             0687C0061AD1B9164B67D6FA4D3721E5CF34A751985EAC7F4BA848935556E7ED
+unsigned NSIS installer  2BE66FEE9B082348B42922984E34EEFF3EBEA02353ED1B188010C906C5201446
 ```
 
 ## v1.1 features (Windows)
@@ -52,9 +52,10 @@ Verified against the live legacy services on this machine:
 - **Full category tree**: all eight top-level categories plus nested categories, live Algolia
   counts, `assetCategories` path filtering, Favorites and Free filters.
 - **Per-type download defaults**: separate presets for 3D Assets, 3D Plants, Surfaces and Other 2D
-  assets. Each stores resolution, texture format, mesh format, LODs, highpoly, ZTool, brushes,
-  unique maps per LOD, billboards and plant LOD behavior. Drawer changes apply to one download;
-  presets apply to single and bulk downloads.
+  assets. Each stores resolution, texture format, default maps, mesh format, LODs, highpoly, ZTool,
+  brushes, unique maps per LOD, billboards and plant LOD behavior. Drawer changes apply to one
+  download; presets apply to single and bulk downloads. Map presets support Common/All/None
+  shortcuts.
 - **Full download options**: 1K/2K/4K/8K with ACL capping, per-map JPG/EXR/JPG+EXR, LOD 0-8,
   FBX/ABC, Highpoly Source, Source ZTool, Brushes, unique maps per LOD, all plant LODs, billboards
   and variations.
@@ -127,7 +128,7 @@ For a local release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.1.0 "dist\OpenBridge-1.1.0-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.1.1 "dist\OpenBridge-1.1.1-win-x64-portable.zip"
 ```
 
 OpenBridge checks

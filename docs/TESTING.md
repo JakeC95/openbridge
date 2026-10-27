@@ -1,6 +1,6 @@
 # Validation log
 
-## v1.1.0 (current)
+## v1.1.1 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
@@ -8,7 +8,7 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 - `npm run typecheck`, `npm run build`, `npm run dist:portable` and `npm run dist:win` completed
   successfully.
-- Packaged portable reports `1.1.0`, title `OpenBridge`, 48 catalogue cards, 18,835 catalogue
+- Packaged portable reports `1.1.1`, title `OpenBridge`, 48 catalogue cards, 18,835 catalogue
   assets and 5 local assets.
 - Portable `OpenBridge.exe` is byte-identical to Electron 45 and passes Smart App Control.
 - The NSIS installer is unsigned and remains blocked on this machine.
@@ -16,10 +16,18 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 ### Settings and per-type defaults
 
 - The Settings view has four preset cards: 3D Assets, 3D Plants, Surfaces, Other 2D Assets.
+- Each card exposes 21 default-map toggles with Common/All/None shortcuts. The recommended preset
+  selects 11 maps (albedo, AO, displacement, fuzz, metalness, normal, opacity, roughness,
+  translucency, transmission and brush), for 44 selected chips across the four cards.
 - Removed controls are absent: offline library, stall timeout, parallel-file count and update-feed
   URL.
 - An API round-trip set 3D to 4K/ABC, 3D Plants to 2K with highpoly, and Surfaces to EXR; the saved
   values were returned correctly. Restoring the original settings returned 8K/FBX.
+- Toggling Normal Bump in the 3D card saved only the 3D preset to 12 maps; the other three presets
+  stayed at 11. Restoring the preset returned 11.
+- With the 3D preset reduced to albedo only, opening `xgmpcby` showed just the Albedo checkbox
+  selected in the drawer. A pure resolver test confirmed preset maps apply to main-process bulk
+  downloads and explicit drawer components still override the preset.
 - `Ctrl+K` opened the command palette; ArrowDown + Enter navigated to Settings. Typing a query and
   pressing Enter also executed catalogue search.
 - Custom dropdowns render with `rgb(32, 32, 32)`, receive keyboard focus, close with Escape and
@@ -49,11 +57,11 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             1B3CA76F127EE3C037C6D20FA5443D9897215F1379A7F6300DC75F09DFC00E80
-unsigned NSIS installer  BB51C181B96051BF997605B53B36B9ECA70DD10B1F5E7B9CE7FAF64D430CFAE6
+portable zip             0687C0061AD1B9164B67D6FA4D3721E5CF34A751985EAC7F4BA848935556E7ED
+unsigned NSIS installer  2BE66FEE9B082348B42922984E34EEFF3EBEA02353ED1B188010C906C5201446
 ```
 
-### Not tested in v1.1.0
+### Not tested in v1.1.1
 
 - Installing a newer release through the auto-updater (no newer published release existed at test
   time). The published 1.1.0 manifest check was verified; the app reported `current: 1.1.0`,

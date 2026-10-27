@@ -2895,6 +2895,66 @@ body {
   margin-top: 4px;
 }
 
+.preset-maps {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #2d2d2d;
+}
+
+.preset-maps-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.preset-maps-head .label {
+  margin: 0;
+}
+
+.preset-maps-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.preset-map-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.map-chip {
+  height: 30px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  background: #222;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-chip:hover {
+  border-color: #555;
+  color: var(--text);
+}
+
+.map-chip.active {
+  border-color: var(--blue);
+  background: rgba(38, 187, 255, 0.14);
+  color: var(--text);
+}
+
+.preset-maps-note {
+  margin: 8px 0 0;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
 .settings-advanced {
   margin: 18px 0;
   border: 1px solid #333;

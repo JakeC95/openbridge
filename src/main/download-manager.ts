@@ -2,7 +2,10 @@ import { app } from "electron";
 import { cp, mkdir, readFile, readdir, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
-import { assetDefaultsKind } from "../shared/download-defaults";
+import {
+  assetDefaultsKind,
+  DEFAULT_MAP_TYPES
+} from "../shared/download-defaults";
 import type {
   AppSettings,
   BatchStartResult,
@@ -40,19 +43,6 @@ const FILE_CONCURRENCY = 4;
 const DOWNLOAD_TIMEOUT_SEC = 30;
 const DOWNLOAD_RETRIES = 3;
 
-const DEFAULT_SELECTED = new Set([
-  "albedo",
-  "ao",
-  "displacement",
-  "fuzz",
-  "metalness",
-  "normal",
-  "opacity",
-  "roughness",
-  "translucency",
-  "transmission",
-  "brush"
-]);
 
 const CANONICAL_MAP_ORDER = [
   "albedo",
@@ -152,7 +142,9 @@ function mapDefinitions(asset: ExtendedAsset): Array<{ type: string }> {
 }
 
 export function availableMapTypes(asset: ExtendedAsset): string[] {
-  const types = new Set(mapDefinitions(asset).map(definition => definition.type));
+  const types = new Set(
+    mapDefinitions(asset).map(definition => definition.type.toLowerCase())
+  );
   if (types.size === 0) {
     CANONICAL_MAP_ORDER.forEach(type => types.add(type));
   }
@@ -224,15 +216,17 @@ function clampResolution(resolution: number | undefined, asset: ExtendedAsset): 
 
 function defaultComponents(
   asset: ExtendedAsset,
-  textureFormat: TextureFormat
+  textureFormat: TextureFormat,
+  selectedMaps: string[] = DEFAULT_MAP_TYPES
 ): DownloadMapOption[] {
   const baseMime = mimeForTexture(textureFormat);
+  const selected = new Set(selectedMaps);
   return availableMapTypes(asset).map(type => {
     const preferred: DownloadMapFormat =
       type === "displacement" ? "jpeg+exr" : baseMime;
     const mimeType =
       preferred !== "image/jpeg" && !canDownloadExr(asset, type) ? "image/jpeg" : preferred;
-    return { type, selected: DEFAULT_SELECTED.has(type), mimeType };
+    return { type, selected: selected.has(type), mimeType };
   });
 }
 
@@ -246,7 +240,7 @@ export function resolveDownloadOptions(
   const components =
     partial.components && partial.components.length > 0
       ? partial.components
-      : defaultComponents(asset, textureFormat);
+      : defaultComponents(asset, textureFormat, preset?.selectedMaps);
   const availableLods = new Set(assetLodIndices(asset));
   return {
     resolution: clampResolution(partial.resolution ?? preset?.resolution, asset),

@@ -1,7 +1,7 @@
-﻿import { createDecipheriv } from "node:crypto";
+import { createDecipheriv } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { recommendedDownloadDefaults } from "../shared/download-defaults";
+import { DEFAULT_MAP_TYPES, recommendedDownloadDefaults } from "../shared/download-defaults";
 import type { AppSettings, AssetDefaultsKind } from "../shared/types";
 
 const LEGACY_KEY = Buffer.from("REDACTED", "utf8");
@@ -95,10 +95,20 @@ export class SettingsStore {
     const normalized = recommendedDownloadDefaults();
     for (const kind of Object.keys(normalized) as AssetDefaultsKind[]) {
       const preset = presets[kind] ?? normalized[kind];
+      const selectedMaps = Array.isArray(preset.selectedMaps)
+        ? preset.selectedMaps
+        : DEFAULT_MAP_TYPES;
       normalized[kind] = {
         resolution: [1024, 2048, 4096, 8192].includes(preset.resolution) ? preset.resolution : 8192,
         textureFormat: preset.textureFormat === "exr" ? "exr" : "jpg",
         meshFormat: preset.meshFormat === "abc" ? "abc" : "fbx",
+        selectedMaps: [
+          ...new Set(
+            selectedMaps
+              .map(value => String(value).trim().toLowerCase())
+              .filter(Boolean)
+          )
+        ],
         lods: Array.from({ length: 9 }, (_, index) => preset.lods?.[index] ?? true),
         highpoly: Boolean(preset.highpoly),
         ztool: Boolean(preset.ztool),

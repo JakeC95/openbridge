@@ -5,9 +5,14 @@ import type {
   AssetDefaultsKind,
   DownloadPreset
 } from "../../shared/types";
-import { recommendedDownloadDefaults } from "../../shared/download-defaults";
+import {
+  DEFAULT_MAP_TYPES,
+  KNOWN_MAP_TYPES,
+  recommendedDownloadDefaults
+} from "../../shared/download-defaults";
 import { CheckIcon, FolderIcon, SyncIcon, UserIcon } from "../icons";
 import { Dropdown } from "../components/Dropdown";
+import { mapTypeLabel } from "../download-options";
 
 const PRESET_SECTIONS: Array<{
   kind: AssetDefaultsKind;
@@ -246,6 +251,77 @@ export function SettingsView() {
                     )}
                   </div>
 
+                  <div className="preset-maps">
+                    <div className="preset-maps-head">
+                      <span className="label">Default maps</span>
+                      <div className="preset-maps-actions">
+                        <button
+                          type="button"
+                          className="text-btn"
+                          onClick={() =>
+                            patch(
+                              updatePreset(draft, section.kind, {
+                                selectedMaps: [...DEFAULT_MAP_TYPES]
+                              })
+                            )
+                          }
+                        >
+                          Common
+                        </button>
+                        <button
+                          type="button"
+                          className="text-btn"
+                          onClick={() =>
+                            patch(
+                              updatePreset(draft, section.kind, {
+                                selectedMaps: [...KNOWN_MAP_TYPES]
+                              })
+                            )
+                          }
+                        >
+                          All
+                        </button>
+                        <button
+                          type="button"
+                          className="text-btn"
+                          onClick={() =>
+                            patch(updatePreset(draft, section.kind, { selectedMaps: [] }))
+                          }
+                        >
+                          None
+                        </button>
+                      </div>
+                    </div>
+                    <div className="preset-map-grid">
+                      {KNOWN_MAP_TYPES.map(type => {
+                        const active = preset.selectedMaps.includes(type);
+                        return (
+                          <button
+                            type="button"
+                            key={type}
+                            className={active ? "map-chip active" : "map-chip"}
+                            aria-pressed={active}
+                            onClick={() =>
+                              patch(
+                                updatePreset(draft, section.kind, {
+                                  selectedMaps: active
+                                    ? preset.selectedMaps.filter(value => value !== type)
+                                    : [...preset.selectedMaps, type]
+                                })
+                              )
+                            }
+                          >
+                            {mapTypeLabel(type)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="preset-maps-note">
+                      Only maps present on an asset are requested.{" "}
+                      {preset.selectedMaps.length} selected.
+                    </p>
+                  </div>
+
                   {section.lods && (
                     <div className="preset-options">
                       <span className="label">Default LODs</span>
@@ -438,7 +514,7 @@ export function SettingsView() {
           <h2>Updates</h2>
           <div className="inline-status">
             <span>
-              OpenBridge v{versions?.app ?? "1.1.0"}
+              OpenBridge v{versions?.app ?? "1.1.1"}
               {update?.available ? ` — version ${update.latest} is available` : ""}
               {update?.error ? ` — ${update.error}` : ""}
             </span>
