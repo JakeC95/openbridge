@@ -56,7 +56,8 @@ unsigned NSIS installer  BB51C181B96051BF997605B53B36B9ECA70DD10B1F5E7B9CE7FAF64
 ### Not tested in v1.1.0
 
 - Installing a newer release through the auto-updater (no newer published release existed at test
-  time). The 1.1.0 manifest check itself is published with the release.
+  time). The published 1.1.0 manifest check was verified; the app reported `current: 1.1.0`,
+  `latest: 1.1.0`, `available: false` and the correct asset URL, size and SHA-256.
 - A forced-quit transfer resume from a partial `.part` file.
 - Mixed per-type bulk download against legacy services; defaults were verified through the settings
   API and the renderer option builder.

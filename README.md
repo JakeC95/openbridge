@@ -25,6 +25,8 @@ dist\OpenBridge-1.1.0-win-x64-portable.zip
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.1.0>
+
 SHA-256:
 
 ```
