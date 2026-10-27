@@ -9,8 +9,14 @@ third_party/
 Thumbs.db
 config.local.json
 config.local.*.json
+!config.local.example.json
 .env
 .env.*
-deepseek_api_key.txt
+*.key
+*.pem
+*_api_key.txt
+*.sqlite
+*.sqlite-*
+catalog-metadata*.json.gz
 latest.json
 .opencode/

@@ -88,12 +88,8 @@ Setting parallel files to 5
 
 ### 4.2 Legacy settings file
 
-`%APPDATA%\Megascans Bridge\settings.dat` is base64 of AES-256-CBC:
-
-- key: `REDACTED` (32 bytes)
-- IV: `REDACTED` (16 bytes)
-
-Decrypted shape:
+`%APPDATA%\Megascans Bridge\settings.dat` is base64 of AES-256-CBC. The recovered key and IV are
+intentionally omitted from this repository. Decrypted shape:
 
 ```json
 {
@@ -104,6 +100,8 @@ Decrypted shape:
   "userEmail": ""
 }
 ```
+
+OpenBridge does not ship a legacy-settings importer or the decryption material.
 
 ### 4.3 electron-settings
 

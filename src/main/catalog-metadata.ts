@@ -10,10 +10,10 @@ import type {
   CatalogMetadataStatus
 } from "../shared/types";
 import { downloadFile } from "./downloader";
+import { releaseAssetUrl } from "./project";
 import type { Logger } from "./logger";
 
-const METADATA_PACK_URL =
-  "https://github.com/example-owner/openbridge/releases/latest/download/catalog-metadata.json.gz";
+const METADATA_PACK_URL = releaseAssetUrl("catalog-metadata.json.gz");
 const BATCH_SIZE = 500;
 
 interface PackHeader {

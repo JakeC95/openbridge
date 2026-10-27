@@ -19,7 +19,7 @@ import { buildBillboardPreviews, buildMapPreviews } from "./map-previews";
 import { recommendedDownloadDefaults } from "../shared/download-defaults";
 import { LibraryService } from "./library";
 import { Logger } from "./logger";
-import { readLegacySettings, SettingsStore } from "./settings";
+import { SettingsStore } from "./settings";
 import { SyncService } from "./sync";
 import { UpdateService } from "./updater";
 import type {
@@ -724,9 +724,8 @@ async function init(): Promise<void> {
   await mkdir(join(userData, "logs"), { recursive: true });
   logger = new Logger(logFilePath());
 
-  const legacy = readLegacySettings(app.getPath("appData"));
   const defaults: AppSettings = {
-    libraryPath: legacy?.megascansPath || join(app.getPath("documents"), "Megascans Library"),
+    libraryPath: join(app.getPath("documents"), "Megascans Library"),
     apiPort: 28241,
     discoveryPort: 28852,
     autoSyncEnabled: true,

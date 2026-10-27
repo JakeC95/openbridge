@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a reproducible problem with OpenBridge
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Redact account names, email addresses, tokens, local absolute paths, machine identifiers and
+        proprietary asset URLs. Security issues must be reported privately instead.
+  - type: input
+    id: version
+    attributes:
+      label: OpenBridge version
+      placeholder: "1.4.1"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Remove personal paths, account data, tokens and asset URLs before posting.
+      render: text
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed personal information and credentials.
+          required: true
+        - label: I searched for an existing report.
+          required: true

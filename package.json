@@ -2,17 +2,22 @@
   "name": "openbridge",
   "version": "1.4.1",
   "private": true,
-  "description": "Open-source reimplementation of the discontinued Quixel Bridge desktop app",
+  "description": "Open-source, portable library manager for Quixel Megascans assets on Windows",
   "productName": "OpenBridge",
   "desktopName": "openbridge",
   "main": "out/main/index.js",
   "license": "MIT",
   "author": "OpenBridge Contributors",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
+    "check:public": "node scripts/check-public-repo.mjs",
+    "check": "npm run typecheck && npm run check:public",
     "dist:portable": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1",
     "catalog:pack": "npm run build && electron . --build-catalog-pack=dist/catalog-metadata.json.gz",
     "catalog:pack:sample": "npm run build && electron . --build-catalog-pack=dist/catalog-metadata-sample.json.gz --catalog-limit=50",
@@ -32,13 +37,5 @@
     "electron": "^45.0.0",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.3"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/example-owner/openbridge.git"
-  },
-  "homepage": "https://github.com/example-owner/openbridge",
-  "bugs": {
-    "url": "https://github.com/example-owner/openbridge/issues"
   }
 }

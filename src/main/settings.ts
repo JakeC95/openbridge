@@ -1,4 +1,3 @@
-import { createDecipheriv } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
@@ -10,35 +9,6 @@ import {
 } from "../shared/download-defaults";
 import type { AppSettings, AssetDefaultsKind } from "../shared/types";
 
-const LEGACY_KEY = Buffer.from("REDACTED", "utf8");
-const LEGACY_IV = Buffer.from("REDACTED", "utf8");
-
-export interface LegacySettings {
-  megascansPath?: string;
-  offlineMegascansPath?: string;
-  zipPaths?: string[];
-  userEmail?: string;
-}
-
-/**
- * Reads the old Bridge settings.dat (base64 AES-256-CBC) if it exists. Only used
- * to migrate the user's own library path; nothing from it is ever uploaded.
- */
-export function readLegacySettings(appDataDir: string): LegacySettings | null {
-  const file = join(appDataDir, "Megascans Bridge", "settings.dat");
-  if (!existsSync(file)) return null;
-
-  try {
-    const decipher = createDecipheriv("aes-256-cbc", LEGACY_KEY, LEGACY_IV);
-    let text = decipher.update(readFileSync(file, "utf8"), "base64", "utf8");
-    text += decipher.final("utf8");
-    const end = text.lastIndexOf("}");
-    if (end === -1) return null;
-    return JSON.parse(text.slice(0, end + 1)) as LegacySettings;
-  } catch {
-    return null;
-  }
-}
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);

@@ -1,10 +1,24 @@
 ﻿import { build } from "esbuild";
+import { execFileSync } from "node:child_process";
 import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const out = join(root, "out");
+
+function repositoryFromGit() {
+  try {
+    const remote = execFileSync("git", ["config", "--get", "remote.origin.url"], {
+      cwd: root,
+      encoding: "utf8"
+    }).trim();
+    const match = remote.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+    return match ? `${match[1]}/${match[2]}` : "";
+  } catch {
+    return "";
+  }
+}
 
 let localConfig = {};
 try {
@@ -31,9 +45,22 @@ if (!localConfig.epicClientId || !localConfig.algoliaApiKey) {
   console.warn("legacy service credentials are empty; catalogue and sign-in will not work");
 }
 
+const repository = (
+  process.env.OPENBRIDGE_REPOSITORY ||
+  process.env.GITHUB_REPOSITORY ||
+  localConfig.repository ||
+  repositoryFromGit()
+).trim();
+if (!repository) {
+  console.warn(
+    "repository owner/name not detected; set OPENBRIDGE_REPOSITORY for update checks"
+  );
+}
+
 const define = {
   "process.env.NODE_ENV": '"production"',
-  __OPENBRIDGE_CONFIG__: JSON.stringify(localConfig)
+  __OPENBRIDGE_CONFIG__: JSON.stringify(localConfig),
+  __OPENBRIDGE_REPOSITORY__: JSON.stringify(repository)
 };
 
 await rm(out, { recursive: true, force: true });

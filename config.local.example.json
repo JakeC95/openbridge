@@ -1,0 +1,11 @@
+{
+  "epicClientId": "",
+  "algoliaAppId": "",
+  "algoliaApiKey": "",
+  "algoliaIndex": "assets",
+  "apiBaseUrl": "https://quixel.com/",
+  "ssoBaseUrl": "https://accounts.quixel.se/api/v1/",
+  "signedUrlBase": "https://rps.quixel.com/",
+  "realm": "megascans-bridge",
+  "repository": ""
+}

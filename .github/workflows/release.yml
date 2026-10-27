@@ -20,6 +20,7 @@ jobs:
       OPENBRIDGE_SSO_BASE: ${{ secrets.OPENBRIDGE_SSO_BASE }}
       OPENBRIDGE_SIGNED_URL_BASE: ${{ secrets.OPENBRIDGE_SIGNED_URL_BASE }}
       OPENBRIDGE_REALM: ${{ secrets.OPENBRIDGE_REALM }}
+      OPENBRIDGE_REPOSITORY: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +38,7 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run typecheck
+      - run: npm run check:public
       - run: npm run dist:portable
 
       - shell: pwsh

@@ -5,11 +5,12 @@ import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import type { UpdateInfo } from "../shared/types";
 import { downloadFile } from "./downloader";
+import { releaseAssetUrl } from "./project";
 import type { Logger } from "./logger";
 
 const UPDATE_MANIFEST =
   process.env.OPENBRIDGE_UPDATE_MANIFEST?.trim() ||
-  "https://github.com/example-owner/openbridge/releases/latest/download/latest.json";
+  releaseAssetUrl("latest.json");
 
 function versionParts(version: string): number[] {
   return version
@@ -87,6 +88,14 @@ export class UpdateService {
   async check(): Promise<UpdateInfo> {
     const current = app.getVersion();
     const checkedAt = Date.now();
+    if (!UPDATE_MANIFEST) {
+      return {
+        current,
+        available: false,
+        checkedAt,
+        error: "Update repository is not configured for this build"
+      };
+    }
 
     try {
       const response = await net.fetch(UPDATE_MANIFEST, {
