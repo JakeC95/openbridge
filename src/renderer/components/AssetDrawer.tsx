@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { Dropdown } from "./Dropdown";
+import { ImageViewer } from "./ImageViewer";
 import type {
   CatalogHit,
   DownloadMapFormat,
@@ -22,6 +23,7 @@ import {
   hitId,
   hitPreview,
   hitThumb,
+  renderPreviews,
   typeLabel
 } from "../catalog-utils";
 import {
@@ -90,6 +92,10 @@ export function AssetDrawer() {
   const cancelDownload = useStore(state => state.cancelDownload);
   const validateJson = useStore(state => state.validateJson);
   const toast = useStore(state => state.toast);
+  const history = useStore(state => state.selectionHistory);
+  const hits = useStore(state => state.hits);
+  const libraryAssets = useStore(state => state.libraryAssets);
+  const catalogMetadata = useStore(state => state.catalogMetadata);
 
   const hit = selection?.hit;
   const local = selection?.local;
@@ -107,6 +113,19 @@ export function AssetDrawer() {
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [related, setRelated] = useState<CatalogHit[]>([]);
   const [relatedLoading, setRelatedLoading] = useState(false);
+  const [renderIndex, setRenderIndex] = useState(0);
+  const [localRenders, setLocalRenders] = useState<MapPreview[]>([]);
+  const [localMaps, setLocalMaps] = useState<MapPreview[]>([]);
+  const [localPreviewError, setLocalPreviewError] = useState("");
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const renders = useMemo(() => local ? localRenders : renderPreviews(hit, extended), [local, localRenders, hit, extended]);
+  const loadHighResolution = useCallback((item: MapPreview, signal?: AbortSignal) => {
+    if (!item.map) return Promise.resolve(null);
+    const cancel = () => { void window.openbridge.catalog.cancel("preview").catch(() => undefined); };
+    signal?.addEventListener("abort", cancel, { once: true });
+    return window.openbridge.catalog.highResolutionPreview(assetId, item.map)
+      .finally(() => signal?.removeEventListener("abort", cancel));
+  }, [assetId]);
 
   const assetType = extended?.type ?? hit?.type ?? local?.type ?? "";
   const threeD = is3d(extended, assetType);
@@ -133,7 +152,21 @@ export function AssetDrawer() {
     setMapIndex(0);
     setMapsError(null);
     setMapsLoading(false);
+    setRenderIndex(0);
+    setViewerOpen(false);
+    setLocalRenders([]);
+    setLocalMaps([]);
+    setLocalPreviewError("");
   }, [assetId]);
+
+  useEffect(() => {
+    if (!local) return;
+    let cancelled = false;
+    void window.openbridge.localPreviews(local.id, local.path).then(result => {
+      if (!cancelled) { setLocalRenders(result.renders); setLocalMaps(result.maps); }
+    }).catch(error => { if (!cancelled) setLocalPreviewError(String(error)); });
+    return () => { cancelled = true; };
+  }, [local]);
 
   useEffect(() => {
     const inline = (extended?.similarAssets ?? []).filter(
@@ -168,7 +201,7 @@ export function AssetDrawer() {
         categoryPath,
         page: 0,
         hitsPerPage: 24
-      });
+      }, "related");
       return result.hits.filter(
         item => item && (item.id || item.objectID) && hitId(item) !== assetId
       );
@@ -186,8 +219,10 @@ export function AssetDrawer() {
         };
 
         add(await search(tags.slice(0, 2).join(" "), categoryPath));
+        if (cancelled) return;
         if (merged.size < 8 && tags[0]) {
           add(await search(tags[0], categoryPath));
+          if (cancelled) return;
         }
         if (merged.size < 8) {
           add(await search("", categoryPath));
@@ -203,28 +238,41 @@ export function AssetDrawer() {
 
     return () => {
       cancelled = true;
+      void window.openbridge.catalog.cancel("related").catch(() => undefined);
     };
   }, [assetId, extended]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (!selection || viewerOpen) return;
       if (event.key === "Escape") {
         close();
         return;
       }
-      if (previewMode !== "maps" || mapPreviews.length === 0) return;
+      if (event.defaultPrevented || (event.target as HTMLElement)?.closest("input,select,textarea,[role=listbox],[contenteditable=true]")) return;
+      if (event.altKey && event.key === "ArrowLeft") {
+        event.preventDefault(); useStore.getState().backSelection(); return;
+      }
+      if (previewMode !== "maps") {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          event.preventDefault(); useStore.getState().stepSelection(event.key === "ArrowLeft" ? -1 : 1);
+        }
+        return;
+      }
+      const count = local ? localMaps.length : mapPreviews.length;
+      if (count === 0) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        setMapIndex(index => (index - 1 + mapPreviews.length) % mapPreviews.length);
+        setMapIndex(index => (index - 1 + count) % count);
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        setMapIndex(index => (index + 1) % mapPreviews.length);
+        setMapIndex(index => (index + 1) % count);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [close, mapPreviews.length, previewMode]);
+  }, [close, mapPreviews.length, localMaps.length, local, previewMode, selection, viewerOpen]);
 
   if (!selection) return null;
 
@@ -235,11 +283,17 @@ export function AssetDrawer() {
     : hit
       ? hitPreview(hit)
       : null;
-  const activeMap = previewMode === "maps" ? mapPreviews[mapIndex] : undefined;
-  const activePreview = activeMap?.url ?? (previewMode === "maps" ? null : preview);
+  const availableMaps = local ? localMaps : mapPreviews;
+  const activeMap = previewMode === "maps" ? availableMaps[mapIndex] : undefined;
+  const renderItems = renders.length ? renders : preview ? [{ type: "render", label: "Render", url: preview }] : [];
+  const activePreview = activeMap?.url ?? (previewMode === "maps" ? null : renderItems[renderIndex]?.url);
+  const previewItems = previewMode === "maps" ? availableMaps : renderItems;
+  const resultIndex = local ? libraryAssets.findIndex(asset => asset.path === local.path)
+    : hits.findIndex(item => hitId(item) === assetId);
+  const resultCount = local ? libraryAssets.length : hits.length;
 
   async function openMaps(): Promise<void> {
-    if (local) return;
+    if (local) { setPreviewMode("maps"); setMapIndex(0); return; }
     if (!auth.loggedIn) {
       await login();
       if (!useStore.getState().auth.loggedIn) return;
@@ -248,23 +302,29 @@ export function AssetDrawer() {
     if (mapPreviews.length > 0 || mapsLoading) return;
     setMapsLoading(true);
     setMapsError(null);
+    const currentId = assetId;
     try {
       const maps = await window.openbridge.catalog.mapPreviews(assetId);
+      const current = useStore.getState().selection;
+      if ((current?.hit ? hitId(current.hit) : current?.local?.id) !== currentId) return;
       setMapPreviews(maps);
       setMapIndex(0);
       if (maps.length === 0) {
         setMapsError("No texture map previews are available for this asset");
       }
     } catch (error) {
+      const current = useStore.getState().selection;
+      if ((current?.hit ? hitId(current.hit) : current?.local?.id) !== currentId) return;
       setMapsError(error instanceof Error ? error.message : String(error));
     } finally {
-      setMapsLoading(false);
+      const current = useStore.getState().selection;
+      if ((current?.hit ? hitId(current.hit) : current?.local?.id) === currentId) setMapsLoading(false);
     }
   }
 
   function stepMap(delta: number): void {
-    if (mapPreviews.length === 0) return;
-    setMapIndex(index => (index + delta + mapPreviews.length) % mapPreviews.length);
+    if (availableMaps.length === 0) return;
+    setMapIndex(index => (index + delta + availableMaps.length) % availableMaps.length);
   }
 
   const name = local?.name ?? hit?.name ?? extended?.name ?? assetId;
@@ -310,7 +370,7 @@ export function AssetDrawer() {
   }
 
   const plan = options ? downloadPlan(extended, options) : null;
-  const technical = local?.technical ?? assetTechnicalFacts(extended);
+  const technical = local?.technical ?? (extended ? assetTechnicalFacts(extended) : hit?.metadata?.technical) ?? assetTechnicalFacts(extended);
   const lodBytes = lodMeshBytes(extended, options?.meshFormat ?? "fbx");
   const selectedMaps = options?.components.filter(component => component.selected).length ?? 0;
   const selectedLods = options
@@ -414,7 +474,13 @@ export function AssetDrawer() {
       <div className="drawer-backdrop" onClick={close} />
       <aside className="drawer" role="dialog" aria-label={name}>
         <div className="drawer-head">
+          <button type="button" className="text-btn" disabled={!history.length}
+            onClick={() => useStore.getState().backSelection()} title="Back to previous asset (Alt+Left)">Back</button>
           <span className="drawer-type">{typeLabel(assetType)}</span>
+          <button type="button" className="icon-btn" aria-label="Previous asset" disabled={resultIndex <= 0}
+            onClick={() => useStore.getState().stepSelection(-1)}>‹</button>
+          <button type="button" className="icon-btn" aria-label="Next asset" disabled={resultIndex < 0 || resultIndex >= resultCount - 1}
+            onClick={() => useStore.getState().stepSelection(1)}>›</button>
           <button type="button" className="icon-btn" onClick={close} title="Close">
             <CloseIcon />
           </button>
@@ -422,7 +488,7 @@ export function AssetDrawer() {
 
         <div className="drawer-scroll">
           <div className="drawer-preview">
-            {!local && (
+            {(
               <div className="preview-switch">
                 <button
                   type="button"
@@ -435,7 +501,7 @@ export function AssetDrawer() {
                   type="button"
                   className={previewMode === "maps" ? "active" : ""}
                   onClick={() => void openMaps()}
-                  title={auth.loggedIn ? "Texture maps" : "Sign in to preview maps"}
+                  title={local || auth.loggedIn ? "Texture maps" : "Sign in to preview maps"}
                 >
                   Maps
                 </button>
@@ -443,10 +509,12 @@ export function AssetDrawer() {
             )}
 
             {activePreview ? (
-              <img src={activePreview} alt={activeMap?.label ?? ""} referrerPolicy="no-referrer" />
+              <button type="button" className="expand-preview" onClick={() => setViewerOpen(true)} aria-label="Expand preview" title="Expand preview">
+                <img src={activePreview} alt={activeMap?.label ?? "Asset render"} referrerPolicy="no-referrer" />
+              </button>
             ) : previewMode === "maps" ? (
               <span className="map-preview-status">
-                {mapsLoading ? "Loading texture maps..." : mapsError ?? "No texture maps"}
+                {mapsLoading ? "Loading texture maps..." : localPreviewError || mapsError || (local ? "No browser-readable maps (JPG, PNG or WebP). EXR requires an external viewer." : "No texture maps")}
               </span>
             ) : (
               <span>{typeLabel(assetType)}</span>
@@ -462,7 +530,7 @@ export function AssetDrawer() {
             {previewMode === "maps" && activeMap && (
               <div className="map-nav">
                 <div className="map-nav-label">
-                  <strong>{activeMap.label}</strong>
+                  <strong title={activeMap.label}>{activeMap.label}</strong>
                   {activeMap.resolution && <span>{activeMap.resolution}</span>}
                 </div>
                 <div className="map-nav-actions">
@@ -475,7 +543,7 @@ export function AssetDrawer() {
                     ‹
                   </button>
                   <span>
-                    {mapIndex + 1} / {mapPreviews.length}
+                    {mapIndex + 1} / {availableMaps.length}
                   </span>
                   <button
                     type="button"
@@ -490,8 +558,29 @@ export function AssetDrawer() {
             )}
           </div>
 
+          {previewItems.length > 0 && <div className="preview-picker">
+            <Dropdown className="select-dropdown" value={String(previewMode === "maps" ? mapIndex : renderIndex)}
+              ariaLabel={previewMode === "maps" ? "Map and texture set" : "Render image"}
+              onChange={value => previewMode === "maps" ? setMapIndex(Number(value)) : setRenderIndex(Number(value))}
+              options={previewItems.map((item, index) => ({ value: String(index), label: item.label }))} />
+            <button type="button" className="btn btn-ghost preview-expand-action"
+              onClick={() => setViewerOpen(true)} aria-label="Expand preview in larger viewer">Expand</button>
+          </div>}
+          {viewerOpen && previewItems.length > 0 && <ImageViewer items={previewItems}
+            index={previewMode === "maps" ? mapIndex : renderIndex}
+            loadHighResolution={loadHighResolution}
+            onIndex={previewMode === "maps" ? setMapIndex : setRenderIndex} onClose={() => setViewerOpen(false)} />}
+
           <h2 className="drawer-title" title={name}>{name}</h2>
           <p className="drawer-id">{assetId}</p>
+          {(technical.packId || technical.packName) && <div className="pack-link">
+            <button type="button" className="btn btn-ghost" disabled={!local && !catalogMetadata?.available}
+              onClick={() => useStore.getState().browsePack({ id: technical.packId || undefined,
+                name: technical.packName || technical.packId || "Pack" }, Boolean(local))}>
+              More from {technical.packName || "this pack"}
+            </button>
+            {!local && !catalogMetadata?.available && <p className="hint">Install catalogue metadata in Settings to explore this pack.</p>}
+          </div>}
 
           {selection.loading && <div className="loading-line">Loading asset details...</div>}
           {selection.error && <div className="error-box small">{selection.error}</div>}

@@ -83,6 +83,55 @@ Still open:
 
 - Sampled material/texture-set payloads are empty, so a material explorer needs a data audit first.
 
+## Repository maintenance (done after 1.4.1)
+
+- Replaced personal/machine-specific public documentation with generic setup and testing guides.
+- Removed the legacy settings importer and recovered decryption material.
+- Made release/update repository URLs build-time configuration instead of tracked constants.
+- Added `npm run check:public`, a Quality workflow, contributing/security policy and issue\n  templates.
+- Rewrote commits and tags to purge historical personal data, then force-pushed with release
+  automation paused.
+
+Still open:
+
+- GitHub Support must purge old unreachable commit objects that remain accessible by SHA.
+- Publish the unreleased maintenance changes as the next patch release.
+
+## Browsing productivity (implemented, unreleased)
+
+- Local asset-type/category navigation with indexed counts, favorites and name/type/modified sorting.
+- Searchable recorded-pack browser and drawer links, backed by optional catalogue metadata or local
+  JSON. Recorded packs are distinct from curated Bridge collections.
+- Drawer history/Back, previous/next loaded results, recent searches/assets and visible saved searches.
+- Preserved grid position across view changes and persistent thumbnail density/sort preferences.
+- Expanded render/map inspection with zoom/pan, image selection and offline JPG/PNG/WebP map previews.
+- Expanded maps lazily sign the maximum advertised JPG tier within account limits, with animated
+  loading/decode feedback, original-preview fallback/retry and stale-image guards. High-res images
+  stay in the temporary viewer and are never finalized into the library or download queue.
+- Shared filter-query builders for visible results and all-filtered selection; bulk local operations
+  retain their query scope, including duplicate IDs in different folders.
+- Searchable/expandable facets and removable active-filter chips.
+- Disposable SQLite and isolated Electron browsing regression checks.
+
+Pack data audit of the published metadata: 7,031 of 18,835 records have pack names/IDs, covering
+190 packs (largest: 205 assets). The browser does not infer membership for unlabelled assets.
+
+## Networking hardening (implemented, unreleased)
+
+- Shared bounded JSON transport with deadlines, safe retries, jitter, Retry-After and origin queues.
+- Short-lived bounded read caches, in-flight coalescing, independent subscriber cancellation and
+  account-scoped invalidation; single-flight refresh with logout/late-response guards.
+- Obsolete search/drawer/preview cancellation, parallel independent reads and non-blocking categories.
+- Optional facet failures preserve search results with a visible warning.
+- Validator-aware, range-checked streaming transfers with size verification and safe restart,
+  compressed-body handling, closed-handle cancellation and one shared expired-URL re-sign per job.
+- Removed layered retry amplification; added deterministic networking and real Electron loopback tests.
+- Compact live download diagnostics: receive and file-stream write rates, serving host, and
+  server-reported CDN edge/region codes, with details collapsed by default.
+
+See [Networking](NETWORKING.md). Improvements are verified at the request/transfer level; no live
+end-to-end benchmark against original Bridge has been performed.
+
 ## Phase 5 - Export pipeline (deferred)
 
 - Port `app/modules/exports.js`: map selection, resolution, LOD/variation, naming conventions,

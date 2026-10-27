@@ -22,6 +22,8 @@ import type { AuthService } from "./auth";
 import { downloadFile, extractZip } from "./downloader";
 import type { DownloadResponse, FileDescriptor, LegacyApi } from "./legacy-api";
 import type { Logger } from "./logger";
+import { isRetryable } from "./network";
+import { DownloadStats } from "./download-stats";
 
 interface Job {
   assetId: string;
@@ -36,13 +38,13 @@ interface Job {
   cancelled: boolean;
   paused: boolean;
   abort?: AbortController;
+  stats?: DownloadStats;
 }
 
 const RESOLUTIONS = [1024, 2048, 4096, 8192];
 const LOD_KEYS = Array.from({ length: 9 }, (_, index) => index);
 const FILE_CONCURRENCY = 4;
 const DOWNLOAD_TIMEOUT_SEC = 30;
-const DOWNLOAD_RETRIES = 3;
 
 
 const CANONICAL_MAP_ORDER = [
@@ -403,7 +405,6 @@ export class DownloadManager {
   private queue: string[] = [];
   private running = false;
   private listeners = new Set<(progress: DownloadProgress) => void>();
-  private acquiredCache: { ids: Set<string>; at: number } | null = null;
   private readonly queueFile: string;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -570,7 +571,6 @@ export class DownloadManager {
 
   async acquire(assetId: string): Promise<void> {
     await this.api.acquire(assetId);
-    this.acquiredCache = null;
     this.notify(`Acquired ${assetId}`);
   }
 
@@ -653,12 +653,17 @@ export class DownloadManager {
   private async runJob(job: Job): Promise<void> {
     const temp = join(app.getPath("temp"), "openbridge", `asset-${job.assetId}`);
     job.abort = new AbortController();
+    job.stats = new DownloadStats();
+    let statsTimer: ReturnType<typeof setInterval> | undefined;
 
     try {
       await mkdir(temp, { recursive: true });
 
       this.setStatus(job, "requesting", "Requesting download URLs");
-      const asset = await this.api.extended(job.assetId);
+      const [asset, acquired] = await Promise.all([
+        this.api.extended(job.assetId, job.abort.signal), this.isAcquired(job.assetId, job.abort.signal)
+      ]);
+      job.abort.signal.throwIfAborted();
       job.name = asset.name;
       const options = resolveDownloadOptions(asset, job.options, this.getSettings());
       job.options = options;
@@ -673,12 +678,10 @@ export class DownloadManager {
         acl: asset.acl
       });
 
-      const acquired = await this.isAcquired(job.assetId);
       if (!acquired) {
         if ((asset.points ?? 0) === 0) {
           this.setStatus(job, "requesting", "Acquiring free asset");
           await this.api.acquire(job.assetId);
-          this.acquiredCache = null;
         } else {
           throw new Error("Asset is not acquired. Use Acquire first.");
         }
@@ -697,7 +700,7 @@ export class DownloadManager {
         options,
         payload
       });
-      const response = await this.api.requestDownload(payload);
+      const response = await this.api.requestDownload(payload, job.abort.signal);
 
       const summarise = (value: unknown): Array<Record<string, unknown>> =>
         flattenFiles(value).map(file => ({
@@ -743,6 +746,7 @@ export class DownloadManager {
         const relative = relativePath(file, job.assetId);
         if (!unique.has(relative)) unique.set(relative, file);
       }
+      if (unique.size === 0) throw new Error("Megascans returned no asset files. Check download options or sign in again.");
 
       const total = [...unique.values()].reduce(
         (sum, file) => sum + (typeof file.contentLength === "number" ? file.contentLength : 0),
@@ -770,6 +774,21 @@ export class DownloadManager {
       }
 
       const entries = [...unique.entries()];
+      let refreshedUrls: Promise<void> | null = null;
+      const refreshUrls = (): Promise<void> => {
+        if (!refreshedUrls) refreshedUrls = (async () => {
+          const fresh = await this.api.requestDownload(payload, job.abort?.signal);
+          const descriptors: FileDescriptor[] = [];
+          for (const key of ["json", "previews", "components", "meshes", "brushes", "billboards"]) flattenFiles(fresh[key], descriptors);
+          for (const descriptor of descriptors) {
+            const relative = relativePath(descriptor, job.assetId);
+            const previous = unique.get(relative);
+            if (previous && previous.contentLength !== descriptor.contentLength) throw new Error("Asset files changed. Resume to rebuild the download plan.");
+            if (previous) unique.set(relative, descriptor);
+          }
+        })();
+        return refreshedUrls;
+      };
       const receivedByPath = new Map<string, number>();
       let completedBytes = 0;
       let lastEmit = 0;
@@ -779,15 +798,19 @@ export class DownloadManager {
         job.received = completedBytes + active;
         job.total = total;
         job.ratio = total > 0 ? Math.min(1, job.received / total) : 0;
-        if (force || Date.now() - lastEmit > 120) {
+        if (force || Date.now() - lastEmit >= 250) {
           lastEmit = Date.now();
           this.emit(job);
         }
       };
+      // Keep smoothed rates honest during a stall, even if no new data arrives to trigger progress.
+      statsTimer = setInterval(() => {
+        if (!job.paused && !job.cancelled) emitProgress();
+      }, 350);
 
       const worker = async (): Promise<void> => {
         for (;;) {
-          if (job.cancelled || job.paused) return;
+          if (job.cancelled || job.paused || failure) return;
           const entry = entries.shift();
           if (!entry) return;
           const [relative, file] = entry;
@@ -802,18 +825,22 @@ export class DownloadManager {
           }
 
           let lastError: Error | null = null;
-          for (let attempt = 0; attempt < DOWNLOAD_RETRIES; attempt += 1) {
+          // Transfer retries live in downloadFile. Only expired signing URLs warrant re-signing
+          // here, once per job (shared across workers), without replaying acquisitions.
+          for (let signingAttempt = 0; signingAttempt < 2; signingAttempt++) {
             if (job.cancelled || job.paused) return;
             try {
               await downloadFile(
-                file.uri,
+                unique.get(relative)?.uri ?? file.uri,
                 target,
                 progress => {
                   receivedByPath.set(relative, progress.received);
                   emitProgress();
                 },
                 DOWNLOAD_TIMEOUT_SEC,
-                job.abort?.signal
+                job.abort?.signal,
+                expected,
+                sample => job.stats?.record(relative, sample)
               );
               const downloaded = await stat(target);
               if (typeof expected === "number" && downloaded.size !== expected) {
@@ -827,11 +854,13 @@ export class DownloadManager {
               lastError = null;
               break;
             } catch (error) {
-              if (job.cancelled || job.paused) return;
-              lastError = error instanceof Error ? error : new Error(String(error));
-              if (attempt < DOWNLOAD_RETRIES - 1) {
-                await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+              if (job.cancelled || job.paused || failure) return;
+              if ((error as { status?: number }).status === 403 && signingAttempt === 0) {
+                try { await refreshUrls(); continue; }
+                catch (refreshError) { lastError = refreshError instanceof Error ? refreshError : new Error("Could not refresh download URLs"); break; }
               }
+              lastError = error instanceof Error ? error : new Error(String(error));
+              break;
             }
           }
 
@@ -852,10 +881,18 @@ export class DownloadManager {
       await Promise.all(
         Array.from(
           { length: Math.min(FILE_CONCURRENCY, Math.max(1, entries.length)) },
-          () => worker()
+          async () => {
+            try { await worker(); }
+            catch (error) {
+              if (!failure) failure = error instanceof Error ? error : new Error("Asset transfer failed");
+              job.abort?.abort();
+            }
+          }
         )
       );
       if (failure) throw failure;
+      // Transfers are done; stop the live-rate ticker before extraction/finalisation.
+      if (statsTimer) { clearInterval(statsTimer); statsTimer = undefined; }
 
       if (job.cancelled) throw new Error("Cancelled");
       if (job.paused) {
@@ -892,6 +929,14 @@ export class DownloadManager {
       this.scanLibrary();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (!job.cancelled && !job.paused && isRetryable(error)) {
+        job.paused = true;
+        job.status = "paused";
+        job.message = "Network or server temporarily unavailable after retries. Resume to continue from verified partial files.";
+        this.emit(job);
+        this.notify(job.message, true);
+        return;
+      }
       if (job.paused) {
         job.status = "paused";
         job.message = "Paused";
@@ -911,16 +956,14 @@ export class DownloadManager {
       }
       this.emit(job);
     } finally {
+      if (statsTimer) clearInterval(statsTimer);
       job.abort = undefined;
     }
   }
 
-  private async isAcquired(assetId: string): Promise<boolean> {
-    if (!this.acquiredCache || Date.now() - this.acquiredCache.at > 60_000) {
-      const ids = await this.api.acquired();
-      this.acquiredCache = { ids: new Set(ids), at: Date.now() };
-    }
-    return this.acquiredCache.ids.has(assetId);
+  private async isAcquired(assetId: string, signal?: AbortSignal): Promise<boolean> {
+    // LegacyApi shares and scopes this short-lived cache to the current account.
+    return (await this.api.acquired(signal)).includes(assetId);
   }
 
   private async readTempJson(temp: string): Promise<ExtendedAsset | null> {
@@ -967,7 +1010,8 @@ export class DownloadManager {
       total: job.total,
       ratio: job.ratio,
       message: job.message,
-      path: job.path
+      path: job.path,
+      diagnostics: job.stats?.snapshot(!job.paused && !job.cancelled && ["downloading", "extracting"].includes(job.status))
     };
   }
 }

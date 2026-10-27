@@ -1,5 +1,6 @@
 import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import type {
   AssetJson,
   AssetRecord,
@@ -9,6 +10,7 @@ import type {
   LibraryQuery,
   LibraryQueryResult,
   LibrarySnapshot,
+  MapPreview,
   RepoKind,
   ScanResult
 } from "../shared/types";
@@ -348,6 +350,43 @@ export class LibraryService {
     return this.index.ids(options);
   }
 
+  async previews(id: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }> {
+    const asset = indexedPath ? this.index.getByIds([id]).find(item => item.path === indexedPath) : this.index.getById(id);
+    if (!asset) throw new Error("Local asset is no longer indexed. Rescan the library.");
+    const renders: MapPreview[] = [];
+    const maps: MapPreview[] = [];
+    // Only enumerate indexed asset folders, never renderer-supplied paths or symlinks.
+    let inspected = 0;
+    const visit = async (directory: string, depth: number): Promise<void> => {
+      if (depth > 5 || inspected >= 5000) return;
+      const entries = await readdir(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        if (++inspected > 5000) break;
+        if (entry.isSymbolicLink()) continue;
+        const target = join(directory, entry.name);
+        if (entry.isDirectory()) { await visit(target, depth + 1); continue; }
+        if (!entry.isFile() || !/\.(png|jpe?g|webp)$/i.test(entry.name)) continue;
+        const label = target.slice(asset.path.length + 1).replace(/\\/g, " / ");
+        const preview: MapPreview = { type: entry.name, label, url: pathToFileURL(target).href };
+        const tokens = entry.name.toLowerCase().split(/[^a-z0-9]+/);
+        const mapType = asset.technical?.mapTypes.find(type => tokens.includes(type.toLowerCase()));
+        if (asset.repo === "downloaded" && mapType) {
+          preview.map = { type: mapType, referenceUri: entry.name, billboard: /billboard/i.test(entry.name) };
+        }
+        if (/preview|thumb|grid/i.test(entry.name)) renders.push(preview);
+        else maps.push(preview);
+      }
+    };
+    await visit(asset.path, 0);
+    renders.sort((a, b) => a.label.localeCompare(b.label));
+    maps.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+    return { renders, maps };
+  }
+
+  matchingAssets(ids: string[], scope?: LibraryQuery): AssetRecord[] {
+    return this.index.matchingAssets(ids, scope);
+  }
+
   async health(
     force = false,
     onProgress?: (progress: LibraryHealthProgress) => void
@@ -404,8 +443,8 @@ export class LibraryService {
     return report;
   }
 
-  async removeAssets(assetIds: string[]): Promise<{ removed: number }> {
-    const records = this.index.getByIds(assetIds);
+  async removeAssets(assetIds: string[], scope?: LibraryQuery): Promise<{ removed: number }> {
+    const records = this.index.matchingAssets(assetIds, scope);
     const libraryRoot = resolve(this.getLibraryPath());
     let removed = 0;
     for (const asset of records) {

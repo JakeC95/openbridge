@@ -56,20 +56,7 @@ export class CatalogPackBuilder {
         const id = ids[index];
         if (!id) return;
         try {
-          let asset: Awaited<ReturnType<LegacyApi["extended"]>> | null = null;
-          let lastError: unknown = null;
-          for (let attempt = 0; attempt < 4; attempt += 1) {
-            try {
-              asset = await this.api.extended(id);
-              break;
-            } catch (error) {
-              lastError = error;
-              const status = (error as { status?: number }).status;
-              if (status && status !== 429 && status < 500) throw error;
-              await new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt));
-            }
-          }
-          if (!asset) throw lastError;
+          const asset = await this.api.extended(id, undefined, -1);
           const record = catalogMetadataRecord(asset);
           await write(JSON.stringify(record));
         } catch (error) {

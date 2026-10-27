@@ -90,8 +90,8 @@ export function App() {
         </header>
 
         <div className="content">
-          {view === "discover" && <DiscoverView />}
-          {view === "library" && <LibraryView />}
+          <div className="view-slot" hidden={view !== "discover"}><DiscoverView /></div>
+          <div className="view-slot" hidden={view !== "library"}><LibraryView /></div>
           {view === "downloads" && <DownloadsView />}
           {view === "settings" && <SettingsView />}
         </div>

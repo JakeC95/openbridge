@@ -1,5 +1,26 @@
 import { formatMeasurementText } from "../shared/measurements";
-import type { AssetTechnicalSummary, CatalogHit, ExtendedAsset } from "../shared/types";
+import type { AssetTechnicalSummary, CatalogHit, ExtendedAsset, MapPreview } from "../shared/types";
+
+export function renderPreviews(hit?: CatalogHit, extended?: ExtendedAsset): MapPreview[] {
+  const urls = new Set<string>();
+  const primary = hit ? hitPreview(hit) : null;
+  if (primary) urls.add(primary);
+  // Only inspect render/image containers, never map descriptors or signed download payloads.
+  const collect = (value: unknown, depth = 0): void => {
+    if (depth > 5 || !value) return;
+    if (typeof value === "string") {
+      if (/^https?:\/\//i.test(value)) urls.add(value);
+    } else if (Array.isArray(value)) value.forEach(item => collect(item, depth + 1));
+    else if (typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) {
+        if (/^(images?|renders?|url|uri|preview|full|large|original)$/i.test(key)) collect(item, depth + 1);
+      }
+    }
+  };
+  collect(extended?.previews);
+  collect(extended?.referencePreviews?.images);
+  return [...urls].map((url, index) => ({ type: "render", label: `Render ${index + 1}`, url }));
+}
 
 export function hitId(hit: CatalogHit): string {
   return hit.id || hit.objectID;
@@ -123,5 +144,4 @@ export function mapTypes(asset: ExtendedAsset | undefined): string[] {
   }
   return [...types].sort();
 }
-
 

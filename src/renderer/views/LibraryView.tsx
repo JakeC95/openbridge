@@ -6,6 +6,10 @@ import type { AssetRecord, LibraryHealthReport, RepoKind } from "../../shared/ty
 import { VirtualGrid } from "../components/VirtualGrid";
 import { Dropdown } from "../components/Dropdown";
 import { formatMeasurementText } from "../../shared/measurements";
+import { libraryFilterQuery } from "../browsing-state";
+import { DensityControl, PackBrowser, RecentBrowsing } from "../components/BrowsingTools";
+import { categoryLabel } from "../../shared/browsing";
+import { useBrowseScroll } from "../use-browse-scroll";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
   { value: "all", label: "All" },
@@ -40,6 +44,15 @@ function localFacts(asset: AssetRecord): string {
 }
 
 export function LibraryView() {
+  const density = useStore(state => state.density);
+  const localType = useStore(state => state.localType);
+  const localCategoryPath = useStore(state => state.localCategoryPath);
+  const localSort = useStore(state => state.localSort);
+  const localFavoritesOnly = useStore(state => state.localFavoritesOnly);
+  const favorites = useStore(state => state.favorites);
+  const localPack = useStore(state => state.localPack);
+  const localPacks = useStore(state => state.localPacks);
+  const auth = useStore(state => state.auth);
   const assets = useStore(state => state.libraryAssets);
   const counts = useStore(state => state.libraryCounts);
   const allTotal = useStore(state => state.libraryTotal);
@@ -70,6 +83,7 @@ export function LibraryView() {
   const toast = useStore(state => state.toast);
 
   const [selectMode, setSelectMode] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [health, setHealth] = useState<LibraryHealthReport | null>(null);
   const [healthOpen, setHealthOpen] = useState(false);
@@ -78,10 +92,13 @@ export function LibraryView() {
   const [busy, setBusy] = useState(false);
   const [selectingAll, setSelectingAll] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  useBrowseScroll(bodyRef, "library", JSON.stringify(libraryFilterQuery(useStore.getState())));
   const firstQuery = useRef(true);
 
   useEffect(() => {
-    return window.openbridge.onSearchPaste(({ text }) => setQuery(text));
+    return window.openbridge.onSearchPaste(({ text }) => {
+      if (useStore.getState().view === "library") setQuery(text);
+    });
   }, [setQuery]);
 
   useEffect(() => {
@@ -102,6 +119,12 @@ export function LibraryView() {
   }, [
     query,
     repo,
+    localType,
+    localCategoryPath,
+    localSort,
+    localFavoritesOnly,
+    favorites,
+    localPack,
     localReady,
     localMaxTris,
     localColor,
@@ -126,7 +149,9 @@ export function LibraryView() {
     if (selectingAll) return;
     setSelectingAll(true);
     try {
-      const ids = await window.openbridge.queryLibraryIds({ query, repo });
+      const filters = libraryFilterQuery(useStore.getState());
+      const ids = await window.openbridge.queryLibraryIds(filters);
+      if (JSON.stringify(filters) !== JSON.stringify(libraryFilterQuery(useStore.getState()))) return;
       setSelectedIds(new Set(ids));
       toast(`Selected ${ids.length.toLocaleString()} asset(s)`);
     } catch (error) {
@@ -155,7 +180,7 @@ export function LibraryView() {
     if (!folder) return;
     setBusy(true);
     try {
-      const written = await window.openbridge.exportLibraryAssets([...selectedIds], folder);
+      const written = await window.openbridge.exportLibraryAssets([...selectedIds], folder, libraryFilterQuery(useStore.getState()));
       toast(`Exported ${selectedIds.size} asset JSON record(s) to ${written}`);
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
@@ -175,7 +200,7 @@ export function LibraryView() {
     }
     setBusy(true);
     try {
-      const result = await window.openbridge.removeLibraryAssets([...selectedIds]);
+      const result = await window.openbridge.removeLibraryAssets([...selectedIds], libraryFilterQuery(useStore.getState()));
       setSelectedIds(new Set());
       await refreshLibrary(true);
       toast(`Deleted ${result.removed} asset folder(s)`);
@@ -185,6 +210,21 @@ export function LibraryView() {
       setBusy(false);
     }
   }
+
+  const refineFilterCount =
+    localReady.length +
+    (localMaxTris ? 1 : 0) +
+    (localColor ? 1 : 0) +
+    (localState ? 1 : 0) +
+    (localInterior ? 1 : 0);
+  const selectionScope =
+    selectedIds.size === 0
+      ? `${total.toLocaleString()} assets match current filters`
+      : selectedIds.size === total
+        ? `All ${total.toLocaleString()} matching assets`
+        : selectedIds.size === assets.length
+          ? `${assets.length.toLocaleString()} loaded assets`
+          : `${selectedIds.size.toLocaleString()} of ${total.toLocaleString()} matching assets`;
 
   return (
     <div className="view library">
@@ -229,6 +269,31 @@ export function LibraryView() {
         </div>
 
         <div className="filter-row">
+          <Dropdown className="filter-select" value={localType || "all"} ariaLabel="Local asset type"
+            onChange={value => useStore.getState().setLocalType(value === "all" ? "" : value)}
+            options={[{ value: "all", label: "All types" }, ...["3d", "3dplant", "surface", "atlas", "brush", "decal", "imperfection", "displacement"]
+              .map(value => ({ value, label: categoryLabel(value) }))]} />
+          <Dropdown className="filter-select" value={localSort} ariaLabel="Sort local library"
+            onChange={value => useStore.getState().setLocalSort(value as typeof localSort)} options={[
+              { value: "recent", label: "Recently modified" }, { value: "name", label: "Name A–Z" },
+              { value: "type", label: "Asset type" }
+            ]} />
+          <button
+            type="button"
+            className={filtersOpen ? "chip active" : "chip"}
+            aria-expanded={filtersOpen}
+            aria-controls="library-refine-filters"
+            onClick={() => setFiltersOpen(value => !value)}
+          >
+            Filters
+            {refineFilterCount > 0 && <span className="filter-count">{refineFilterCount}</span>}
+          </button>
+          <button type="button" className={localFavoritesOnly ? "chip active" : "chip"}
+            disabled={!auth.loggedIn} aria-pressed={localFavoritesOnly}
+            onClick={() => useStore.getState().setLocalFavoritesOnly(!localFavoritesOnly)}>Favorites</button>
+          <DensityControl />
+          <PackBrowser packs={localPacks} local />
+          <RecentBrowsing />
           <div className="chips">
             {REPOS.map(item => (
               <button
@@ -249,127 +314,152 @@ export function LibraryView() {
           </span>
         </div>
 
-        <div className="library-refine">
-          <div className="refine-chips">
-            {[
-              ["tileable", "Tileable"],
-              ["closed", "Closed mesh"],
-              ["scale-fixed", "Scale fixed"],
-              ["billboards", "Billboards"],
-              ["highpoly", "Highpoly"],
-              ["ztool", "ZTool"],
-              ["modular", "Modular"]
-            ].map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                className={localReady.includes(value) ? "chip active" : "chip"}
-                onClick={() => toggleLocalReady(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="refine-selects">
-            <Dropdown
-              className="select-dropdown"
-              value={localMaxTris ? String(localMaxTris) : "any"}
-              onChange={value =>
-                setLocalMaxTris(value === "any" ? null : Number(value))
-              }
-              ariaLabel="Maximum triangle count"
-              options={[
-                { value: "any", label: "Any tris" },
-                { value: "10000", label: "≤ 10k tris" },
-                { value: "25000", label: "≤ 25k tris" },
-                { value: "50000", label: "≤ 50k tris" },
-                { value: "100000", label: "≤ 100k tris" }
-              ]}
-            />
-            <Dropdown
-              className="select-dropdown"
-              value={localColor || "any"}
-              onChange={value => setLocalColor(value === "any" ? "" : value)}
-              ariaLabel="Colour"
-              options={[
-                { value: "any", label: "Any colour" },
-                { value: "Brown", label: "Brown" },
-                { value: "Gray", label: "Gray" },
-                { value: "Green", label: "Green" },
-                { value: "Red", label: "Red" },
-                { value: "Orange", label: "Orange" },
-                { value: "Yellow", label: "Yellow" },
-                { value: "Blue", label: "Blue" },
-                { value: "White", label: "White" },
-                { value: "Black", label: "Black" }
-              ]}
-            />
-            <Dropdown
-              className="select-dropdown"
-              value={localState || "any"}
-              onChange={value => setLocalState(value === "any" ? "" : value)}
-              ariaLabel="Condition"
-              options={[
-                { value: "any", label: "Any condition" },
-                { value: "new", label: "New" },
-                { value: "old", label: "Old" }
-              ]}
-            />
-            <Dropdown
-              className="select-dropdown"
-              value={localInterior || "any"}
-              onChange={value => setLocalInterior(value === "any" ? "" : value)}
-              ariaLabel="Interior or exterior"
-              options={[
-                { value: "any", label: "Any setting" },
-                { value: "interior", label: "Interior" },
-                { value: "exterior", label: "Exterior" }
-              ]}
-            />
-            <button type="button" className="text-btn" onClick={resetLocalFilters}>
-              Reset filters
-            </button>
-          </div>
+        <div className="active-filters" aria-label="Active local filters">
+          {localCategoryPath.length > 0 && <button type="button" className="facet-chip active"
+            onClick={() => useStore.getState().setLocalCategoryPath([])}>{localCategoryPath.map(categoryLabel).join(" / ")} ×</button>}
+          {localType && <button type="button" className="facet-chip active" onClick={() => useStore.getState().setLocalType("")}>{categoryLabel(localType)} ×</button>}
+          {localPack && <button type="button" className="facet-chip active" onClick={() => useStore.getState().clearPack()}>Pack: {localPack.name} ×</button>}
+          {localFavoritesOnly && <button type="button" className="facet-chip active" onClick={() => useStore.getState().setLocalFavoritesOnly(false)}>Favorites ×</button>}
+          {localReady.map(value => <button type="button" key={value} className="facet-chip active" onClick={() => toggleLocalReady(value)}>{value} ×</button>)}
+          {localMaxTris && <button type="button" className="facet-chip active" onClick={() => setLocalMaxTris(null)}>≤ {localMaxTris.toLocaleString()} tris ×</button>}
+          {localColor && <button type="button" className="facet-chip active" onClick={() => setLocalColor("")}>{localColor} ×</button>}
+          {localState && <button type="button" className="facet-chip active" onClick={() => setLocalState("")}>{localState} ×</button>}
+          {localInterior && <button type="button" className="facet-chip active" onClick={() => setLocalInterior("")}>{localInterior} ×</button>}
         </div>
+
+        {filtersOpen && (
+          <div className="library-refine" id="library-refine-filters">
+            <div className="library-refine-head">
+              <strong>Technical filters</strong>
+              <span>{refineFilterCount} active</span>
+            </div>
+            <div className="refine-chips">
+              {[
+                ["tileable", "Tileable"],
+                ["closed", "Closed mesh"],
+                ["scale-fixed", "Scale fixed"],
+                ["billboards", "Billboards"],
+                ["highpoly", "Highpoly"],
+                ["ztool", "ZTool"],
+                ["modular", "Modular"]
+              ].map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={localReady.includes(value) ? "chip active" : "chip"}
+                  onClick={() => toggleLocalReady(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="refine-selects">
+              <Dropdown
+                className="select-dropdown"
+                value={localMaxTris ? String(localMaxTris) : "any"}
+                onChange={value =>
+                  setLocalMaxTris(value === "any" ? null : Number(value))
+                }
+                ariaLabel="Maximum triangle count"
+                options={[
+                  { value: "any", label: "Any tris" },
+                  { value: "10000", label: "≤ 10k tris" },
+                  { value: "25000", label: "≤ 25k tris" },
+                  { value: "50000", label: "≤ 50k tris" },
+                  { value: "100000", label: "≤ 100k tris" }
+                ]}
+              />
+              <Dropdown
+                className="select-dropdown"
+                value={localColor || "any"}
+                onChange={value => setLocalColor(value === "any" ? "" : value)}
+                ariaLabel="Colour"
+                options={[
+                  { value: "any", label: "Any colour" },
+                  { value: "Brown", label: "Brown" },
+                  { value: "Gray", label: "Gray" },
+                  { value: "Green", label: "Green" },
+                  { value: "Red", label: "Red" },
+                  { value: "Orange", label: "Orange" },
+                  { value: "Yellow", label: "Yellow" },
+                  { value: "Blue", label: "Blue" },
+                  { value: "White", label: "White" },
+                  { value: "Black", label: "Black" }
+                ]}
+              />
+              <Dropdown
+                className="select-dropdown"
+                value={localState || "any"}
+                onChange={value => setLocalState(value === "any" ? "" : value)}
+                ariaLabel="Condition"
+                options={[
+                  { value: "any", label: "Any condition" },
+                  { value: "new", label: "New" },
+                  { value: "old", label: "Old" }
+                ]}
+              />
+              <Dropdown
+                className="select-dropdown"
+                value={localInterior || "any"}
+                onChange={value => setLocalInterior(value === "any" ? "" : value)}
+                ariaLabel="Interior or exterior"
+                options={[
+                  { value: "any", label: "Any setting" },
+                  { value: "interior", label: "Interior" },
+                  { value: "exterior", label: "Exterior" }
+                ]}
+              />
+              <button type="button" className="text-btn" onClick={resetLocalFilters}>
+                Reset filters
+              </button>
+            </div>
+          </div>
+        )}
 
         {selectMode && (
           <div className="bulk-bar">
-            <span className="bulk-count">{selectedIds.size} selected</span>
-            <button type="button" className="text-btn" onClick={selectVisible}>
-              Select loaded
-            </button>
-            <button
-              type="button"
-              className="text-btn"
-              disabled={selectingAll || total === 0}
-              onClick={() => void selectAllFiltered()}
-            >
-              {selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()}`}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy || selectedIds.size === 0}
-              onClick={() => void exportSelected()}
-            >
-              Export JSON
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy || selectedIds.size === 0}
-              onClick={() => void deleteSelected()}
-            >
-              Delete
-            </button>
-            <button
-              type="button"
-              className="text-btn"
-              disabled={selectedIds.size === 0}
-              onClick={() => setSelectedIds(new Set())}
-            >
-              Clear
-            </button>
+            <div className="bulk-scope">
+              <span className="bulk-count" aria-live="polite">{selectedIds.size} selected</span>
+              <span className="bulk-scope-detail">{selectionScope}</span>
+              <span className="bulk-scope-hint">Export writes JSON records. Delete removes local asset folders from disk.</span>
+            </div>
+            <div className="bulk-actions">
+              <button type="button" className="text-btn" onClick={selectVisible}>
+                Select loaded
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                disabled={selectingAll || total === 0}
+                onClick={() => void selectAllFiltered()}
+              >
+                {selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()}`}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={busy || selectedIds.size === 0}
+                onClick={() => void exportSelected()}
+              >
+                Export JSON
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost bulk-delete"
+                disabled={busy || selectedIds.size === 0}
+                onClick={() => void deleteSelected()}
+              >
+                Delete from disk…
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                disabled={selectedIds.size === 0}
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear
+              </button>
+            </div>
           </div>
         )}
 
@@ -390,7 +480,7 @@ export function LibraryView() {
         {assets.length > 0 && (
           <VirtualGrid
             items={assets}
-            minItemWidth={220}
+            minItemWidth={density === "compact" ? 160 : density === "large" ? 320 : 220}
             gap={28}
             renderItem={asset => {
               const selected = selectedIds.has(asset.id);
@@ -434,6 +524,11 @@ export function LibraryView() {
                     )}
                     <span className="asset-type">{typeLabel(asset.type)}</span>
                     <span className="asset-flag owned">LOCAL</span>
+                    {!selectMode && auth.loggedIn && <button type="button" className={favorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
+                      aria-label={favorites.includes(asset.id) ? "Remove favorite" : "Add favorite"}
+                      onClick={event => { event.stopPropagation(); void useStore.getState().toggleFavorite(asset.id); }}>
+                      {favorites.includes(asset.id) ? "♥" : "♡"}
+                    </button>}
 
                     {selectMode && (
                       <button
@@ -480,8 +575,8 @@ export function LibraryView() {
                 Import a folder
               </button>
             ) : (
-              <button type="button" className="btn btn-ghost" onClick={() => setQuery("")}>
-                Clear search
+              <button type="button" className="btn btn-ghost" onClick={resetLocalFilters}>
+                Clear search and filters
               </button>
             )}
           </div>

@@ -16,6 +16,7 @@ import {
   searchCatalogIds
 } from "./legacy-api";
 import { buildBillboardPreviews, buildMapPreviews } from "./map-previews";
+import { highResolutionPreview } from "./high-resolution-preview";
 import { recommendedDownloadDefaults } from "../shared/download-defaults";
 import { LibraryService } from "./library";
 import { Logger } from "./logger";
@@ -31,6 +32,7 @@ import type {
   JsonValidationReport,
   LibraryQuery,
   LibrarySnapshot,
+  MapPreviewRequest,
   ScanResult
 } from "../shared/types";
 
@@ -420,6 +422,10 @@ function registerIpc(): void {
     await library.snapshot(false);
     return library.ids(query);
   });
+  ipcMain.handle("library:previews", async (_event, assetId: string, indexedPath?: string) => {
+    if (!library || typeof assetId !== "string") throw new Error("Invalid local asset");
+    return library.previews(assetId, indexedPath);
+  });
 
   ipcMain.handle("library:health", async (_event, force?: boolean) => {
     if (!library) throw new Error("Library service is not ready");
@@ -428,18 +434,18 @@ function registerIpc(): void {
     });
   });
 
-  ipcMain.handle("library:removeAssets", async (_event, assetIds: string[]) => {
+  ipcMain.handle("library:removeAssets", async (_event, assetIds: string[], scope?: LibraryQuery) => {
     if (!library) throw new Error("Library service is not ready");
-    const result = await library.removeAssets(assetIds);
+    const result = await library.removeAssets(assetIds, scope);
     await broadcastLibrary(true);
     return result;
   });
 
   ipcMain.handle(
     "library:exportAssets",
-    async (_event, assetIds: string[], folder: string) => {
+    async (_event, assetIds: string[], folder: string, scope?: LibraryQuery) => {
       if (!library) throw new Error("Library service is not ready");
-      const records = library.getAssets(assetIds);
+      const records = library.matchingAssets(assetIds, scope);
       const payload = await Promise.all(
         records.map(asset => buildExportAsset(asset, exportPath()))
       );
@@ -522,15 +528,36 @@ function registerIpc(): void {
   ipcMain.handle("auth:logout", () => requireAuth().logout());
   ipcMain.handle("auth:profile", () => requireAuth().ensureProfile());
 
-  ipcMain.handle("catalog:search", (_event, query: CatalogQuery) => searchCatalog(query));
-  ipcMain.handle("catalog:ids", (_event, query: CatalogQuery) => searchCatalogIds(query));
+  const resolveCatalogQuery = (query: CatalogQuery): CatalogQuery => {
+    if (!query.pack) return query;
+    const ids = requireCatalogMetadata().packIds(query.pack);
+    const allowed = query.ids ? new Set(query.ids) : null;
+    return { ...query, ids: allowed ? ids.filter(id => allowed.has(id)) : ids };
+  };
+  const searches = new Map<string, AbortController>();
+  const scopedRequest = async <T>(sender: number, scope: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    const key = `${sender}:${scope}`;
+    searches.get(key)?.abort();
+    const controller = new AbortController(); searches.set(key, controller);
+    try { return await work(controller.signal); }
+    finally { if (searches.get(key) === controller) searches.delete(key); }
+  };
+  ipcMain.handle("catalog:cancel", (event, scope: string) => {
+    if (!["discover", "related", "drawer", "preview"].includes(scope)) return;
+    const key = `${event.sender.id}:${scope}`;
+    searches.get(key)?.abort(); searches.delete(key);
+  });
+  ipcMain.handle("catalog:search", async (event, query: CatalogQuery, scope?: string) => {
+    if (scope !== "discover" && scope !== "related") return searchCatalog(resolveCatalogQuery(query));
+    return scopedRequest(event.sender.id, scope, signal => searchCatalog(resolveCatalogQuery(query), signal));
+  });
+  ipcMain.handle("catalog:ids", (_event, query: CatalogQuery) => searchCatalogIds(resolveCatalogQuery(query)));
   ipcMain.handle("catalog:categories", () => fetchCategories());
-  ipcMain.handle("catalog:extended", (_event, assetId: string) =>
-    requireApi().extended(assetId)
+  ipcMain.handle("catalog:extended", (event, assetId: string, scope?: string) =>
+    scope === "drawer" ? scopedRequest(event.sender.id, "drawer", signal => requireApi().extended(assetId, signal)) : requireApi().extended(assetId)
   );
   ipcMain.handle("catalog:mapPreviews", async (_event, assetId: string) => {
-    const asset = await requireApi().extended(assetId);
-    const signedBase = await requireApi().signedMapsUrl();
+    const [asset, signedBase] = await Promise.all([requireApi().extended(assetId), requireApi().signedMapsUrl()]);
     const previews = buildMapPreviews(asset, signedBase);
     if ((asset.billboards?.length ?? 0) > 0) {
       try {
@@ -558,6 +585,9 @@ function registerIpc(): void {
     }
     return previews;
   });
+  ipcMain.handle("catalog:highResolutionPreview", (event, assetId: string, map: MapPreviewRequest) =>
+    scopedRequest(event.sender.id, "preview", signal => highResolutionPreview(requireApi(), assetId, map, signal))
+  );
   ipcMain.handle("catalog:acquired", () => requireApi().acquired());
   ipcMain.handle("catalog:favorites", () => requireApi().favorites());
   ipcMain.handle("catalog:addFavorite", (_event, assetId: string) =>
@@ -685,6 +715,7 @@ function registerIpc(): void {
   ipcMain.handle("downloads:list", () => requireDownloads().list());
 
   ipcMain.handle("catalog:metadata:status", () => requireCatalogMetadata().status());
+  ipcMain.handle("catalog:metadata:packs", () => requireCatalogMetadata().packs());
   ipcMain.handle("catalog:metadata:lookup", (_event, ids: string[]) =>
     requireCatalogMetadata().lookup(ids)
   );

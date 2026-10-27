@@ -9,6 +9,7 @@ import type {
   CatalogMetadataRecord,
   CatalogMetadataStatus
 } from "../shared/types";
+import type { PackRef, PackSummary } from "../shared/types";
 import { downloadFile } from "./downloader";
 import { releaseAssetUrl } from "./project";
 import type { Logger } from "./logger";
@@ -91,6 +92,22 @@ export class CatalogMetadataProvider {
       }
     }
     return output;
+  }
+
+  packs(): PackSummary[] {
+    const rows = this.db.prepare(`SELECT json_extract(data, '$.technical.packId') AS pack_id,
+      json_extract(data, '$.technical.packName') AS pack_name, COUNT(*) AS count
+      FROM catalog_metadata GROUP BY pack_id, pack_name HAVING pack_name IS NOT NULL OR pack_id IS NOT NULL`).all() as
+      Array<{ pack_id: string | null; pack_name: string | null; count: number }>;
+    return rows.map(row => ({ id: row.pack_id || undefined, name: row.pack_name || row.pack_id || "Pack",
+      count: Number(row.count) })).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  packIds(pack: PackRef): string[] {
+    const field = pack.id ? "packId" : "packName";
+    return (this.db.prepare(`SELECT id FROM catalog_metadata
+      WHERE json_extract(data, '$.technical.${field}') = ?`).all(pack.id || pack.name) as
+      Array<{ id: string }>).map(row => row.id);
   }
 
   async installFromUrl(url = METADATA_PACK_URL): Promise<CatalogMetadataStatus> {

@@ -88,6 +88,7 @@ export function buildBillboardPreviews(
       type: `billboard:${type}`,
       label: `Billboard / ${mapLabel(type)}`,
       url: uri,
+      map: { type, billboard: true, referenceUri: uri },
       resolution:
         typeof descriptor.resolution === "number"
           ? String(descriptor.resolution)
@@ -126,6 +127,7 @@ export function buildMapPreviews(asset: ExtendedAsset, signedBase: string): MapP
         label: showTextureSet && set ? `${set} / ${mapLabel(type)}` : mapLabel(type),
         url: signedFileUrl(signedBase, uri),
         resolution: map.resolution,
+        map: { type, textureSet: set || undefined, referenceUri: uri },
         set
       });
     }

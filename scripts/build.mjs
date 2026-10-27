@@ -106,11 +106,12 @@ await build({
   target: "chrome120",
   jsx: "automatic",
   minify: true,
-  loader: { ".css": "css", ".ttf": "file" },
+  loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl" },
   define
 });
 
 await cp(join(root, "src/renderer/index.html"), join(out, "renderer/index.html"));
+await cp(join(root, "src/renderer/flags/LICENSE"), join(out, "renderer/flag-icons-LICENSE.txt"));
 console.log("build complete -> out/");
 
 

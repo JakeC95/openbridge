@@ -33,7 +33,10 @@ export function CatalogSearch() {
     return window.openbridge.onSearchPaste(({ text, search: shouldSearch }) => {
       setDraft(text);
       setQuery(text);
-      if (shouldSearch) void search(true);
+      if (shouldSearch) {
+        useStore.getState().rememberSearch(text);
+        void search(true);
+      }
     });
   }, [search, setQuery]);
 
@@ -49,6 +52,7 @@ export function CatalogSearch() {
           if (event.key === "Enter") {
             event.preventDefault();
             setQuery(draft);
+            useStore.getState().rememberSearch(draft);
             void search(true);
           }
         }}

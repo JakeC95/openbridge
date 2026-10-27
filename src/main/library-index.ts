@@ -13,6 +13,7 @@ import type {
   RepoKind
 } from "../shared/types";
 import type { Logger } from "./logger";
+import { canonicalType, categoryTree, localCategoryPath } from "../shared/browsing";
 
 const SCHEMA_VERSION = 4;
 
@@ -119,6 +120,10 @@ export class LibraryIndex {
   ) {
     mkdirSync(dirname(filePath), { recursive: true });
     this.db = new DatabaseSync(filePath);
+    this.db.function("local_category_path", { deterministic: true }, (type, categories) =>
+      JSON.stringify(localCategoryPath(String(type), parseList(String(categories))))
+    );
+    this.db.function("canonical_type", { deterministic: true }, type => canonicalType(String(type)));
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -313,7 +318,8 @@ export class LibraryIndex {
       offset,
       limit,
       hasMore: offset + rows.length < total,
-      tookMs: performance.now() - started
+      tookMs: performance.now() - started,
+      ...this.browseFacets(options)
     };
   }
 
@@ -325,7 +331,35 @@ export class LibraryIndex {
          ORDER BY ${parts.order}`
       )
       .all(...parts.params) as Array<{ id: string }>;
-    return rows.map(row => row.id);
+    return [...new Set(rows.map(row => row.id))];
+  }
+
+  private browseFacets(options: LibraryQuery): Pick<LibraryQueryResult, "categories" | "packs"> {
+    const parts = this.queryParts({ ...options, type: undefined, categoryPath: undefined,
+      pack: undefined, packId: undefined });
+    const rows = this.db.prepare(`SELECT a.type, a.categories, COUNT(*) AS n
+      ${parts.from} ${parts.where} GROUP BY a.type, a.categories`).all(...parts.params) as
+      Array<{ type: string; categories: string; n: number }>;
+    const packs = this.db.prepare(`SELECT json_extract(a.technical_json, '$.packId') AS pack_id,
+      json_extract(a.technical_json, '$.packName') AS pack_name, COUNT(DISTINCT a.id) AS count
+      ${parts.from} ${parts.where}
+      GROUP BY pack_id, pack_name HAVING pack_name IS NOT NULL OR pack_id IS NOT NULL`).all(...parts.params) as
+      Array<{ pack_id: string | null; pack_name: string | null; count: number }>;
+    return {
+      categories: categoryTree(rows.map(row => ({
+        path: localCategoryPath(row.type, parseList(row.categories)), count: Number(row.n)
+      }))),
+      packs: packs.map(row => ({ id: row.pack_id || undefined, name: row.pack_name || row.pack_id || "Pack",
+        count: Number(row.count) })).sort((a, b) => a.name.localeCompare(b.name))
+    };
+  }
+
+  matchingAssets(ids: string[], options?: LibraryQuery): AssetRecord[] {
+    if (!options) return this.getByIds(ids);
+    const allowed = options.ids ? new Set(options.ids) : null;
+    const parts = this.queryParts({ ...options, ids: allowed ? ids.filter(id => allowed.has(id)) : ids });
+    return (this.db.prepare(`SELECT a.* ${parts.from} ${parts.where} ORDER BY ${parts.order}`)
+      .all(...parts.params) as unknown as AssetRow[]).map(rowToAsset);
   }
 
   private queryParts(options: LibraryQuery): {
@@ -337,6 +371,18 @@ export class LibraryIndex {
     const searchTokens = ftsQuery(options.query ?? "");
     const clauses: string[] = [];
     const params: Array<string | number> = [];
+    if (options.type) {
+      clauses.push("canonical_type(a.type) = ?");
+      params.push(canonicalType(options.type));
+    }
+    for (const [index, value] of (options.categoryPath ?? []).entries()) {
+      clauses.push(`json_extract(local_category_path(a.type, a.categories), '$[${index}]') = ?`);
+      params.push(index === 0 ? canonicalType(value) : value.toLowerCase());
+    }
+    if (options.ids) {
+      clauses.push("a.id IN (SELECT value FROM json_each(?))");
+      params.push(JSON.stringify(options.ids));
+    }
     if (options.repo && options.repo !== "all") {
       clauses.push("a.repo = ?");
       params.push(options.repo);
@@ -361,7 +407,10 @@ export class LibraryIndex {
       );
       params.push(options.maxTris);
     }
-    if (options.pack) {
+    if (options.packId) {
+      clauses.push("json_extract(a.technical_json, '$.packId') = ?");
+      params.push(options.packId);
+    } else if (options.pack) {
       clauses.push("json_extract(a.technical_json, '$.packName') = ?");
       params.push(options.pack);
     }

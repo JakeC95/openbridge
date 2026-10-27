@@ -1,6 +1,6 @@
 {
   "name": "openbridge",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "private": true,
   "description": "Open-source, portable library manager for Quixel Megascans assets on Windows",
   "productName": "OpenBridge",
@@ -16,6 +16,9 @@
     "dev": "node scripts/dev.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
+    "test:browsing": "node scripts/test-browsing.mjs",
+    "test:network": "node scripts/test-network.mjs",
+    "test:browsing:ui": "node scripts/test-browsing-ui.mjs",
     "check:public": "node scripts/check-public-repo.mjs",
     "check": "npm run typecheck && npm run check:public",
     "dist:portable": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1",

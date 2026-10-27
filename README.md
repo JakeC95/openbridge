@@ -21,6 +21,9 @@ losing user data.
 
 - **Catalogue browsing** for the legacy Megascans catalogue, including nested categories, filters,
   saved searches, related assets and a command palette.
+- **Browsing productivity** with local categories/favorites, recorded-pack exploration, recent
+  searches/assets, drawer Back/Next, preserved scroll position and adjustable thumbnail sizes.
+- **Visual inspection** with expanded render/map previews, zoom/pan and offline JPG/PNG/WebP maps.
 - **Epic sign-in** via OAuth. Tokens are encrypted with Windows DPAPI (`safeStorage`); passwords are
   never stored.
 - **Download engine** with per-type presets, map/LOD/variation selection, resumable transfers, size
@@ -100,6 +103,7 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 
 - [Build and packaging](docs/BUILD.md)
 - [Testing](docs/TESTING.md)
+- [Networking policy and verification](docs/NETWORKING.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Local API and export protocol](docs/PROTOCOL.md)
 - [Reverse-engineering notes](docs/REVERSE-ENGINEERING.md)
@@ -110,3 +114,7 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Country flag artwork in `src/renderer/flags` comes from
+[flag-icons](https://github.com/lipis/flag-icons) and is MIT licensed. See
+[src/renderer/flags/LICENSE](src/renderer/flags/LICENSE).

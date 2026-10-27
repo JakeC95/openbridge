@@ -15,11 +15,15 @@ export function Sidebar() {
   const versions = useStore(state => state.versions);
   const logout = useStore(state => state.logout);
   const categories = useStore(state => state.categories);
+  const categoriesLoading = useStore(state => state.categoriesLoading);
   const categoryPath = useStore(state => state.categoryPath);
   const setCategoryPath = useStore(state => state.setCategoryPath);
   const nbHits = useStore(state => state.nbHits);
   const libraryTotal = useStore(state => state.libraryTotal);
   const downloads = useStore(state => state.downloads);
+  const localCategories = useStore(state => state.localCategories);
+  const localCategoryPath = useStore(state => state.localCategoryPath);
+  const setLocalCategoryPath = useStore(state => state.setLocalCategoryPath);
   const openLogs = window.openbridge.openLogs;
 
   const items = [
@@ -78,11 +82,19 @@ export function Sidebar() {
         {view === "discover" && (
           <div className="sidebar-categories">
             <div className="sidebar-section-title">Categories</div>
+            {categoriesLoading && <p className="hint">Loading categories…</p>}
             <CategoryTree
               nodes={categories}
               selectedPath={categoryPath}
               onSelect={setCategoryPath}
             />
+          </div>
+        )}
+        {view === "library" && (
+          <div className="sidebar-categories">
+            <div className="sidebar-section-title">Local categories</div>
+            <CategoryTree nodes={localCategories} selectedPath={localCategoryPath}
+              onSelect={setLocalCategoryPath} />
           </div>
         )}
       </div>

@@ -1,9 +1,10 @@
-import { app, BrowserWindow, net, safeStorage } from "electron";
+import { app, BrowserWindow, safeStorage } from "electron";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AuthState, Profile } from "../shared/types";
 import { legacyConfig, ssoUrl, apiUrl, USER_AGENT } from "./legacy-config";
 import type { Logger } from "./logger";
+import { jsonTransport } from "./network";
 
 interface AuthRecord {
   token: string;
@@ -53,31 +54,8 @@ async function fetchJson<T>(
   init: RequestInit,
   timeoutMs = 30000
 ): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await net.fetch(url, { ...init, signal: controller.signal });
-    const text = await response.text();
-    let body: unknown = text;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      // keep text
-    }
-    if (!response.ok) {
-      const error = new Error(
-        typeof body === "object" && body && "message" in body
-          ? String((body as { message: unknown }).message)
-          : `HTTP ${response.status} ${response.statusText}`
-      ) as Error & { status?: number; body?: unknown };
-      error.status = response.status;
-      error.body = body;
-      throw error;
-    }
-    return body as T;
-  } finally {
-    clearTimeout(timer);
-  }
+  return jsonTransport.request<T>(url, init, { timeoutMs, totalTimeoutMs: timeoutMs,
+    label: "Account request", safeToRetry: (init.method ?? "GET") === "GET", allowEmpty: url.endsWith("/logout"), priority: 2 });
 }
 
 function pickToken(payload: unknown): AuthRecord | null {
@@ -104,6 +82,12 @@ export class AuthService {
   private readonly authFile: string;
   private readonly legacyFile: string;
   private listeners = new Set<(state: AuthState) => void>();
+  private generation = 0;
+  private refreshFlight: Promise<string> | null = null;
+  private profileFlight: Promise<Profile | null> | null = null;
+  private profileAt = 0;
+
+  sessionGeneration(): number { return this.generation; }
 
   constructor(
     private readonly logger: Logger,
@@ -127,6 +111,7 @@ export class AuthService {
         const parsed = JSON.parse(json) as AuthRecord;
         if (parsed?.token) {
           this.record = parsed;
+          this.generation++;
           this.logger.info("Loaded stored auth session", { email: parsed.email });
         }
       }
@@ -161,18 +146,31 @@ export class AuthService {
 
   async ensureProfile(): Promise<Profile | null> {
     if (!this.record?.token) return null;
-    try {
-      const raw = await fetchJson<Profile>(apiUrl("v1/users/self"), {
-        method: "GET",
-        headers: this.headers()
-      });
-      const profile = raw.profile ?? raw;
-      this.profileCache = profile;
-      return profile;
-    } catch (error) {
-      this.logger.warn("Could not load profile", { error });
-      return null;
-    }
+    if (this.profileCache && Date.now() - this.profileAt < 60_000) return this.profileCache;
+    if (this.profileFlight) return this.profileFlight;
+    const generation = this.generation;
+    const work = (async () => {
+      try {
+        let token = await this.getToken();
+        if (this.generation !== generation) return null;
+        let raw: Profile;
+        try { raw = await fetchJson<Profile>(apiUrl("v1/users/self"), { method: "GET", headers: this.headers({ Authorization: `Bearer ${token}` }) }); }
+        catch (error) {
+          if ((error as { status?: number }).status !== 401) throw error;
+          token = await this.refresh(token);
+          raw = await fetchJson<Profile>(apiUrl("v1/users/self"), { method: "GET", headers: this.headers({ Authorization: `Bearer ${token}` }) });
+        }
+        if (this.generation !== generation) return null;
+        const profile = raw.profile ?? raw;
+        this.profileCache = profile; this.profileAt = Date.now();
+        return profile;
+      } catch (error) {
+        this.logger.warn("Could not load profile", { error });
+        return null;
+      }
+    })();
+    this.profileFlight = work;
+    try { return await work; } finally { if (this.profileFlight === work) this.profileFlight = null; }
   }
 
   async login(parent: BrowserWindow | null): Promise<AuthState> {
@@ -182,7 +180,9 @@ export class AuthService {
       );
     }
 
+    const generation = ++this.generation;
     const code = await this.openEpicWindow(parent);
+    if (generation !== this.generation) throw new Error("Sign-in was cancelled because the session changed");
     this.logger.info("Epic OAuth code received");
     const payload = await fetchJson<unknown>(ssoUrl("login/epic"), {
       method: "POST",
@@ -194,8 +194,10 @@ export class AuthService {
     });
     const record = pickToken(payload);
     if (!record) throw new Error("Epic login did not return a token");
+    if (generation !== this.generation) throw new Error("Sign-in was cancelled because the session changed");
     this.record = record;
     this.profileCache = null;
+    this.profileFlight = null; this.refreshFlight = null; this.profileAt = 0;
     this.store();
     await this.ensureProfile();
     const state = this.state();
@@ -206,31 +208,30 @@ export class AuthService {
 
   async logout(): Promise<void> {
     const token = this.record?.token;
-    this.record = null;
-    this.profileCache = null;
-    try {
-      if (existsSync(this.authFile)) safeStorage.isEncryptionAvailable() && rmSync(this.authFile);
-      if (existsSync(this.legacyFile)) rmSync(this.legacyFile);
-    } catch {
-      // ignore
-    }
+    this.clearLocalSession();
     if (token) {
       try {
         await fetchJson(ssoUrl("logout"), {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-            "User-Agent": USER_AGENT
-          },
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": USER_AGENT },
           body: "{}"
-        });
-      } catch {
-        // best effort
-      }
+        }, 10_000);
+      } catch { /* best effort; local logout is already complete */ }
     }
-    const state = this.state();
-    this.emit(state);
+  }
+
+  private clearLocalSession(): void {
+    this.record = null;
+    this.generation++;
+    this.refreshFlight = null; this.profileFlight = null; this.profileAt = 0;
+    this.profileCache = null;
+    this.emit(this.state());
+    try {
+      if (existsSync(this.authFile)) rmSync(this.authFile);
+      if (existsSync(this.legacyFile)) rmSync(this.legacyFile);
+    } catch {
+      // ignore
+    }
   }
 
   async getToken(): Promise<string> {
@@ -239,31 +240,38 @@ export class AuthService {
     return this.refresh();
   }
 
-  async refresh(): Promise<string> {
+  async refresh(rejectedToken?: string): Promise<string> {
+    if (rejectedToken && this.record?.token && this.record.token !== rejectedToken) return this.getToken();
+    if (this.refreshFlight) return this.refreshFlight;
     if (!this.record?.refreshToken) {
       throw new Error("Session expired. Please sign in again.");
     }
-    const email = this.record.email || this.currentEmail();
-    const payload = await fetchJson<unknown>(ssoUrl("login"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": USER_AGENT
-      },
-      body: JSON.stringify({
-        email,
-        token: this.record.token,
-        refreshToken: this.record.refreshToken,
-        realm: legacyConfig.realm
-      })
-    });
-    const next = pickToken(payload);
-    if (!next) throw new Error("Could not refresh the Epic session");
-    this.record = { ...next, email: next.email || email };
-    this.store();
-    const state = this.state();
-    this.emit(state);
-    return this.record.token;
+    const record = this.record;
+    const generation = this.generation;
+    const email = record.email || this.currentEmail();
+    const work = (async () => {
+      const payload = await fetchJson<unknown>(ssoUrl("login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "User-Agent": USER_AGENT },
+        body: JSON.stringify({ email, token: record.token, refreshToken: record.refreshToken, realm: legacyConfig.realm })
+      });
+      const next = pickToken(payload);
+      if (!next) throw new Error("Could not refresh the Epic session");
+      if (this.generation !== generation || this.record !== record) throw new Error("Session changed while refreshing. Sign in again.");
+      this.record = { ...next, email: next.email || email };
+      this.store();
+      this.emit(this.state());
+      return this.record.token;
+    })();
+    this.refreshFlight = work;
+    try { return await work; }
+    catch (error) {
+      if (this.generation === generation && this.record === record && [400, 401, 403].includes((error as { status: number }).status)) {
+        this.clearLocalSession();
+        throw new Error("Session expired. Please sign in again.");
+      }
+      throw error;
+    } finally { if (this.refreshFlight === work) this.refreshFlight = null; }
   }
 
   headers(extra: Record<string, string> = {}): Record<string, string> {

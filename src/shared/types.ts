@@ -199,6 +199,7 @@ export interface CatalogHit {
 }
 
 export interface CatalogResult {
+  facetCountsPartial?: boolean;
   hits: CatalogHit[];
   nbHits: number;
   page: number;
@@ -221,6 +222,7 @@ export interface CatalogQuery {
   minSize?: number;
   maxSize?: number;
   sortBy?: string;
+  pack?: PackRef;
   facets?: string[];
   facetFilters?: Record<string, string[]>;
 }
@@ -334,7 +336,17 @@ export interface MapPreview {
   label: string;
   url: string;
   resolution?: string;
+  map?: MapPreviewRequest;
 }
+
+export interface MapPreviewRequest {
+  type: string;
+  textureSet?: string;
+  referenceUri?: string;
+  billboard?: boolean;
+}
+
+export type CatalogRequestScope = "discover" | "related" | "drawer" | "preview";
 
 export interface DownloadOptions {
   resolution: number;
@@ -370,6 +382,24 @@ export interface DownloadProgress {
   ratio: number;
   message?: string;
   path?: string;
+  diagnostics?: DownloadDiagnostics;
+}
+
+export interface DownloadSource {
+  host: string;
+  provider?: string;
+  edgeCode?: string;
+  location?: string;
+  locationKind?: "edge" | "region";
+  country?: string;
+  countryCode?: string;
+}
+
+export interface DownloadDiagnostics {
+  receiveBytesPerSecond: number;
+  writeBytesPerSecond: number;
+  activeTransfers: number;
+  sources: DownloadSource[];
 }
 
 export interface SyncStatus {
@@ -486,13 +516,26 @@ export interface LibraryCounts {
 
 export type LibrarySort = "recent" | "name" | "type";
 
+export interface PackRef {
+  id?: string;
+  name: string;
+}
+
+export interface PackSummary extends PackRef {
+  count: number;
+}
+
 export interface LibraryQuery {
   query?: string;
   repo?: RepoKind | "all";
   sort?: LibrarySort;
+  type?: string;
+  categoryPath?: string[];
+  ids?: string[];
   ready?: string[];
   maxTris?: number;
   pack?: string;
+  packId?: string;
   color?: string;
   state?: string;
   interiorExterior?: string;
@@ -508,6 +551,8 @@ export interface LibraryQueryResult {
   limit: number;
   hasMore: boolean;
   tookMs: number;
+  categories: CategoryNode[];
+  packs: PackSummary[];
 }
 
 export interface LibrarySnapshot {
@@ -567,10 +612,11 @@ export interface OpenBridgeApi {
   librarySnapshot(force?: boolean): Promise<LibrarySnapshot>;
   queryLibrary(query: LibraryQuery): Promise<LibraryQueryResult>;
   queryLibraryIds(query: LibraryQuery): Promise<string[]>;
+  localPreviews(assetId: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }>;
   libraryHealth(force?: boolean): Promise<LibraryHealthReport>;
   onLibraryHealthProgress(callback: (progress: LibraryHealthProgress) => void): () => void;
-  removeLibraryAssets(assetIds: string[]): Promise<{ removed: number }>;
-  exportLibraryAssets(assetIds: string[], folder: string): Promise<string>;
+  removeLibraryAssets(assetIds: string[], scope?: LibraryQuery): Promise<{ removed: number }>;
+  exportLibraryAssets(assetIds: string[], folder: string, scope?: LibraryQuery): Promise<string>;
   openPath(target: string): Promise<void>;
   openLogs(): Promise<void>;
   sendExport(port: number, data: ExportAsset[]): Promise<void>;
@@ -606,12 +652,15 @@ export interface OpenBridgeApi {
   downloadCatalogMetadata(): Promise<CatalogMetadataStatus>;
   removeCatalogMetadata(): Promise<CatalogMetadataStatus>;
   catalogMetadataLookup(ids: string[]): Promise<CatalogMetadataRecord[]>;
+  catalogPacks(): Promise<PackSummary[]>;
   catalog: {
-    search(query: CatalogQuery): Promise<CatalogResult>;
+    search(query: CatalogQuery, scope?: "discover" | "related"): Promise<CatalogResult>;
     ids(query: CatalogQuery): Promise<CatalogIdResult>;
     categories(): Promise<CategoryNode[]>;
-    extended(assetId: string): Promise<ExtendedAsset>;
+    extended(assetId: string, scope?: "drawer"): Promise<ExtendedAsset>;
+    cancel(scope: CatalogRequestScope): Promise<void>;
     mapPreviews(assetId: string): Promise<MapPreview[]>;
+    highResolutionPreview(assetId: string, map: MapPreviewRequest): Promise<MapPreview>;
     acquired(): Promise<string[]>;
     favorites(): Promise<string[]>;
     addFavorite(assetId: string): Promise<void>;

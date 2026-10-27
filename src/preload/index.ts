@@ -40,6 +40,7 @@ const api: OpenBridgeApi = {
     ipcRenderer.invoke("library:query", query) as Promise<LibraryQueryResult>,
   queryLibraryIds: (query: LibraryQuery) =>
     ipcRenderer.invoke("library:ids", query) as Promise<string[]>,
+  localPreviews: (assetId, indexedPath) => ipcRenderer.invoke("library:previews", assetId, indexedPath),
   libraryHealth: (force = false) =>
     ipcRenderer.invoke("library:health", force) as Promise<LibraryHealthReport>,
   onLibraryHealthProgress: callback => {
@@ -47,10 +48,10 @@ const api: OpenBridgeApi = {
     ipcRenderer.on("library:healthProgress", listener);
     return () => ipcRenderer.removeListener("library:healthProgress", listener);
   },
-  removeLibraryAssets: (assetIds: string[]) =>
-    ipcRenderer.invoke("library:removeAssets", assetIds) as Promise<{ removed: number }>,
-  exportLibraryAssets: (assetIds: string[], folder: string) =>
-    ipcRenderer.invoke("library:exportAssets", assetIds, folder) as Promise<string>,
+  removeLibraryAssets: (assetIds, scope) =>
+    ipcRenderer.invoke("library:removeAssets", assetIds, scope) as Promise<{ removed: number }>,
+  exportLibraryAssets: (assetIds, folder, scope) =>
+    ipcRenderer.invoke("library:exportAssets", assetIds, folder, scope) as Promise<string>,
   openPath: target => ipcRenderer.invoke("app:openPath", target) as Promise<void>,
   openLogs: () => ipcRenderer.invoke("app:openLogs") as Promise<void>,
   sendExport: (port, data: ExportAsset[]) =>
@@ -121,16 +122,19 @@ const api: OpenBridgeApi = {
     ipcRenderer.invoke("catalog:metadata:remove") as Promise<CatalogMetadataStatus>,
   catalogMetadataLookup: (ids: string[]) =>
     ipcRenderer.invoke("catalog:metadata:lookup", ids) as Promise<CatalogMetadataRecord[]>,
+  catalogPacks: () => ipcRenderer.invoke("catalog:metadata:packs"),
   catalog: {
-    search: (query: CatalogQuery) =>
-      ipcRenderer.invoke("catalog:search", query) as Promise<CatalogResult>,
+    search: (query: CatalogQuery, scope) =>
+      ipcRenderer.invoke("catalog:search", query, scope) as Promise<CatalogResult>,
     ids: (query: CatalogQuery) =>
       ipcRenderer.invoke("catalog:ids", query) as Promise<CatalogIdResult>,
     categories: () => ipcRenderer.invoke("catalog:categories") as Promise<CategoryNode[]>,
-    extended: (assetId: string) =>
-      ipcRenderer.invoke("catalog:extended", assetId) as Promise<ExtendedAsset>,
+    extended: (assetId: string, scope) =>
+      ipcRenderer.invoke("catalog:extended", assetId, scope) as Promise<ExtendedAsset>,
+    cancel: scope => ipcRenderer.invoke("catalog:cancel", scope),
     mapPreviews: (assetId: string) =>
       ipcRenderer.invoke("catalog:mapPreviews", assetId) as Promise<MapPreview[]>,
+    highResolutionPreview: (assetId, map) => ipcRenderer.invoke("catalog:highResolutionPreview", assetId, map),
     acquired: () => ipcRenderer.invoke("catalog:acquired") as Promise<string[]>,
     favorites: () => ipcRenderer.invoke("catalog:favorites") as Promise<string[]>,
     addFavorite: (assetId: string) =>

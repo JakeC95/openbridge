@@ -11,6 +11,9 @@ import type {
   DownloadProgress,
   ExtendedAsset,
   LibraryCounts,
+  LibrarySort,
+  PackRef,
+  PackSummary,
   LibraryRef,
   Profile,
   RepoKind,
@@ -19,17 +22,12 @@ import type {
 } from "../shared/types";
 import { buildDownloadOptions } from "./download-options";
 import { parseSearchQuery } from "./search-utils";
+import { catalogFilterQuery, libraryFilterQuery, readPreference, writePreference } from "./browsing-state";
+import { recordDownloadProgress } from "./download-history";
 
 type View = "discover" | "library" | "downloads" | "settings";
 type LocalRepo = "all" | RepoKind;
 type SizeFilter = "any" | "small" | "medium" | "large" | "huge";
-
-const SIZE_FILTERS: Record<Exclude<SizeFilter, "any">, { minSize?: number; maxSize?: number }> = {
-  small: { maxSize: 0.5 },
-  medium: { minSize: 0.5, maxSize: 2 },
-  large: { minSize: 2, maxSize: 5 },
-  huge: { minSize: 5 }
-};
 
 let catalogRequest = 0;
 let libraryRequest = 0;
@@ -49,6 +47,14 @@ interface Selection {
   error?: string;
 }
 
+interface RecentAsset {
+  id: string;
+  name: string;
+  type: string;
+  source: "catalog" | "local";
+  hit?: CatalogHit;
+}
+
 interface Toast {
   id: number;
   message: string;
@@ -56,12 +62,39 @@ interface Toast {
 }
 
 interface State {
+  density: "compact" | "comfortable" | "large";
+  setDensity(value: State["density"]): void;
+  catalogPack: PackRef | null;
+  localPack: PackRef | null;
+  packs: PackSummary[];
+  localPacks: PackSummary[];
+  localCategories: CategoryNode[];
+  localType: string;
+  localCategoryPath: string[];
+  localSort: LibrarySort;
+  localFavoritesOnly: boolean;
+  setLocalType(value: string): void;
+  setLocalCategoryPath(value: string[]): void;
+  setLocalSort(value: LibrarySort): void;
+  setLocalFavoritesOnly(value: boolean): void;
+  browsePack(pack: PackRef, local?: boolean): void;
+  clearPack(): void;
+  refreshPacks(): Promise<void>;
+  selectionHistory: Selection[];
+  backSelection(): void;
+  stepSelection(delta: number): void;
+  recentSearches: string[];
+  recentlyViewed: RecentAsset[];
+  rememberSearch(query: string): void;
+  openRecent(asset: RecentAsset): Promise<void>;
+  clearRecent(): void;
   view: View;
   settings: AppSettings | null;
   auth: AuthState;
   profile: Profile | null;
   versions: Versions | null;
   categories: CategoryNode[];
+  categoriesLoading: boolean;
   acquired: string[];
   favorites: string[];
   favoritesOnly: boolean;
@@ -80,6 +113,7 @@ interface State {
   nbHits: number;
   catalogLoading: boolean;
   catalogError: string | null;
+  catalogFacetWarning: boolean;
   localRefs: LibraryRef[];
   libraryAssets: AssetRecord[];
   libraryCounts: LibraryCounts;
@@ -180,12 +214,105 @@ let toastId = 0;
 let initPromise: Promise<void> | null = null;
 
 export const useStore = create<State>((set, get) => ({
+  density: (() => {
+    const saved = readPreference<string>("density", "comfortable");
+    return saved === "compact" || saved === "large" ? saved : "comfortable";
+  })(),
+  setDensity(value) { set({ density: value }); writePreference("density", value); },
+  catalogPack: null,
+  localPack: null,
+  packs: [],
+  localPacks: [],
+  localCategories: [],
+  localType: "",
+  localCategoryPath: [],
+  localSort: (() => {
+    const sort = readPreference<string>("localSort", "recent");
+    return sort === "name" || sort === "type" ? sort : "recent";
+  })(),
+  localFavoritesOnly: false,
+  setLocalType(localType) { set({ localType, localCategoryPath: [] }); },
+  setLocalCategoryPath(localCategoryPath) { set({ localCategoryPath, localType: "" }); },
+  setLocalSort(localSort) { set({ localSort }); writePreference("localSort", localSort); },
+  setLocalFavoritesOnly(localFavoritesOnly) { set({ localFavoritesOnly }); },
+  browsePack(pack, local = false) {
+    get().closeSelection();
+    if (local) {
+      set({ view: "library", localPack: pack, localQuery: "", localType: "", localCategoryPath: [],
+        localRepo: "all", localFavoritesOnly: false, localReady: [], localMaxTris: null,
+        localColor: "", localState: "", localInterior: "" });
+    } else {
+      set({ view: "discover", catalogPack: pack, query: "", type: "", categoryPath: [],
+        favoritesOnly: false, freeOnly: false, sizeFilter: "any", facetFilters: {} });
+      void get().search(true);
+    }
+  },
+  clearPack() {
+    if (get().view === "library") set({ localPack: null });
+    else { set({ catalogPack: null }); void get().search(true); }
+  },
+  async refreshPacks() {
+    try { set({ packs: await window.openbridge.catalogPacks() }); }
+    catch { set({ packs: [] }); }
+  },
+  selectionHistory: [],
+  backSelection() {
+    const history = get().selectionHistory;
+    const previous = history.at(-1);
+    if (!previous) return;
+    if (previous.loading && previous.hit) {
+      set({ selection: null });
+      void get().openHit(previous.hit);
+      set({ selectionHistory: history.slice(0, -1) });
+    } else set({ selection: previous, selectionHistory: history.slice(0, -1) });
+  },
+  stepSelection(delta) {
+    const { selection, hits, libraryAssets } = get();
+    if (selection?.local) {
+      const index = libraryAssets.findIndex(asset => asset.path === selection.local?.path);
+      const next = libraryAssets[index + delta];
+      if (index >= 0 && next) void get().openLocal(next);
+    } else if (selection?.hit) {
+      const index = hits.findIndex(hit => (hit.id || hit.objectID) === (selection.hit?.id || selection.hit?.objectID));
+      const next = hits[index + delta];
+      if (index >= 0 && next) void get().openHit(next);
+    }
+  },
+  recentSearches: (() => {
+    const saved = readPreference<unknown>("recentSearches", []);
+    return Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string").slice(0, 10) : [];
+  })(),
+  recentlyViewed: (() => {
+    const saved = readPreference<unknown>("recentlyViewed", []);
+    return Array.isArray(saved) ? saved.filter((item): item is RecentAsset => item &&
+      typeof item.id === "string" && typeof item.name === "string" &&
+      (item.source === "local" || (item.source === "catalog" && item.hit))).slice(0, 20) : [];
+  })(),
+  rememberSearch(query) {
+    const text = query.trim();
+    if (!text) return;
+    const recentSearches = [text, ...get().recentSearches.filter(value => value !== text)].slice(0, 10);
+    set({ recentSearches }); writePreference("recentSearches", recentSearches);
+  },
+  async openRecent(asset) {
+    if (asset.source === "catalog" && asset.hit) await get().openHit(asset.hit);
+    else {
+      const result = await window.openbridge.queryLibrary({ ids: [asset.id], limit: 1 });
+      if (result.assets[0]) await get().openLocal(result.assets[0]);
+      else get().toast("This asset is no longer in the local library", true);
+    }
+  },
+  clearRecent() {
+    set({ recentSearches: [], recentlyViewed: [] });
+    writePreference("recentSearches", []); writePreference("recentlyViewed", []);
+  },
   view: "discover",
   settings: null,
   auth: emptyAuth,
   profile: null,
   versions: null,
   categories: [],
+  categoriesLoading: true,
   acquired: [],
   favorites: [],
   favoritesOnly: false,
@@ -204,6 +331,7 @@ export const useStore = create<State>((set, get) => ({
   nbHits: 0,
   catalogLoading: false,
   catalogError: null,
+  catalogFacetWarning: false,
   localRefs: [],
   libraryAssets: [],
   libraryCounts: { all: 0, downloaded: 0, custom: 0, dhi: 0 },
@@ -230,10 +358,10 @@ export const useStore = create<State>((set, get) => ({
   async init() {
     if (initPromise) return initPromise;
     initPromise = (async () => {
-      const [settings, auth, categories, downloads, sync, versions, catalogMetadata] = await Promise.all([
+      const categoryRequest = window.openbridge.catalog.categories().catch(() => []);
+      const [settings, auth, downloads, sync, versions, catalogMetadata] = await Promise.all([
         window.openbridge.getSettings(),
         window.openbridge.auth.state(),
-        window.openbridge.catalog.categories().catch(() => []),
         window.openbridge.downloads.list().catch(() => []),
         window.openbridge.sync.status().catch(() => emptySync),
         window.openbridge.versions(),
@@ -248,7 +376,10 @@ export const useStore = create<State>((set, get) => ({
       });
 
       const downloadMap: Record<string, DownloadProgress> = {};
-      for (const item of downloads) downloadMap[item.assetId] = item;
+      for (const item of downloads) {
+        downloadMap[item.assetId] = item;
+        recordDownloadProgress(item);
+      }
 
       set({
         settings,
@@ -259,13 +390,15 @@ export const useStore = create<State>((set, get) => ({
         libraryTotal: firstPage.counts.all,
         libraryFilteredTotal: firstPage.total,
         libraryHasMore: firstPage.hasMore,
+        localCategories: firstPage.categories,
+        localPacks: firstPage.packs,
         libraryScannedAt: library.scannedAt,
-        categories,
         downloads: downloadMap,
         sync,
         versions,
         catalogMetadata
       });
+      void categoryRequest.then(categories => set({ categories, categoriesLoading: false }));
 
       if (auth.loggedIn) {
         void get().refreshProfile();
@@ -273,6 +406,7 @@ export const useStore = create<State>((set, get) => ({
         void get().refreshFavorites();
       }
       void get().search(true);
+      void get().refreshPacks();
 
       unsubscribers = [
         window.openbridge.onLibraryUpdated(result => {
@@ -290,17 +424,19 @@ export const useStore = create<State>((set, get) => ({
         }),
         window.openbridge.auth.onChanged(state => {
           set({ auth: state });
-          if (state.loggedIn) {
+        if (state.loggedIn) {
             void get().refreshProfile();
             void get().refreshAcquired();
             void get().refreshFavorites();
           } else {
-            set({ acquired: [], favorites: [], favoritesOnly: false, profile: null, selection: null });
+            set({ acquired: [], favorites: [], favoritesOnly: false, localFavoritesOnly: false,
+              profile: null, selection: null, selectionHistory: [] });
           }
         }),
         window.openbridge.downloads.onProgress(progress => {
           const current = get().downloads;
           set({ downloads: { ...current, [progress.assetId]: progress } });
+          recordDownloadProgress(progress);
           if (progress.status === "complete") {
             get().toast(`${progress.name ?? progress.assetId} downloaded`);
             void get().refreshLibrary(true);
@@ -322,7 +458,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setView(view) {
-    set({ view, selection: null });
+    get().closeSelection();
+    set({ view, selection: null, selectionHistory: [] });
   },
 
   setQuery(query) {
@@ -409,24 +546,14 @@ export const useStore = create<State>((set, get) => ({
       favoritesOnly: false,
       freeOnly: false,
       sizeFilter: "any",
-      facetFilters: {}
+      facetFilters: {},
+      catalogPack: null
     });
     void get().search(true);
   },
 
   async search(reset = true) {
     const requestId = ++catalogRequest;
-    const {
-      query,
-      type,
-      categoryPath,
-      favoritesOnly,
-      favorites,
-      freeOnly,
-      sizeFilter,
-      facetFilters,
-      nextCursor
-    } = get();
     const page = reset ? 0 : get().page + 1;
     if (reset) {
       set({ hits: [], page: -1, nextCursor: null, hasMore: false, nbHits: 0, nbPages: 0 });
@@ -434,17 +561,10 @@ export const useStore = create<State>((set, get) => ({
     set({ catalogLoading: true, catalogError: null });
     try {
       const result = await window.openbridge.catalog.search({
-        query,
-        type: type || undefined,
-        categoryPath: categoryPath.length ? categoryPath : undefined,
-        ids: favoritesOnly ? favorites : undefined,
-        points: freeOnly ? 0 : undefined,
-        ...(sizeFilter === "any" ? {} : SIZE_FILTERS[sizeFilter]),
-        facetFilters,
-        facets: ["biome", "region", "resolution", "color", "environment", "theme"],
+        ...catalogFilterQuery(get()),
         page,
         hitsPerPage: 48
-      });
+      }, "discover");
       if (requestId !== catalogRequest) return;
       let hits = result.hits;
       if (hits.length > 0 && get().catalogMetadata?.available) {
@@ -467,6 +587,7 @@ export const useStore = create<State>((set, get) => ({
         nextCursor: null,
         hasMore: result.page + 1 < result.nbPages,
         facets: result.facets ?? {},
+        catalogFacetWarning: Boolean(result.facetCountsPartial),
         catalogLoading: false
       });
     } catch (error) {
@@ -495,27 +616,12 @@ export const useStore = create<State>((set, get) => ({
 
   async queryLocalLibrary(reset = true) {
     const requestId = ++libraryRequest;
-    const {
-      localQuery,
-      localRepo,
-      localReady,
-      localMaxTris,
-      localColor,
-      localState,
-      localInterior,
-      libraryAssets
-    } = get();
+    const { libraryAssets } = get();
     const offset = reset ? 0 : libraryAssets.length;
     set({ libraryLoading: true });
     try {
       const result = await window.openbridge.queryLibrary({
-        query: localQuery,
-        repo: localRepo,
-        ready: localReady,
-        maxTris: localMaxTris ?? undefined,
-        color: localColor || undefined,
-        state: localState || undefined,
-        interiorExterior: localInterior || undefined,
+        ...libraryFilterQuery(get()),
         limit: 300,
         offset
       });
@@ -526,6 +632,8 @@ export const useStore = create<State>((set, get) => ({
         libraryTotal: result.counts.all,
         libraryFilteredTotal: result.total,
         libraryHasMore: result.hasMore,
+        localCategories: result.categories,
+        localPacks: result.packs,
         libraryLoading: false
       }));
     } catch (error) {
@@ -569,6 +677,8 @@ export const useStore = create<State>((set, get) => ({
 
   resetLocalFilters() {
     set({
+      localQuery: "", localRepo: "all", localType: "", localCategoryPath: [],
+      localFavoritesOnly: false, localPack: null,
       localReady: [],
       localMaxTris: null,
       localColor: "",
@@ -578,7 +688,17 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async openHit(hit) {
-    set({ selection: { hit, loading: Boolean(get().auth.loggedIn) } });
+    get().rememberSearch(get().query);
+    const previous = get().selection;
+    const id = hit.id || hit.objectID;
+    const recent: RecentAsset = { id, name: hit.name, type: hit.type, source: "catalog",
+      hit: { id, objectID: id, name: hit.name, type: hit.type, previews: hit.previews,
+        tags: hit.tags, categories: hit.categories, points: hit.points } };
+    const recentlyViewed = [recent, ...get().recentlyViewed.filter(item => item.id !== id || item.source !== "catalog")].slice(0, 20);
+    writePreference("recentlyViewed", recentlyViewed);
+    set({ selection: { hit, loading: Boolean(get().auth.loggedIn) }, recentlyViewed,
+      selectionHistory: previous ? [...get().selectionHistory, previous].slice(-30) : [] });
+    const pending = get().selection;
     if (!get().auth.loggedIn) {
       set({
         selection: {
@@ -590,9 +710,11 @@ export const useStore = create<State>((set, get) => ({
       return;
     }
     try {
-      const extended = await window.openbridge.catalog.extended(hit.id);
+      const extended = await window.openbridge.catalog.extended(id, "drawer");
+      if (get().selection !== pending) return;
       set({ selection: { hit, extended, loading: false } });
     } catch (error) {
+      if (get().selection !== pending) return;
       set({
         selection: {
           hit,
@@ -604,11 +726,19 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async openLocal(asset) {
-    set({ selection: { local: asset, loading: false } });
+    void window.openbridge.catalog.cancel("drawer").catch(() => undefined);
+    void window.openbridge.catalog.cancel("related").catch(() => undefined);
+    const recent: RecentAsset = { id: asset.id, name: asset.name, type: asset.type, source: "local" };
+    const recentlyViewed = [recent, ...get().recentlyViewed.filter(item => item.id !== asset.id || item.source !== "local")].slice(0, 20);
+    writePreference("recentlyViewed", recentlyViewed);
+    set({ selection: { local: asset, loading: false }, recentlyViewed,
+      selectionHistory: get().selection ? [...get().selectionHistory, get().selection!].slice(-30) : [] });
   },
 
   closeSelection() {
-    set({ selection: null });
+    set({ selection: null, selectionHistory: [] });
+    void window.openbridge.catalog.cancel("drawer").catch(() => undefined);
+    void window.openbridge.catalog.cancel("related").catch(() => undefined);
   },
 
   async login() {
@@ -628,7 +758,9 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async logout() {
+    const session = get().auth;
     await window.openbridge.auth.logout();
+    if (get().auth !== session) return;
     set({
       auth: emptyAuth,
       acquired: [],
@@ -636,7 +768,8 @@ export const useStore = create<State>((set, get) => ({
       favoritesOnly: false,
       freeOnly: false,
       profile: null,
-      selection: null
+      localFavoritesOnly: false,
+      selection: null, selectionHistory: []
     });
   },
 
@@ -759,6 +892,7 @@ export const useStore = create<State>((set, get) => ({
       get().toast("Importing catalogue metadata...");
       const status = await window.openbridge.importCatalogMetadata();
       set({ catalogMetadata: status });
+      await get().refreshPacks();
       get().toast(
         status.available
           ? `Catalogue metadata ready for ${status.count.toLocaleString()} assets`
@@ -774,6 +908,7 @@ export const useStore = create<State>((set, get) => ({
       get().toast("Downloading catalogue metadata pack...");
       const status = await window.openbridge.downloadCatalogMetadata();
       set({ catalogMetadata: status });
+      await get().refreshPacks();
       get().toast(
         `Catalogue metadata ready for ${status.count.toLocaleString()} assets`
       );
@@ -785,6 +920,9 @@ export const useStore = create<State>((set, get) => ({
   async removeCatalogMetadata() {
     try {
       set({ catalogMetadata: await window.openbridge.removeCatalogMetadata() });
+      set({ catalogPack: null });
+      await get().refreshPacks();
+      await get().search(true);
       get().toast("Catalogue metadata pack removed");
     } catch (error) {
       get().toast(error instanceof Error ? error.message : String(error), true);
@@ -847,8 +985,10 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async refreshProfile() {
+    const session = get().auth;
     try {
       const profile = await window.openbridge.auth.profile();
+      if (get().auth !== session || !session.loggedIn) return;
       set({ profile });
     } catch {
       // ignore
@@ -856,8 +996,10 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async refreshAcquired() {
+    const session = get().auth;
     try {
       const acquired = await window.openbridge.catalog.acquired();
+      if (get().auth !== session || !session.loggedIn) return;
       set({ acquired });
     } catch {
       // ignore
@@ -865,8 +1007,10 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async refreshFavorites() {
+    const session = get().auth;
     try {
       const favorites = await window.openbridge.catalog.favorites();
+      if (get().auth !== session || !session.loggedIn) return;
       set({ favorites });
     } catch {
       // ignore
@@ -874,6 +1018,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async toggleFavorite(assetId) {
+    const session = get().auth;
     if (!get().auth.loggedIn) {
       get().toast("Sign in with Epic to use favorites", true);
       return;
@@ -882,6 +1027,7 @@ export const useStore = create<State>((set, get) => ({
     try {
       if (isFavorite) await window.openbridge.catalog.removeFavorite(assetId);
       else await window.openbridge.catalog.addFavorite(assetId);
+      if (get().auth !== session || !session.loggedIn) return;
       set(state => ({
         favorites: isFavorite
           ? state.favorites.filter(id => id !== assetId)

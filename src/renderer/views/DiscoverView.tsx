@@ -1,8 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { catalogFilterQuery } from "../browsing-state";
+import { BrowsingMenu, DensityControl, FacetGroup, PackBrowser, RecentBrowsing } from "../components/BrowsingTools";
+import type { PackRef } from "../../shared/types";
+import { useBrowseScroll } from "../use-browse-scroll";
 import { useStore } from "../store";
 import { AssetCard } from "../components/AssetCard";
 import { hitId } from "../catalog-utils";
-import { CloseIcon, UserIcon } from "../icons";
+import { CloseIcon, ChevronDownIcon, UserIcon } from "../icons";
 import { Dropdown } from "../components/Dropdown";
 import { VirtualGrid } from "../components/VirtualGrid";
 
@@ -17,6 +21,21 @@ const TABS: Array<{ label: string; path: string[] }> = [
   { label: "Imperfections", path: ["imperfection"] },
   { label: "Displacements", path: ["displacement"] }
 ];
+
+const FACET_GROUPS = [
+  { key: "biome", label: "Biome" },
+  { key: "region", label: "Region" },
+  { key: "resolution", label: "Resolution" },
+  { key: "color", label: "Color" },
+  { key: "environment", label: "Environment" },
+  { key: "theme", label: "Theme" }
+] as const;
+
+type FacetGroupKey = (typeof FACET_GROUPS)[number]["key"];
+
+function facetGroupLabel(key: string): string {
+  return FACET_GROUPS.find(group => group.key === key)?.label ?? titleCase(key);
+}
 
 function titleCase(key: string): string {
   return key
@@ -57,13 +76,16 @@ interface SavedSearch {
   favoritesOnly: boolean;
   sizeFilter: "any" | "small" | "medium" | "large" | "huge";
   facetFilters: Record<string, string[]>;
+  pack?: PackRef | null;
 }
 
 function loadSavedSearches(): SavedSearch[] {
   try {
     const raw = localStorage.getItem("openbridge.savedSearches");
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.id === "string" &&
+      typeof item.name === "string" && typeof item.query === "string" && Array.isArray(item.categoryPath) &&
+      item.facetFilters && typeof item.facetFilters === "object").slice(0, 20) : [];
   } catch {
     return [];
   }
@@ -78,6 +100,9 @@ function storeSavedSearches(searches: SavedSearch[]): void {
 }
 
 export function DiscoverView() {
+  const density = useStore(state => state.density);
+  const packs = useStore(state => state.packs);
+  const catalogPack = useStore(state => state.catalogPack);
   const query = useStore(state => state.query);
   const type = useStore(state => state.type);
   const hasMore = useStore(state => state.hasMore);
@@ -86,6 +111,7 @@ export function DiscoverView() {
   const nbHits = useStore(state => state.nbHits);
   const loading = useStore(state => state.catalogLoading);
   const error = useStore(state => state.catalogError);
+  const facetWarning = useStore(state => state.catalogFacetWarning);
   const categories = useStore(state => state.categories);
   const acquired = useStore(state => state.acquired);
   const favorites = useStore(state => state.favorites);
@@ -114,6 +140,7 @@ export function DiscoverView() {
 
   const [selectMode, setSelectMode] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<FacetGroupKey>("biome");
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => loadSavedSearches());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedPoints, setSelectedPoints] = useState<Map<string, number | undefined>>(
@@ -121,6 +148,13 @@ export function DiscoverView() {
   );
   const [selectingAll, setSelectingAll] = useState(false);
   const selectionAnchor = useRef<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const filterKey = JSON.stringify(catalogFilterQuery(useStore.getState()));
+  useBrowseScroll(bodyRef, "discover", filterKey);
+  useEffect(() => {
+    clearSelection();
+    bodyRef.current?.scrollTo({ top: 0 });
+  }, [filterKey]);
 
   const ownSet = useMemo(() => new Set(acquired), [acquired]);
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
@@ -131,16 +165,6 @@ export function DiscoverView() {
   const selectedCategoryLabel = categoryPathLabel(categories, categoryPath);
   const activeTab = TABS.find(isTabActive) ?? TABS[0];
   const stateFilter = freeOnly ? "free" : favoritesOnly ? "favorites" : "all";
-  const sizeRange =
-    sizeFilter === "small"
-      ? { maxSize: 0.5 }
-      : sizeFilter === "medium"
-        ? { minSize: 0.5, maxSize: 2 }
-        : sizeFilter === "large"
-          ? { minSize: 2, maxSize: 5 }
-          : sizeFilter === "huge"
-            ? { minSize: 5 }
-            : {};
 
   function selectTab(tab: (typeof TABS)[number]): void {
     setCategoryPath(tab.path);
@@ -153,6 +177,14 @@ export function DiscoverView() {
       categoryPath.length >= tab.path.length &&
       tab.path.every((key, index) => categoryPath[index] === key)
     );
+  }
+
+  function toggleFilters(): void {
+    if (!filtersOpen) {
+      const withSelection = FACET_GROUPS.find(group => (facetFilters[group.key] ?? []).length > 0);
+      if (withSelection) setActiveGroup(withSelection.key);
+    }
+    setFiltersOpen(value => !value);
   }
 
   function addSelection(entries: Array<{ id: string; points?: number }>): void {
@@ -221,14 +253,9 @@ export function DiscoverView() {
     if (selectingAll) return;
     setSelectingAll(true);
     try {
-      const result = await window.openbridge.catalog.ids({
-        query,
-        page: 0,
-        categoryPath: categoryPath.length ? categoryPath : undefined,
-        ids: favoritesOnly ? favorites : undefined,
-        points: freeOnly ? 0 : undefined,
-        ...sizeRange
-      });
+      const filters = catalogFilterQuery(useStore.getState());
+      const result = await window.openbridge.catalog.ids(filters);
+      if (JSON.stringify(catalogFilterQuery(useStore.getState())) !== JSON.stringify(filters)) return;
       if (result.entries.length === 0) {
         toast("No assets matched this category or filter", true);
         return;
@@ -327,6 +354,7 @@ export function DiscoverView() {
   function saveCurrentSearch(): void {
     const name =
       query.trim() ||
+      catalogPack?.name ||
       selectedCategoryLabel ||
       (freeOnly ? "Free assets" : favoritesOnly ? "Favorites" : "All assets");
     const next = [
@@ -339,7 +367,8 @@ export function DiscoverView() {
         freeOnly,
         favoritesOnly,
         sizeFilter,
-        facetFilters
+        facetFilters,
+        pack: catalogPack
       },
       ...savedSearches
     ].slice(0, 20);
@@ -356,7 +385,8 @@ export function DiscoverView() {
       freeOnly: saved.freeOnly,
       favoritesOnly: saved.favoritesOnly,
       sizeFilter: saved.sizeFilter ?? "any",
-      facetFilters: saved.facetFilters
+      facetFilters: saved.facetFilters,
+      catalogPack: saved.pack ?? null
     });
     void search(true);
     setFiltersOpen(false);
@@ -432,12 +462,15 @@ export function DiscoverView() {
               <button
                 type="button"
                 className={filtersOpen ? "filter-action active" : "filter-action"}
-                onClick={() => setFiltersOpen(value => !value)}
+                aria-expanded={filtersOpen}
+                aria-controls="catalogue-filter-panel"
+                onClick={toggleFilters}
               >
                 Filters
                 {activeFacetCount > 0 && (
                   <span className="filter-count">{activeFacetCount}</span>
                 )}
+                <ChevronDownIcon className={filtersOpen ? "filter-chevron open" : "filter-chevron"} />
               </button>
 
           <span className="result-count">
@@ -445,16 +478,52 @@ export function DiscoverView() {
               ? "Searching..."
               : `${nbHits.toLocaleString()} assets`}
           </span>
+          <DensityControl />
+          <PackBrowser packs={packs} />
+          <RecentBrowsing />
+          <BrowsingMenu label={`Saved searches${savedSearches.length ? ` (${savedSearches.length})` : ""}`}>
+              <button type="button" className="text-btn" onClick={saveCurrentSearch}>Save current search</button>
+              {savedSearches.map(saved => <div className="saved-search" key={saved.id}>
+                <button type="button" className="text-btn" onClick={event => {
+                  applySavedSearch(saved); event.currentTarget.closest("details")?.removeAttribute("open");
+                }}>{saved.name}</button>
+                <button type="button" className="icon-btn" aria-label={`Remove ${saved.name}`}
+                  onClick={() => removeSavedSearch(saved.id)}><CloseIcon /></button>
+              </div>)}
+          </BrowsingMenu>
+        </div>
+
+        <div className="active-filters" aria-label="Active catalogue filters">
+          {catalogPack && <button type="button" className="facet-chip active" onClick={() => useStore.getState().clearPack()}>Pack: {catalogPack.name} ×</button>}
+          {categoryPath.length > 0 && <button type="button" className="facet-chip active" onClick={() => setCategoryPath([])}>{selectedCategoryLabel} ×</button>}
+          {stateFilter !== "all" && <button type="button" className="facet-chip active" onClick={() => setStateFilter("all")}>{stateFilter} ×</button>}
+          {sizeFilter !== "any" && <button type="button" className="facet-chip active" onClick={() => setSizeFilter("any")}>Size: {sizeFilter} ×</button>}
+          {Object.entries(facetFilters).flatMap(([group, values]) => values.map(value =>
+            <button type="button" key={`${group}:${value}`} className="facet-chip active" onClick={() => toggleFacet(group, value)}>
+              <span>{facetGroupLabel(group)}</span>
+              <strong>{titleCase(value)}</strong>
+              <em aria-hidden="true">×</em>
+            </button>))}
+          {(catalogPack || categoryPath.length > 0 || stateFilter !== "all" || sizeFilter !== "any" || activeFacetCount > 0) &&
+            <button type="button" className="text-btn" onClick={clearFilters}>Clear filters</button>}
         </div>
 
         {filtersOpen && (
-          <div className="facet-panel">
+          <section className="facet-panel" id="catalogue-filter-panel" aria-label="Catalogue filters">
             <div className="facet-panel-head">
-              <strong>Refine catalogue</strong>
+              <div className="facet-panel-heading">
+                <strong>Refine catalogue</strong>
+                <span aria-live="polite">
+                  {activeFacetCount > 0
+                    ? `${activeFacetCount} active facet${activeFacetCount === 1 ? "" : "s"}`
+                    : "Filters apply instantly"}
+                </span>
+              </div>
               <div className="facet-panel-actions">
                 <button type="button" className="text-btn" onClick={saveCurrentSearch}>
                   Save search
                 </button>
+                <span className="facet-panel-divider" aria-hidden="true" />
                 <button
                   type="button"
                   className="text-btn"
@@ -466,7 +535,7 @@ export function DiscoverView() {
                 <button
                   type="button"
                   className="icon-btn"
-                  onClick={() => setFiltersOpen(false)}
+                  onClick={toggleFilters}
                   aria-label="Close filters"
                 >
                   <CloseIcon />
@@ -474,42 +543,48 @@ export function DiscoverView() {
               </div>
             </div>
 
-            <div className="facet-groups">
-              {(["biome", "region", "resolution", "color", "environment", "theme"] as const).map(
-                group => {
-                  const values = Object.entries(facets[group] ?? {})
-                    .filter(([value]) => value && value !== "undefined")
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 10);
-                  if (values.length === 0) return null;
-                  return (
-                    <div className="facet-group" key={group}>
-                      <span>{titleCase(group)}</span>
-                      <div>
-                        {values.map(([value, count]) => (
-                          <button
-                            type="button"
-                            key={value}
-                            className={
-                              facetFilters[group]?.includes(value)
-                                ? "facet-chip active"
-                                : "facet-chip"
-                            }
-                            onClick={() => toggleFacet(group, value)}
-                          >
-                            {value}
-                            <em>{count.toLocaleString()}</em>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
-              )}
-              {Object.keys(facets).length === 0 && (
-                <span className="hint">Run a search to load available filters.</span>
-              )}
-            </div>
+            {facetWarning && (
+              <p className="hint facet-warning">
+                Some filter counts are temporarily unavailable. Your asset results are still available.
+              </p>
+            )}
+
+            {Object.keys(facets).length === 0 ? (
+              <p className="hint">Run a search to load available filters.</p>
+            ) : (
+              <div className="facet-workbench">
+                <nav className="facet-tabs" aria-label="Filter groups">
+                  {FACET_GROUPS.map(({ key, label }) => {
+                    const selectedCount = (facetFilters[key] ?? []).length;
+                    return (
+                      <button
+                        type="button"
+                        key={key}
+                        className={activeGroup === key ? "facet-tab active" : "facet-tab"}
+                        aria-pressed={activeGroup === key}
+                        onClick={() => setActiveGroup(key)}
+                      >
+                        <span>{label}</span>
+                        {selectedCount > 0 && <em>{selectedCount}</em>}
+                      </button>
+                    );
+                  })}
+                </nav>
+                <div className="facet-pane">
+                  {FACET_GROUPS.map(({ key, label }) => (
+                    <FacetGroup
+                      key={key}
+                      group={key}
+                      label={label}
+                      values={facets[key] ?? {}}
+                      selected={facetFilters[key] ?? []}
+                      toggle={value => toggleFacet(key, value)}
+                      hidden={activeGroup !== key}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {savedSearches.length > 0 && (
               <div className="saved-searches">
@@ -537,51 +612,65 @@ export function DiscoverView() {
                 </div>
               </div>
             )}
-          </div>
+          </section>
         )}
 
         {selectMode && (
           <div className="bulk-bar">
-            <span className="bulk-count">
-              {selectedIds.size.toLocaleString()} selected
-            </span>
-            <button
-              type="button"
-              className="text-btn"
-              onClick={selectLoaded}
-              disabled={hits.length === 0}
-            >
-              Select loaded ({hits.length.toLocaleString()})
-            </button>
-            <button
-              type="button"
-              className="text-btn"
-              onClick={() => void selectAllInFilter()}
-              disabled={selectingAll || loading || nbHits === 0}
-            >
-              {selectingAll
-                ? "Selecting..."
-                : `${selectedIds.size > 0 ? "Add" : "Select"} all ${nbHits.toLocaleString()}`}
-            </button>
-            <button
-              type="button"
-              className="btn btn-accent bulk-download"
-              disabled={selectedIds.size === 0}
-              onClick={() => void downloadSelected()}
-            >
-              Download selected
-            </button>
-            <button
-              type="button"
-              className="text-btn"
-              onClick={clearSelection}
-              disabled={selectedIds.size === 0}
-            >
-              Clear
-            </button>
-            <button type="button" className="text-btn" onClick={() => setSelectMode(false)}>
-              Done
-            </button>
+            <div className="bulk-scope">
+              <span className="bulk-count" aria-live="polite">
+                {selectedIds.size.toLocaleString()} selected
+              </span>
+              <span className="bulk-scope-detail">
+                {selectedIds.size === 0
+                  ? `${nbHits.toLocaleString()} assets match current filters`
+                  : selectedIds.size === nbHits
+                    ? `All ${nbHits.toLocaleString()} matching assets`
+                    : selectedIds.size === hits.length
+                      ? `${hits.length.toLocaleString()} loaded assets`
+                      : `${selectedIds.size.toLocaleString()} of ${nbHits.toLocaleString()} matching assets`}
+              </span>
+              <span className="bulk-scope-hint">Assets already downloaded or requiring acquisition are skipped.</span>
+            </div>
+            <div className="bulk-actions">
+              <button
+                type="button"
+                className="text-btn"
+                onClick={selectLoaded}
+                disabled={hits.length === 0}
+              >
+                Select loaded ({hits.length.toLocaleString()})
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => void selectAllInFilter()}
+                disabled={selectingAll || loading || nbHits === 0}
+              >
+                {selectingAll
+                  ? "Selecting..."
+                  : `${selectedIds.size > 0 ? "Add" : "Select"} all ${nbHits.toLocaleString()}`}
+              </button>
+              <button
+                type="button"
+                className="btn btn-accent bulk-download"
+                disabled={selectedIds.size === 0}
+                onClick={() => void downloadSelected()}
+              >
+                Download selected
+              </button>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={clearSelection}
+                disabled={selectedIds.size === 0}
+              >
+                Clear
+              </button>
+              <button type="button" className="text-btn" onClick={() => setSelectMode(false)}>
+                Done
+              </button>
+            </div>
           </div>
         )}
 
@@ -612,17 +701,17 @@ export function DiscoverView() {
       </div>
 
       <div className="view-body discover-body">
-        <div className="asset-area">
+        <div className="asset-area" ref={bodyRef}>
           {error && <div className="error-box">{error}</div>}
 
           <div className="asset-heading">
-            {query ? "Search results" : categoryPath.length > 0 ? selectedCategoryLabel : "Catalogue"}
+              {catalogPack ? `Pack: ${catalogPack.name}` : query ? "Search results" : categoryPath.length > 0 ? selectedCategoryLabel : "Catalogue"}
           </div>
 
           {hits.length > 0 && (
             <VirtualGrid
               items={hits}
-              minItemWidth={220}
+              minItemWidth={density === "compact" ? 160 : density === "large" ? 320 : 220}
               gap={28}
               renderItem={hit => {
                 const id = hitId(hit);
@@ -678,7 +767,7 @@ export function DiscoverView() {
                   ? "You have no favorites yet."
                   : "Try a different search or clear the filters."}
               </p>
-              {(favoritesOnly || freeOnly || categoryPath.length > 0) && (
+              {(favoritesOnly || freeOnly || categoryPath.length > 0 || sizeFilter !== "any" || activeFacetCount > 0 || catalogPack) && (
                 <button type="button" className="btn btn-ghost" onClick={clearFilters}>
                   Clear filters
                 </button>
