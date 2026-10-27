@@ -1,3 +1,4 @@
+import { formatMeasurementText } from "../shared/measurements";
 import type { CatalogHit, ExtendedAsset } from "../shared/types";
 
 export function hitId(hit: CatalogHit): string {
@@ -66,7 +67,7 @@ export function galleryFacts(hit: CatalogHit): string[] {
     : hit.physicalSize && hit.physicalSize !== "undefined"
       ? hit.physicalSize
       : null;
-  if (size) facts.push(size);
+  if (size) facts.push(formatMeasurementText(size));
   const resolution = formatResolution(hit.resolution);
   if (resolution) facts.push(resolution);
   const environment =

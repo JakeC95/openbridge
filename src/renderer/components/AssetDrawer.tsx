@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../store";
 import { Dropdown } from "./Dropdown";
 import type {
+  CatalogHit,
   DownloadMapFormat,
   DownloadMapOption,
   DownloadOptions,
@@ -15,6 +16,7 @@ import {
   lodMeshBytes,
   mapTechnicalDetails
 } from "../../shared/asset-metadata";
+import { formatMeasurementText } from "../../shared/measurements";
 import {
   aclResolution,
   hitId,
@@ -103,6 +105,8 @@ export function AssetDrawer() {
   const [mapIndex, setMapIndex] = useState(0);
   const [mapsLoading, setMapsLoading] = useState(false);
   const [mapsError, setMapsError] = useState<string | null>(null);
+  const [related, setRelated] = useState<CatalogHit[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
 
   const assetType = extended?.type ?? hit?.type ?? local?.type ?? "";
   const threeD = is3d(extended, assetType);
@@ -130,6 +134,77 @@ export function AssetDrawer() {
     setMapsError(null);
     setMapsLoading(false);
   }, [assetId]);
+
+  useEffect(() => {
+    const inline = (extended?.similarAssets ?? []).filter(
+      item => item && (item.id || item.objectID) && hitId(item) !== assetId
+    );
+    if (inline.length > 0) {
+      setRelated(inline.slice(0, 8));
+      setRelatedLoading(false);
+      return;
+    }
+    if (!extended) {
+      setRelated([]);
+      setRelatedLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const assetCategories = extended.assetCategories as Record<string, unknown> | undefined;
+    const topCategory =
+      assetCategories && typeof assetCategories === "object"
+        ? Object.keys(assetCategories)[0]
+        : extended.categories?.[0];
+    const tags = (extended.tags ?? []).slice(0, 3);
+    setRelatedLoading(true);
+
+    const search = async (
+      query: string,
+      categoryPath: string[] | undefined
+    ): Promise<CatalogHit[]> => {
+      const result = await window.openbridge.catalog.search({
+        query,
+        categoryPath,
+        page: 0,
+        hitsPerPage: 24
+      });
+      return result.hits.filter(
+        item => item && (item.id || item.objectID) && hitId(item) !== assetId
+      );
+    };
+
+    void (async () => {
+      try {
+        const categoryPath = topCategory ? [topCategory] : undefined;
+        const merged = new Map<string, CatalogHit>();
+        const add = (hits: CatalogHit[]): void => {
+          for (const item of hits) {
+            const id = hitId(item);
+            if (id && id !== assetId) merged.set(id, item);
+          }
+        };
+
+        add(await search(tags.slice(0, 2).join(" "), categoryPath));
+        if (merged.size < 8 && tags[0]) {
+          add(await search(tags[0], categoryPath));
+        }
+        if (merged.size < 8) {
+          add(await search("", categoryPath));
+        }
+
+        if (!cancelled) setRelated([...merged.values()].slice(0, 8));
+      } catch {
+        if (!cancelled) setRelated([]);
+      } finally {
+        if (!cancelled) setRelatedLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assetId, extended]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -243,7 +318,8 @@ export function AssetDrawer() {
     : 0;
 
   const averageColor =
-    typeof extended?.averageColor === "string" && extended.averageColor
+    typeof extended?.averageColor === "string" &&
+    extended.averageColor.toLowerCase() !== "#000000"
       ? extended.averageColor
       : null;
   const texelDensity = technical.texelDensity
@@ -252,9 +328,9 @@ export function AssetDrawer() {
       : technical.texelDensity
     : null;
   const techRows: Array<[string, string]> = [];
-  if (technical.dimensions) techRows.push(["Dimensions", technical.dimensions]);
-  if (technical.scanArea) techRows.push(["Scan area", technical.scanArea]);
-  if (technical.height && !technical.dimensions) techRows.push(["Height", technical.height]);
+  if (technical.dimensions) techRows.push(["Dimensions", formatMeasurementText(technical.dimensions)]);
+  if (technical.scanArea) techRows.push(["Scan area", formatMeasurementText(technical.scanArea)]);
+  if (technical.height && !technical.dimensions) techRows.push(["Height", formatMeasurementText(technical.height)]);
   if (texelDensity) techRows.push(["Texel density", texelDensity]);
   if (technical.tileable !== null) {
     techRows.push([
@@ -382,7 +458,7 @@ export function AssetDrawer() {
                 <strong>{hit.biome}</strong>
               </>
             )}
-            {hit?.region && (
+            {hit?.region && hit.region !== "undefined" && (
               <>
                 <span>Region</span>
                 <strong>{hit.region}</strong>
@@ -418,30 +494,31 @@ export function AssetDrawer() {
             </section>
           )}
 
-          {extended?.similarAssets && extended.similarAssets.length > 0 && (
+          {(relatedLoading || related.length > 0) && (
             <div className="related-assets">
               <h3>Related assets</h3>
-              <div className="related-grid">
-                {extended.similarAssets
-                  .filter(related => hitId(related) !== assetId)
-                  .slice(0, 8)
-                  .map(related => {
-                    const relatedId = hitId(related);
-                    const thumb = hitThumb(related);
+              {relatedLoading ? (
+                <p className="hint">Finding similar assets...</p>
+              ) : (
+                <div className="related-grid">
+                  {related.map(item => {
+                    const relatedId = hitId(item);
+                    const thumb = hitThumb(item);
                     return (
                       <button
                         type="button"
                         className="related-card"
                         key={relatedId}
-                        onClick={() => void openHit(related)}
-                        title={related.name}
+                        onClick={() => void openHit(item)}
+                        title={item.name}
                       >
                         {thumb ? <img src={thumb} alt="" loading="lazy" /> : <span />}
-                        <strong>{related.name}</strong>
+                        <strong>{item.name}</strong>
                       </button>
                     );
                   })}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -511,13 +588,15 @@ export function AssetDrawer() {
                     >
                       Textures
                     </button>
-                    <button
-                      type="button"
-                      className={tab === "models" ? "download-tab active" : "download-tab"}
-                      onClick={() => setTab("models")}
-                    >
-                      Models & Extras
-                    </button>
+                    {threeD && (
+                      <button
+                        type="button"
+                        className={tab === "models" ? "download-tab active" : "download-tab"}
+                        onClick={() => setTab("models")}
+                      >
+                        Models & Extras
+                      </button>
+                    )}
                   </div>
 
                   {tab === "textures" ? (
@@ -571,14 +650,16 @@ export function AssetDrawer() {
                         );
                       })}
 
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={options.uniqueMapsPerLod}
-                          onChange={event => patch({ uniqueMapsPerLod: event.target.checked })}
-                        />
-                        <span>Unique maps per LOD when available</span>
-                      </label>
+                      {threeD && (
+                        <label className="toggle">
+                          <input
+                            type="checkbox"
+                            checked={options.uniqueMapsPerLod}
+                            onChange={event => patch({ uniqueMapsPerLod: event.target.checked })}
+                          />
+                          <span>Unique maps per LOD when available</span>
+                        </label>
+                      )}
                       <p className="hint">
                         All settings are preferred options and will be downloaded when available.
                       </p>
@@ -698,9 +779,9 @@ export function AssetDrawer() {
                           <span className="label">Variation dimensions</span>
                           <div className="variation-chips">
                             {technical.variationDimensions.map(item => {
-                              const dims = [item.length, item.width, item.height]
-                                .filter(Boolean)
-                                .join(" x ");
+                              const dims = formatMeasurementText(
+                                [item.length, item.width, item.height].filter(Boolean).join(" x ")
+                              );
                               return (
                                 <button
                                   type="button"
@@ -771,7 +852,7 @@ export function AssetDrawer() {
                       {plan?.bytes ? `~${formatBytes(plan.bytes)}${plan.partial ? "+" : ""}` : "Size unavailable"} - {selectedMaps} maps
                       {threeD ? ` - ${selectedLods} LOD${selectedLods === 1 ? "" : "s"}` : ""}
                     </span>
-                    <span>{options.meshFormat.toUpperCase()}</span>
+                    {threeD && <span>{options.meshFormat.toUpperCase()}</span>}
                   </div>
                 </>
               )}

@@ -412,8 +412,8 @@ export function DiscoverView() {
             ariaLabel="Filter by physical size"
             options={[
               { value: "any", label: "Any Size" },
-              { value: "small", label: "Up to 0.5 m" },
-              { value: "medium", label: "0.5-2 m" },
+              { value: "small", label: "Up to 50 cm" },
+              { value: "medium", label: "50 cm-2 m" },
               { value: "large", label: "2-5 m" },
               { value: "huge", label: "5 m+" }
             ]}

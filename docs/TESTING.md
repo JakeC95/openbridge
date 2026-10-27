@@ -1,13 +1,13 @@
 # Validation log
 
-## v1.3.0 (current)
+## v1.3.1 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 ### Build and package
 
 - `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
-- Packaged portable reports `1.3.0` and starts with 48 catalogue cards and 5 local assets.
+- Packaged portable reports `1.3.1` and starts with 48 catalogue cards and 5 local assets.
 - The packaged Electron runtime successfully loads `node:sqlite` and the FTS5 index.
 - Asset cards and the drawer no longer display point prices; free/owned states remain.
 
@@ -27,7 +27,14 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 - The technical panel exposes dimensions, scan area, height, texel density, tileability, mesh type,
   LOD count, max triangles, variations, billboards, map types and average colour.
 - Local library cards now show actual on-disk size, dimensions, triangle count and health status
-  after a health pass, e.g. `7.6 MB · 0.62m x 0.47m x 0.19m · 8,022 tris · Healthy`.
+  after a health pass, e.g. `7.6 MB · 29 x 17 x 16 cm · 6,984 tris · Healthy`.
+- Sub-metre measurements are formatted in centimetres: `0.25x0.25 m` becomes `25 x 25 cm`,
+  `0.19-0.62m` becomes `19-62 cm`, and dimensions that cross 1 m use a consistent unit.
+- Related assets now fall back to tag/category search when the API's similar-assets list is empty.
+  Verified with 8 related cards for both a surface and a 3D rock.
+- Surface/2D drawers hide the Models & Extras tab, mesh-format footer, and unique-maps-per-LOD
+  option. A surface download summary now ends with map counts only, never `FBX`.
+- Region rows hide literal `undefined` values.
 ### Indexed library
 
 - The index is created at `%APPDATA%\openbridge\library-index.sqlite` in WAL mode; schema version 2
@@ -82,7 +89,7 @@ electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B
 portable zip             64B21FCE53972081791A3B7D6B2D1507DC9B5D67C720BCD72A74B894D0D147FB
 ```
 
-### Not tested in v1.3.0
+### Not tested in v1.3.1
 
 - A real library with tens of thousands of files; scale behavior was measured with synthetic index
   rows plus the 5-asset validation library.

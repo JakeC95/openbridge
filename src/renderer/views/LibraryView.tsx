@@ -4,6 +4,7 @@ import { typeLabel } from "../catalog-utils";
 import { CheckIcon, CloseIcon, FolderIcon, SearchIcon, UploadIcon } from "../icons";
 import type { AssetRecord, LibraryHealthReport, RepoKind } from "../../shared/types";
 import { VirtualGrid } from "../components/VirtualGrid";
+import { formatMeasurementText } from "../../shared/measurements";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
   { value: "all", label: "All" },
@@ -23,8 +24,8 @@ function localFacts(asset: AssetRecord): string {
   const facts: string[] = [];
   if (asset.sizeBytes != null) facts.push(formatBytes(asset.sizeBytes));
   const technical = asset.technical;
-  if (technical?.dimensions) facts.push(technical.dimensions);
-  else if (technical?.scanArea) facts.push(technical.scanArea);
+  if (technical?.dimensions) facts.push(formatMeasurementText(technical.dimensions));
+  else if (technical?.scanArea) facts.push(formatMeasurementText(technical.scanArea));
   if (technical?.maxTris) facts.push(`${technical.maxTris.toLocaleString()} tris`);
   if (asset.issueCount != null) {
     facts.push(asset.issueCount === 0 ? "Healthy" : `${asset.issueCount} issue${asset.issueCount === 1 ? "" : "s"}`);

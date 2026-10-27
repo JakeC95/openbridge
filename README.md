@@ -12,19 +12,19 @@ The Windows shell follows the 2025 Bridge proportions: a responsive 320/280 px s
 nested category tree, header search, 48 px filter bar, image-first asset cards with hover labels,
 and a 120 px right-side asset drawer.
 
-## Windows v1.3.0 artifact
+## Windows v1.3.1 artifact
 
 OpenBridge is distributed as a portable app. No installer is built or published:
 
 ```
-dist\OpenBridge-1.3.0-win-x64-portable\OpenBridge.exe
-dist\OpenBridge-1.3.0-win-x64-portable.zip
+dist\OpenBridge-1.3.1-win-x64-portable\OpenBridge.exe
+dist\OpenBridge-1.3.1-win-x64-portable.zip
 ```
 
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
-Release: <https://github.com/example-owner/openbridge/releases/tag/v1.3.0>
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.3.1>
 
 SHA-256:
 
@@ -67,6 +67,8 @@ Verified against the live legacy services on this machine:
   JSON export and safe folder deletion under the library root.
 - **Asset intelligence**: type-aware gallery facts, accurate pre-download size plans, per-LOD
   triangle/format sizes, variation dimensions, per-map technical details and scale/texel panels.
+- **Readable measurements and related assets**: sub-meter dimensions render in centimetres; related
+  assets fall back to tag/category search and no longer leave the section empty.
 - **Indexed library at scale**: SQLite/WAL index with FTS5 search, incremental scans,
   server-side counts and 300-row paging, virtualized local and catalogue grids, select-all-filtered
   and health progress. Unchanged assets skip JSON re-reading on subsequent scans.
@@ -132,7 +134,7 @@ For a local release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.3.0 "dist\OpenBridge-1.3.0-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.3.1 "dist\OpenBridge-1.3.1-win-x64-portable.zip"
 ```
 
 OpenBridge checks
