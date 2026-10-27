@@ -1,5 +1,5 @@
 import { formatMeasurementText } from "../shared/measurements";
-import type { CatalogHit, ExtendedAsset } from "../shared/types";
+import type { AssetTechnicalSummary, CatalogHit, ExtendedAsset } from "../shared/types";
 
 export function hitId(hit: CatalogHit): string {
   return hit.id || hit.objectID;
@@ -56,6 +56,18 @@ function formatResolution(resolution: unknown): string | null {
   return null;
 }
 
+export function readinessBadges(technical: AssetTechnicalSummary | undefined): string[] {
+  if (!technical) return [];
+  const badges: string[] = [];
+  if (technical.closedMesh) badges.push("Closed");
+  if (technical.tileable) badges.push("Tileable");
+  if (technical.billboardCount > 0) badges.push("Billboards");
+  if (technical.materialWorkflow === "metal-rough") badges.push("Metal/Rough");
+  if (technical.materialWorkflow === "spec-gloss") badges.push("Spec/Gloss");
+  if (technical.hasHighpoly) badges.push("Highpoly");
+  if (technical.maxTris > 0) badges.push(`${technical.maxTris.toLocaleString()} tris`);
+  return badges.slice(0, 3);
+}
 export function galleryFacts(hit: CatalogHit): string[] {
   const facts: string[] = [];
   const hasRange =

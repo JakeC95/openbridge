@@ -12,29 +12,32 @@ The Windows shell follows the 2025 Bridge proportions: a responsive 320/280 px s
 nested category tree, header search, 48 px filter bar, image-first asset cards with hover labels,
 and a 120 px right-side asset drawer.
 
-## Windows v1.3.2 artifact
+## Windows v1.4.0 artifact
 
 OpenBridge is distributed as a portable app. No installer is built or published:
 
 ```
-dist\OpenBridge-1.3.2-win-x64-portable\OpenBridge.exe
-dist\OpenBridge-1.3.2-win-x64-portable.zip
+dist\OpenBridge-1.4.0-win-x64-portable\OpenBridge.exe
+dist\OpenBridge-1.4.0-win-x64-portable.zip
 ```
 
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
-Release: <https://github.com/example-owner/openbridge/releases/tag/v1.3.2>
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.4.0>
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             6787FCED43FD23BAD76D3896D973B4B0AC1D0A51941EBF0A364A5FA18AEBE341
+portable zip             7A2D56D5F9F7798D24FAFC4940320101AB2192B1FB6A538D2D6AC2A7496E5244
+catalog-metadata.json.gz EDF1237AD02A3B4DF82FE58C2A0A677859DA6E0CCD6A42509533710037A02411
 ```
 
-## v1.2 features (Windows)
+The optional `catalog-metadata.json.gz` asset (1,585,054 bytes) is separate from the portable app.
+
+## Feature highlights (Windows)
 
 Verified against the live legacy services on this machine:
 
@@ -67,6 +70,9 @@ Verified against the live legacy services on this machine:
   JSON export and safe folder deletion under the library root.
 - **Asset intelligence**: type-aware gallery facts, accurate pre-download size plans, per-LOD
   triangle/format sizes, variation dimensions, per-map technical details and scale/texel panels.
+- **Local-first catalogue refinement**: optional compact metadata pack adds remote readiness,
+  semantic, pack and technical badges; the Library has tileable/closed/scale-fixed/billboards/
+  highpoly/ZTool/modular filters plus max-triangle, colour, condition and interior/exterior filters.
 - **Readable measurements and related assets**: sub-meter dimensions render in centimetres; related
   assets fall back to tag/category search and no longer leave the section empty.
 - **Indexed library at scale**: SQLite/WAL index with FTS5 search, incremental scans,
@@ -91,7 +97,7 @@ Verified against the live legacy services on this machine:
 - **Legacy interoperability**: local HTTP API (`127.0.0.1:28241`), discovery (`28852`), Mixer
   live-link sockets (`28456/28457/28458/28459`), DCC export inventory and plugin JSON shape.
 
-## Not in v1.2
+## Not included
 
 - Fab catalogue/browsing and Fab package downloads. The Fab tab and Fab-specific code were
   removed; owned assets remain available through the legacy Megascans catalogue.
@@ -101,6 +107,8 @@ Verified against the live legacy services on this machine:
 - Automatic bulk downloading of all acquired assets.
 - NSIS/MSI installers and other non-portable package formats. The portable ZIP is the only
   supported distribution.
+- The optional catalogue metadata pack is not bundled in the app ZIP; install it from
+  Settings > Catalogue metadata pack or download the separate release asset.
 - Linux or macOS builds.
 
 ## Quick start (development)
@@ -134,7 +142,7 @@ For a local release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.3.2 "dist\OpenBridge-1.3.2-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.4.0 "dist\OpenBridge-1.4.0-win-x64-portable.zip"
 ```
 
 OpenBridge checks

@@ -4,6 +4,7 @@ import { typeLabel } from "../catalog-utils";
 import { CheckIcon, CloseIcon, FolderIcon, SearchIcon, UploadIcon } from "../icons";
 import type { AssetRecord, LibraryHealthReport, RepoKind } from "../../shared/types";
 import { VirtualGrid } from "../components/VirtualGrid";
+import { Dropdown } from "../components/Dropdown";
 import { formatMeasurementText } from "../../shared/measurements";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
@@ -50,6 +51,17 @@ export function LibraryView() {
   const setQuery = useStore(state => state.setLocalQuery);
   const setRepo = useStore(state => state.setLocalRepo);
   const queryLocalLibrary = useStore(state => state.queryLocalLibrary);
+  const localReady = useStore(state => state.localReady);
+  const localMaxTris = useStore(state => state.localMaxTris);
+  const localColor = useStore(state => state.localColor);
+  const localState = useStore(state => state.localState);
+  const localInterior = useStore(state => state.localInterior);
+  const toggleLocalReady = useStore(state => state.toggleLocalReady);
+  const setLocalMaxTris = useStore(state => state.setLocalMaxTris);
+  const setLocalColor = useStore(state => state.setLocalColor);
+  const setLocalState = useStore(state => state.setLocalState);
+  const setLocalInterior = useStore(state => state.setLocalInterior);
+  const resetLocalFilters = useStore(state => state.resetLocalFilters);
   const openLocal = useStore(state => state.openLocal);
   const importFolder = useStore(state => state.importFolder);
   const importZip = useStore(state => state.importZip);
@@ -87,7 +99,16 @@ export function LibraryView() {
       void queryLocalLibrary(true);
     }, 140);
     return () => clearTimeout(timer);
-  }, [query, repo, queryLocalLibrary]);
+  }, [
+    query,
+    repo,
+    localReady,
+    localMaxTris,
+    localColor,
+    localState,
+    localInterior,
+    queryLocalLibrary
+  ]);
 
   function toggleSelected(id: string): void {
     setSelectedIds(current => {
@@ -228,6 +249,89 @@ export function LibraryView() {
           </span>
         </div>
 
+        <div className="library-refine">
+          <div className="refine-chips">
+            {[
+              ["tileable", "Tileable"],
+              ["closed", "Closed mesh"],
+              ["scale-fixed", "Scale fixed"],
+              ["billboards", "Billboards"],
+              ["highpoly", "Highpoly"],
+              ["ztool", "ZTool"],
+              ["modular", "Modular"]
+            ].map(([value, label]) => (
+              <button
+                type="button"
+                key={value}
+                className={localReady.includes(value) ? "chip active" : "chip"}
+                onClick={() => toggleLocalReady(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="refine-selects">
+            <Dropdown
+              className="select-dropdown"
+              value={localMaxTris ? String(localMaxTris) : "any"}
+              onChange={value =>
+                setLocalMaxTris(value === "any" ? null : Number(value))
+              }
+              ariaLabel="Maximum triangle count"
+              options={[
+                { value: "any", label: "Any tris" },
+                { value: "10000", label: "≤ 10k tris" },
+                { value: "25000", label: "≤ 25k tris" },
+                { value: "50000", label: "≤ 50k tris" },
+                { value: "100000", label: "≤ 100k tris" }
+              ]}
+            />
+            <Dropdown
+              className="select-dropdown"
+              value={localColor || "any"}
+              onChange={value => setLocalColor(value === "any" ? "" : value)}
+              ariaLabel="Colour"
+              options={[
+                { value: "any", label: "Any colour" },
+                { value: "Brown", label: "Brown" },
+                { value: "Gray", label: "Gray" },
+                { value: "Green", label: "Green" },
+                { value: "Red", label: "Red" },
+                { value: "Orange", label: "Orange" },
+                { value: "Yellow", label: "Yellow" },
+                { value: "Blue", label: "Blue" },
+                { value: "White", label: "White" },
+                { value: "Black", label: "Black" }
+              ]}
+            />
+            <Dropdown
+              className="select-dropdown"
+              value={localState || "any"}
+              onChange={value => setLocalState(value === "any" ? "" : value)}
+              ariaLabel="Condition"
+              options={[
+                { value: "any", label: "Any condition" },
+                { value: "new", label: "New" },
+                { value: "old", label: "Old" }
+              ]}
+            />
+            <Dropdown
+              className="select-dropdown"
+              value={localInterior || "any"}
+              onChange={value => setLocalInterior(value === "any" ? "" : value)}
+              ariaLabel="Interior or exterior"
+              options={[
+                { value: "any", label: "Any setting" },
+                { value: "interior", label: "Interior" },
+                { value: "exterior", label: "Exterior" }
+              ]}
+            />
+            <button type="button" className="text-btn" onClick={resetLocalFilters}>
+              Reset filters
+            </button>
+          </div>
+        </div>
+
         {selectMode && (
           <div className="bulk-bar">
             <span className="bulk-count">{selectedIds.size} selected</span>
@@ -330,6 +434,7 @@ export function LibraryView() {
                     )}
                     <span className="asset-type">{typeLabel(asset.type)}</span>
                     <span className="asset-flag owned">LOCAL</span>
+
                     {selectMode && (
                       <button
                         type="button"

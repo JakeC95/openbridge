@@ -75,7 +75,7 @@ export function buildMapPreviews(asset: ExtendedAsset, signedBase: string): MapP
 
   for (const map of maps) {
     const type = map.type?.toLowerCase();
-    const uri = map.uri;
+    const uri = typeof map.uri === "string" ? map.uri : null;
     if (!type || !uri || !map.mimeType?.startsWith("image/")) continue;
     const sets = map.textureSets?.length ? map.textureSets : [""];
     for (const set of sets) {

@@ -694,6 +694,27 @@ code {
   flex: 1;
 }
 
+.library-refine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #2c2c2c;
+}
+
+.refine-chips,
+.refine-selects {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.refine-selects .select-dropdown {
+  min-width: 130px;
+}
+
 .path-line {
   display: flex;
   align-items: center;
@@ -1053,6 +1074,54 @@ code {
 .meta-grid strong {
   font-weight: 500;
   overflow-wrap: anywhere;
+}
+
+.semantic-panel,
+.material-panel {
+  padding: 12px 0;
+  border-bottom: 1px solid #303030;
+}
+
+.semantic-panel h3,
+.material-panel h3 {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.semantic-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.semantic-chips span {
+  padding: 3px 6px;
+  border: 1px solid #363636;
+  border-radius: 3px;
+  background: #1c1c1c;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 9px;
+}
+
+.material-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.material-row strong {
+  overflow: hidden;
+  color: #ddd;
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .technical-panel {

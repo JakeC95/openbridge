@@ -70,6 +70,19 @@ Still open from this area:
 - Persist download history in the index instead of only the queue file.
 - Cancellable background health jobs and richer issue filters.
 
+## Phase 4b - Local-first metadata (done in 1.4)
+
+- Optional compact catalogue metadata pack generated from authenticated extended JSON.
+- SQLite-backed pack import, lookup, status and refresh independent of app updates.
+- Remote card readiness badges and drawer semantic/pack/revision/technical sections.
+- Library refinements for readiness, triangle budget, colour, condition and setting.
+- Schema v4 local index with readiness and semantic fields, rebuilt from local JSON.
+
+Still open:
+
+- Billboard texture previews currently cannot be signed through the map-preview base URL.
+- Sampled material/texture-set payloads are empty, so a material explorer needs a data audit first.
+
 ## Phase 5 - Export pipeline (deferred)
 
 - Port `app/modules/exports.js`: map selection, resolution, LOD/variation, naming conventions,

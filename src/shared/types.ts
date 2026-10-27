@@ -59,6 +59,48 @@ export interface AssetTechnicalSummary {
   hasHighpoly: boolean;
   hasZtool: boolean;
   hasBrushes: boolean;
+  closedMesh: boolean | null;
+  scaleFixed: boolean | null;
+  assembly: boolean | null;
+  smallAsset: boolean | null;
+  splitSubmeshes: boolean | null;
+  modular: boolean;
+  hasAlpha: boolean;
+  materialWorkflow: "metal-rough" | "spec-gloss" | "mixed" | null;
+  averageColor: string | null;
+  packId: string | null;
+  packName: string | null;
+  revision: string | number | null;
+  revised: string | number | boolean | null;
+  semantic: {
+    subjectMatter: string | null;
+    color: string[];
+    state: string[];
+    interiorExterior: string[];
+    industry: string[];
+    theme: string[];
+    descriptive: string[];
+    contains: string[];
+    orientation: string[];
+  };
+}
+
+export interface CatalogMetadataStatus {
+  available: boolean;
+  count: number;
+  generatedAt: number | null;
+  version: number | null;
+  importedAt: number | null;
+}
+
+export interface CatalogMetadataRecord {
+  id: string;
+  name: string;
+  type: string;
+  categories: string[];
+  tags: string[];
+  technical: AssetTechnicalSummary;
+  generatedAt: number;
 }
 
 export interface AssetRecord {
@@ -151,6 +193,7 @@ export interface CatalogHit {
   minSize?: number;
   maxSize?: number;
   contains?: string[];
+  metadata?: CatalogMetadataRecord;
   locations?: string[];
   [key: string]: unknown;
 }
@@ -447,6 +490,12 @@ export interface LibraryQuery {
   query?: string;
   repo?: RepoKind | "all";
   sort?: LibrarySort;
+  ready?: string[];
+  maxTris?: number;
+  pack?: string;
+  color?: string;
+  state?: string;
+  interiorExterior?: string;
   limit?: number;
   offset?: number;
 }
@@ -552,6 +601,11 @@ export interface OpenBridgeApi {
     profile(): Promise<Profile | null>;
     onChanged(callback: (state: AuthState) => void): () => void;
   };
+  catalogMetadata(): Promise<CatalogMetadataStatus>;
+  importCatalogMetadata(): Promise<CatalogMetadataStatus>;
+  downloadCatalogMetadata(): Promise<CatalogMetadataStatus>;
+  removeCatalogMetadata(): Promise<CatalogMetadataStatus>;
+  catalogMetadataLookup(ids: string[]): Promise<CatalogMetadataRecord[]>;
   catalog: {
     search(query: CatalogQuery): Promise<CatalogResult>;
     ids(query: CatalogQuery): Promise<CatalogIdResult>;

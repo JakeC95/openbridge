@@ -7,6 +7,8 @@ import type {
   CatalogIdResult,
   CatalogQuery,
   CatalogResult,
+  CatalogMetadataRecord,
+  CatalogMetadataStatus,
   CategoryNode,
   DownloadOptions,
   DownloadProgress,
@@ -109,6 +111,16 @@ const api: OpenBridgeApi = {
       return () => ipcRenderer.removeListener("auth:changed", listener);
     }
   },
+  catalogMetadata: () =>
+    ipcRenderer.invoke("catalog:metadata:status") as Promise<CatalogMetadataStatus>,
+  importCatalogMetadata: () =>
+    ipcRenderer.invoke("catalog:metadata:import") as Promise<CatalogMetadataStatus>,
+  downloadCatalogMetadata: () =>
+    ipcRenderer.invoke("catalog:metadata:download") as Promise<CatalogMetadataStatus>,
+  removeCatalogMetadata: () =>
+    ipcRenderer.invoke("catalog:metadata:remove") as Promise<CatalogMetadataStatus>,
+  catalogMetadataLookup: (ids: string[]) =>
+    ipcRenderer.invoke("catalog:metadata:lookup", ids) as Promise<CatalogMetadataRecord[]>,
   catalog: {
     search: (query: CatalogQuery) =>
       ipcRenderer.invoke("catalog:search", query) as Promise<CatalogResult>,

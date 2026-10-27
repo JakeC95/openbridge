@@ -5,6 +5,7 @@ import type {
   AuthState,
   BatchStartResult,
   CatalogHit,
+  CatalogMetadataStatus,
   CategoryNode,
   DownloadOptions,
   DownloadProgress,
@@ -89,10 +90,16 @@ interface State {
   libraryScannedAt: number | null;
   localQuery: string;
   localRepo: LocalRepo;
+  localReady: string[];
+  localMaxTris: number | null;
+  localColor: string;
+  localState: string;
+  localInterior: string;
   selection: Selection | null;
   downloads: Record<string, DownloadProgress>;
   sync: SyncStatus;
   update: UpdateInfo | null;
+  catalogMetadata: CatalogMetadataStatus | null;
   toasts: Toast[];
   busy: boolean;
   init(): Promise<void>;
@@ -113,6 +120,12 @@ interface State {
   queryLocalLibrary(reset?: boolean): Promise<void>;
   setLocalQuery(query: string): void;
   setLocalRepo(repo: LocalRepo): void;
+  toggleLocalReady(value: string): void;
+  setLocalMaxTris(value: number | null): void;
+  setLocalColor(value: string): void;
+  setLocalState(value: string): void;
+  setLocalInterior(value: string): void;
+  resetLocalFilters(): void;
   openHit(hit: CatalogHit): Promise<void>;
   openLocal(asset: AssetRecord): Promise<void>;
   closeSelection(): void;
@@ -129,6 +142,10 @@ interface State {
   saveSettings(patch: Partial<AppSettings>): Promise<void>;
   runSync(): Promise<void>;
   checkUpdates(): Promise<void>;
+  refreshCatalogMetadata(): Promise<void>;
+  importCatalogMetadata(): Promise<void>;
+  downloadCatalogMetadata(): Promise<void>;
+  removeCatalogMetadata(): Promise<void>;
   installUpdate(): Promise<void>;
   importFolder(): Promise<void>;
   importZip(): Promise<void>;
@@ -197,23 +214,30 @@ export const useStore = create<State>((set, get) => ({
   libraryScannedAt: null,
   localQuery: "",
   localRepo: "all",
+  localReady: [],
+  localMaxTris: null,
+  localColor: "",
+  localState: "",
+  localInterior: "",
   selection: null,
   downloads: {},
   sync: emptySync,
   update: null,
+  catalogMetadata: null,
   toasts: [],
   busy: false,
 
   async init() {
     if (initPromise) return initPromise;
     initPromise = (async () => {
-      const [settings, auth, categories, downloads, sync, versions] = await Promise.all([
+      const [settings, auth, categories, downloads, sync, versions, catalogMetadata] = await Promise.all([
         window.openbridge.getSettings(),
         window.openbridge.auth.state(),
         window.openbridge.catalog.categories().catch(() => []),
         window.openbridge.downloads.list().catch(() => []),
         window.openbridge.sync.status().catch(() => emptySync),
-        window.openbridge.versions()
+        window.openbridge.versions(),
+        window.openbridge.catalogMetadata().catch(() => null)
       ]);
       const library = await window.openbridge.librarySnapshot(false);
       const firstPage = await window.openbridge.queryLibrary({
@@ -239,7 +263,8 @@ export const useStore = create<State>((set, get) => ({
         categories,
         downloads: downloadMap,
         sync,
-        versions
+        versions,
+        catalogMetadata
       });
 
       if (auth.loggedIn) {
@@ -421,9 +446,21 @@ export const useStore = create<State>((set, get) => ({
         hitsPerPage: 48
       });
       if (requestId !== catalogRequest) return;
+      let hits = result.hits;
+      if (hits.length > 0 && get().catalogMetadata?.available) {
+        const records = await window.openbridge
+          .catalogMetadataLookup(hits.map(hit => hit.id || hit.objectID))
+          .catch(() => []);
+        if (requestId !== catalogRequest) return;
+        const meta = new Map(records.map(record => [record.id, record]));
+        hits = hits.map(hit => ({
+          ...hit,
+          metadata: meta.get(hit.id || hit.objectID) ?? hit.metadata
+        }));
+      }
       const current = get();
       set({
-        hits: reset ? result.hits : [...current.hits, ...result.hits],
+        hits: reset ? hits : [...current.hits, ...hits],
         page: result.page,
         nbPages: result.nbPages,
         nbHits: result.nbHits,
@@ -458,13 +495,27 @@ export const useStore = create<State>((set, get) => ({
 
   async queryLocalLibrary(reset = true) {
     const requestId = ++libraryRequest;
-    const { localQuery, localRepo, libraryAssets } = get();
+    const {
+      localQuery,
+      localRepo,
+      localReady,
+      localMaxTris,
+      localColor,
+      localState,
+      localInterior,
+      libraryAssets
+    } = get();
     const offset = reset ? 0 : libraryAssets.length;
     set({ libraryLoading: true });
     try {
       const result = await window.openbridge.queryLibrary({
         query: localQuery,
         repo: localRepo,
+        ready: localReady,
+        maxTris: localMaxTris ?? undefined,
+        color: localColor || undefined,
+        state: localState || undefined,
+        interiorExterior: localInterior || undefined,
         limit: 300,
         offset
       });
@@ -490,6 +541,40 @@ export const useStore = create<State>((set, get) => ({
 
   setLocalRepo(localRepo) {
     set({ localRepo });
+  },
+
+  toggleLocalReady(value) {
+    set(state => ({
+      localReady: state.localReady.includes(value)
+        ? state.localReady.filter(item => item !== value)
+        : [...state.localReady, value]
+    }));
+  },
+
+  setLocalMaxTris(localMaxTris) {
+    set({ localMaxTris });
+  },
+
+  setLocalColor(localColor) {
+    set({ localColor });
+  },
+
+  setLocalState(localState) {
+    set({ localState });
+  },
+
+  setLocalInterior(localInterior) {
+    set({ localInterior });
+  },
+
+  resetLocalFilters() {
+    set({
+      localReady: [],
+      localMaxTris: null,
+      localColor: "",
+      localState: "",
+      localInterior: ""
+    });
   },
 
   async openHit(hit) {
@@ -656,6 +741,51 @@ export const useStore = create<State>((set, get) => ({
     get().toast(`Downloading OpenBridge ${info.latest}...`);
     try {
       await window.openbridge.updates.install(info);
+    } catch (error) {
+      get().toast(error instanceof Error ? error.message : String(error), true);
+    }
+  },
+
+  async refreshCatalogMetadata() {
+    try {
+      set({ catalogMetadata: await window.openbridge.catalogMetadata() });
+    } catch (error) {
+      get().toast(error instanceof Error ? error.message : String(error), true);
+    }
+  },
+
+  async importCatalogMetadata() {
+    try {
+      get().toast("Importing catalogue metadata...");
+      const status = await window.openbridge.importCatalogMetadata();
+      set({ catalogMetadata: status });
+      get().toast(
+        status.available
+          ? `Catalogue metadata ready for ${status.count.toLocaleString()} assets`
+          : "Catalogue metadata pack was not imported"
+      );
+    } catch (error) {
+      get().toast(error instanceof Error ? error.message : String(error), true);
+    }
+  },
+
+  async downloadCatalogMetadata() {
+    try {
+      get().toast("Downloading catalogue metadata pack...");
+      const status = await window.openbridge.downloadCatalogMetadata();
+      set({ catalogMetadata: status });
+      get().toast(
+        `Catalogue metadata ready for ${status.count.toLocaleString()} assets`
+      );
+    } catch (error) {
+      get().toast(error instanceof Error ? error.message : String(error), true);
+    }
+  },
+
+  async removeCatalogMetadata() {
+    try {
+      set({ catalogMetadata: await window.openbridge.removeCatalogMetadata() });
+      get().toast("Catalogue metadata pack removed");
     } catch (error) {
       get().toast(error instanceof Error ? error.message : String(error), true);
     }

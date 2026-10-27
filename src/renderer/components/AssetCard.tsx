@@ -4,6 +4,7 @@ import {
   hitId,
   galleryFacts,
   hitThumb,
+  readinessBadges,
   typeLabel
 } from "../catalog-utils";
 import {
@@ -51,6 +52,7 @@ export function AssetCard({
   const thumb = hitThumb(hit);
   const free = (hit.points ?? 0) === 0;
   const facts = galleryFacts(hit);
+  const badges = readinessBadges(hit.metadata?.technical);
   const primaryBadge = downloaded ? "" : owned ? "OWNED" : free ? "FREE" : "";
   const active =
     progress &&
@@ -205,6 +207,9 @@ export function AssetCard({
             id}
         </span>
         {facts.length > 0 && <span className="asset-facts">{facts.join(" · ")}</span>}
+        {badges.length > 0 && (
+          <span className="asset-facts readiness-facts">{badges.join(" · ")}</span>
+        )}
       </div>
     </div>
   );

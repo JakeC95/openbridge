@@ -14,7 +14,7 @@ import type {
 } from "../shared/types";
 import type { Logger } from "./logger";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 interface AssetRow {
   rowid: number;
@@ -344,6 +344,44 @@ export class LibraryIndex {
     if (searchTokens) {
       clauses.push("assets_fts MATCH ?");
       params.push(searchTokens);
+    }
+    const ready = new Set(options.ready ?? []);
+    if (ready.has("tileable")) clauses.push("json_extract(a.technical_json, '$.tileable') = 1");
+    if (ready.has("closed")) clauses.push("json_extract(a.technical_json, '$.closedMesh') = 1");
+    if (ready.has("scale-fixed")) clauses.push("json_extract(a.technical_json, '$.scaleFixed') = 1");
+    if (ready.has("billboards")) {
+      clauses.push("json_extract(a.technical_json, '$.billboardCount') > 0");
+    }
+    if (ready.has("highpoly")) clauses.push("json_extract(a.technical_json, '$.hasHighpoly') = 1");
+    if (ready.has("ztool")) clauses.push("json_extract(a.technical_json, '$.hasZtool') = 1");
+    if (ready.has("modular")) clauses.push("json_extract(a.technical_json, '$.modular') = 1");
+    if (typeof options.maxTris === "number") {
+      clauses.push(
+        "json_extract(a.technical_json, '$.maxTris') > 0 AND json_extract(a.technical_json, '$.maxTris') <= ?"
+      );
+      params.push(options.maxTris);
+    }
+    if (options.pack) {
+      clauses.push("json_extract(a.technical_json, '$.packName') = ?");
+      params.push(options.pack);
+    }
+    if (options.color) {
+      clauses.push(
+        "EXISTS (SELECT 1 FROM json_each(json_extract(a.technical_json, '$.semantic.color')) WHERE lower(json_each.value) = lower(?))"
+      );
+      params.push(options.color);
+    }
+    if (options.state) {
+      clauses.push(
+        "EXISTS (SELECT 1 FROM json_each(json_extract(a.technical_json, '$.semantic.state')) WHERE lower(json_each.value) = lower(?))"
+      );
+      params.push(options.state);
+    }
+    if (options.interiorExterior) {
+      clauses.push(
+        "EXISTS (SELECT 1 FROM json_each(json_extract(a.technical_json, '$.semantic.interiorExterior')) WHERE lower(json_each.value) = lower(?))"
+      );
+      params.push(options.interiorExterior);
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
     const from = searchTokens

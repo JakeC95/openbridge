@@ -82,6 +82,10 @@ export function SettingsView() {
   const logout = useStore(state => state.logout);
   const runSync = useStore(state => state.runSync);
   const installUpdate = useStore(state => state.installUpdate);
+  const catalogMetadata = useStore(state => state.catalogMetadata);
+  const downloadCatalogMetadata = useStore(state => state.downloadCatalogMetadata);
+  const importCatalogMetadata = useStore(state => state.importCatalogMetadata);
+  const removeCatalogMetadata = useStore(state => state.removeCatalogMetadata);
 
   const [draft, setDraft] = useState<AppSettings | null>(settings);
   const [saving, setSaving] = useState(false);
@@ -508,6 +512,50 @@ export function SettingsView() {
               <UserIcon /> Sign in with Epic
             </button>
           )}
+        </section>
+
+        <section className="settings-section">
+          <h2>Catalogue metadata pack</h2>
+          <div className="inline-status">
+            <span>
+              {catalogMetadata?.available
+                ? `${catalogMetadata.count.toLocaleString()} assets${
+                    catalogMetadata.generatedAt
+                      ? ` · generated ${new Date(catalogMetadata.generatedAt).toLocaleDateString()}`
+                      : ""
+                  }`
+                : "Not installed · remote metadata is fetched on demand"}
+            </span>
+            <div className="header-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void downloadCatalogMetadata()}
+              >
+                Download latest
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void importCatalogMetadata()}
+              >
+                Import file...
+              </button>
+              {catalogMetadata?.available && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => void removeCatalogMetadata()}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="hint">
+            Optional compact index for faster readiness, semantic and collection metadata. It does
+            not mark assets as downloaded.
+          </p>
         </section>
 
         <section className="settings-section">

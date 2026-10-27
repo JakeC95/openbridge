@@ -1,6 +1,38 @@
 # Validation log
 
-## v1.3.2 (current)
+## v1.4.0 (current)
+
+Environment: Windows 11 Pro, Electron 45, live legacy services.
+
+### Catalogue metadata pack
+
+- `npm run typecheck`, `npm run build` and the metadata-pack builder completed.
+- A 50-record sample pack imported successfully and reported 50 assets in Settings.
+- A lookup for `xgkmfcy` returned type `3d`, closed mesh, pack and semantic metadata.
+- Remote cards rendered pack-derived readiness badges (`Closed · Spec/Gloss · Highpoly`).
+- The full pack completed with 18,835 records, 0 failures, 23.6 MB raw and 1.59 MB gzipped.
+- The full pack imported in one pass; Settings and the renderer reported 18,835 assets.
+- Remote cards then showed pack metadata, e.g. Xeric Grass: `Billboards · Spec/Gloss · 35,314 tris`.
+- Local drawers now reuse the indexed technical summary and show semantic tags and readiness fields.
+
+### Local refinement
+
+- Library schema is now v4 and rebuilt from local JSON with readiness/semantic fields.
+- `BILLBOARDS` reduced the local library to the one Xeric Grass asset with billboards.
+- Tileable, closed-mesh, scale-fixed, highpoly, ZTool, modular, max-triangles, colour,
+  condition and interior/exterior filters are wired through `LibraryQuery`.
+- The Library filter row no longer renders inside asset cards.
+
+### Metadata drawer
+
+- Remote drawers show semantic tags, pack, revision, mesh readiness, material workflow,
+  alpha/opacity and billboards.
+- Materials and texture sets render only when the extended payload contains non-empty data.
+- Billboard texture previews were prototyped but the returned `/quixel-megascans-assets/` signed
+  URLs return 403; the carousel is limited to the working reference maps until a signed billboard
+  endpoint is found.
+
+## v1.3.2
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 

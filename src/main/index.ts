@@ -4,6 +4,8 @@ import { basename, extname, join, resolve } from "node:path";
 import { AuthService } from "./auth";
 import { LocalApiServer } from "./api-server";
 import { BridgeLink } from "./bridge-link";
+import { CatalogMetadataProvider } from "./catalog-metadata";
+import { CatalogPackBuilder } from "./catalog-pack-builder";
 import { DownloadManager } from "./download-manager";
 import { downloadFile, extractZip } from "./downloader";
 import { buildExportAsset, sendToSocket, writeMegascansJson } from "./exporter";
@@ -43,6 +45,7 @@ let legacyApi: LegacyApi | null = null;
 let downloads: DownloadManager | null = null;
 let syncService: SyncService | null = null;
 let updateService: UpdateService | null = null;
+let catalogMetadata: CatalogMetadataProvider | null = null;
 
 function exportPath(): string {
   if (process.platform === "win32") {
@@ -87,6 +90,11 @@ function requireSync(): SyncService {
 function requireUpdates(): UpdateService {
   if (!updateService) throw new Error("updater not ready");
   return updateService;
+}
+
+function requireCatalogMetadata(): CatalogMetadataProvider {
+  if (!catalogMetadata) throw new Error("catalogue metadata provider not ready");
+  return catalogMetadata;
 }
 
 async function validateAssetJson(assetId: string): Promise<JsonValidationReport> {
@@ -651,6 +659,25 @@ function registerIpc(): void {
   ipcMain.handle("downloads:clearFinished", () => requireDownloads().clearFinished());
   ipcMain.handle("downloads:list", () => requireDownloads().list());
 
+  ipcMain.handle("catalog:metadata:status", () => requireCatalogMetadata().status());
+  ipcMain.handle("catalog:metadata:lookup", (_event, ids: string[]) =>
+    requireCatalogMetadata().lookup(ids)
+  );
+  ipcMain.handle("catalog:metadata:import", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile"],
+      filters: [
+        { name: "OpenBridge metadata packs", extensions: ["gz", "ndjson", "json"] }
+      ]
+    });
+    if (result.canceled || !result.filePaths[0]) return requireCatalogMetadata().status();
+    return requireCatalogMetadata().importPack(result.filePaths[0]);
+  });
+  ipcMain.handle("catalog:metadata:download", () =>
+    requireCatalogMetadata().installFromUrl()
+  );
+  ipcMain.handle("catalog:metadata:remove", () => requireCatalogMetadata().remove());
+
   ipcMain.handle("sync:status", () => requireSync().current());
   ipcMain.handle("sync:run", () => requireSync().run());
 
@@ -692,6 +719,28 @@ async function init(): Promise<void> {
   authService = new AuthService(logger, notify);
   await authService.load();
   legacyApi = new LegacyApi(authService, logger);
+  const packArg = process.argv.find(arg => arg.startsWith("--build-catalog-pack="));
+  if (packArg) {
+    const outputPath = resolve(packArg.slice("--build-catalog-pack=".length));
+    const limit = Number(
+      process.argv.find(arg => arg.startsWith("--catalog-limit="))?.split("=")[1] ?? 0
+    );
+    const concurrency = Number(
+      process.argv.find(arg => arg.startsWith("--catalog-concurrency="))?.split("=")[1] ?? 8
+    );
+    try {
+      if (!authService.state().loggedIn) throw new Error("Log in before building a metadata pack");
+      await new CatalogPackBuilder(legacyApi, logger).build(outputPath, {
+        limit: limit > 0 ? limit : undefined,
+        concurrency: concurrency > 0 ? concurrency : 8
+      });
+      app.quit();
+    } catch (error) {
+      logger.error("Catalogue metadata pack build failed", { error });
+      app.exit(1);
+    }
+    return;
+  }
   downloads = new DownloadManager(
     authService,
     legacyApi,
@@ -713,6 +762,26 @@ async function init(): Promise<void> {
     notify
   );
   updateService = new UpdateService(logger);
+  catalogMetadata = new CatalogMetadataProvider(
+    join(userData, "catalog-metadata.sqlite"),
+    logger
+  );
+  const importPackArg = process.argv.find(arg =>
+    arg.startsWith("--import-catalog-pack=")
+  );
+  if (importPackArg) {
+    try {
+      const status = await catalogMetadata.importPack(
+        resolve(importPackArg.slice("--import-catalog-pack=".length))
+      );
+      logger.info("Catalogue metadata pack imported from CLI", { status });
+      app.quit();
+    } catch (error) {
+      logger.error("Catalogue metadata pack import failed", { error });
+      app.exit(1);
+    }
+    return;
+  }
 
   downloads.onProgress(progress => {
     mainWindow?.webContents.send("downloads:progress", progress);

@@ -310,18 +310,14 @@ export function AssetDrawer() {
   }
 
   const plan = options ? downloadPlan(extended, options) : null;
-  const technical = assetTechnicalFacts(extended);
+  const technical = local?.technical ?? assetTechnicalFacts(extended);
   const lodBytes = lodMeshBytes(extended, options?.meshFormat ?? "fbx");
   const selectedMaps = options?.components.filter(component => component.selected).length ?? 0;
   const selectedLods = options
     ? lods.filter(lod => (plant && options.downloadAllPlantLods) || options.lods[lod.index]).length
     : 0;
 
-  const averageColor =
-    typeof extended?.averageColor === "string" &&
-    extended.averageColor.toLowerCase() !== "#000000"
-      ? extended.averageColor
-      : null;
+  const averageColor = technical.averageColor;
   const texelDensity = technical.texelDensity
     ? /^\d+$/.test(technical.texelDensity)
       ? `${technical.texelDensity} px/m`
@@ -359,6 +355,59 @@ export function AssetDrawer() {
     techRows.push(["Max resolution", `${technical.resolution / 1024}K`]);
   }
   if (technical.mapCount > 0) techRows.push(["Map types", String(technical.mapCount)]);
+  if (technical.closedMesh !== null) {
+    techRows.push(["Mesh", technical.closedMesh ? "Closed" : "Open"]);
+  }
+  if (technical.scaleFixed !== null) {
+    techRows.push(["Scale fixed", technical.scaleFixed ? "Yes" : "No"]);
+  }
+  if (technical.assembly !== null) {
+    techRows.push(["Assembly", technical.assembly ? "Yes" : "No"]);
+  }
+  if (technical.modular) techRows.push(["Modular", "Yes"]);
+  if (technical.materialWorkflow) {
+    techRows.push([
+      "Material workflow",
+      technical.materialWorkflow === "metal-rough"
+        ? "Metal / Rough"
+        : technical.materialWorkflow === "spec-gloss"
+          ? "Specular / Gloss"
+          : "Mixed"
+    ]);
+  }
+  if (technical.hasAlpha) techRows.push(["Alpha / opacity", "Yes"]);
+  if (technical.packName) techRows.push(["Pack", technical.packName]);
+  if (technical.revision != null) techRows.push(["Revision", String(technical.revision)]);
+  if (technical.revised) {
+    const value =
+      typeof technical.revised === "number"
+        ? new Date(technical.revised).toLocaleDateString()
+        : typeof technical.revised === "string"
+          ? technical.revised
+          : "Updated";
+    techRows.push(["Updated", value]);
+  }
+
+  const semanticLabels = [
+    ["state", technical.semantic.state],
+    ["setting", technical.semantic.interiorExterior],
+    ["industry", technical.semantic.industry],
+    ["theme", technical.semantic.theme],
+    ["descriptive", technical.semantic.descriptive],
+    ["contains", technical.semantic.contains],
+    ["colour", technical.semantic.color],
+    ["orientation", technical.semantic.orientation]
+  ]
+    .flatMap(([group, values]) =>
+      (values as string[]).map(value => `${group}: ${value}`)
+    )
+    .slice(0, 18);
+  const objectKeys = (value: unknown): string[] =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.keys(value as Record<string, unknown>)
+      : [];
+  const materialNames = objectKeys(extended?.materials);
+  const textureSetNames = objectKeys(extended?.textureSets);
 
   return (
     <>
@@ -473,6 +522,35 @@ export function AssetDrawer() {
               </>
             )}
           </div>
+
+          {semanticLabels.length > 0 && (
+            <section className="semantic-panel">
+              <h3>Semantic tags</h3>
+              <div className="semantic-chips">
+                {semanticLabels.map(label => (
+                  <span key={label}>{label}</span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {(materialNames.length > 0 || textureSetNames.length > 0) && (
+            <section className="material-panel">
+              <h3>Materials & texture sets</h3>
+              {materialNames.length > 0 && (
+                <div className="material-row">
+                  <span>Materials</span>
+                  <strong>{materialNames.join(", ")}</strong>
+                </div>
+              )}
+              {textureSetNames.length > 0 && (
+                <div className="material-row">
+                  <span>Texture sets</span>
+                  <strong>{textureSetNames.join(", ")}</strong>
+                </div>
+              )}
+            </section>
+          )}
 
           {(techRows.length > 0 || averageColor) && (
             <section className="technical-panel">

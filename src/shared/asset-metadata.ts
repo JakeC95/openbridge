@@ -1,6 +1,7 @@
 import { canonicalMapType } from "./download-defaults";
 import type {
   AssetMapDescriptor,
+  CatalogMetadataRecord,
   AssetModelDescriptor,
   DownloadMapFormat,
   DownloadOptions,
@@ -93,6 +94,27 @@ function modelFiles(
     ];
   }
   return [];
+}
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function semanticRecord(asset: ExtendedAsset | undefined): Record<string, unknown> {
+  const value = asset?.semanticTags;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function booleanMeta(asset: ExtendedAsset | undefined, key: string): boolean | null {
+  const value = metaValue(asset, key);
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (value.toLowerCase() === "true") return true;
+    if (value.toLowerCase() === "false") return false;
+  }
+  return null;
 }
 function allModels(asset: ExtendedAsset | undefined): AssetModelDescriptor[] {
   return [...(asset?.meshes ?? []), ...(asset?.models ?? [])];
@@ -217,6 +239,56 @@ export function assetTechnicalFacts(
         typeof item === "object" &&
         ("uri" in item || "type" in item)
     );
+  const semantic = semanticRecord(asset);
+  const mapTypes = allMapTypes(asset);
+  const semanticList = (key: string): string[] => stringList(semantic[key]);
+  const tags = asset?.tags ?? [];
+  const closedMeshValue = String(
+    metaValue(asset, "mesh type") ?? semantic["3d_mesh"] ?? ""
+  ).toLowerCase();
+  const packValue = asset?.pack as
+    | { _id?: unknown; id?: unknown; name?: unknown }
+    | string
+    | undefined;
+  const packId =
+    typeof packValue === "string"
+      ? packValue
+      : packValue && typeof packValue === "object"
+        ? String(packValue._id ?? packValue.id ?? "") || null
+        : null;
+  const packName =
+    typeof packValue === "string"
+      ? packValue
+      : packValue && typeof packValue === "object"
+        ? String(packValue.name ?? "") || null
+        : null;
+  const materialWorkflow =
+    mapTypes.includes("metalness") && (mapTypes.includes("specular") || mapTypes.includes("gloss"))
+      ? "mixed"
+      : mapTypes.includes("metalness")
+        ? "metal-rough"
+        : mapTypes.includes("specular") || mapTypes.includes("gloss")
+          ? "spec-gloss"
+          : null;
+  const revisionValue = asset?.revision;
+  const revisedValue = asset?.revised;
+  const revision =
+    typeof revisionValue === "number" && revisionValue > 0
+      ? revisionValue
+      : typeof revisionValue === "string" && revisionValue
+        ? revisionValue
+        : null;
+  const revised =
+    typeof revisedValue === "string" || typeof revisedValue === "number"
+      ? revisedValue
+      : revisedValue === true
+        ? true
+        : null;
+  const averageColor =
+    typeof asset?.averageColor === "string" &&
+    asset.averageColor.toLowerCase() !== "#000000"
+      ? asset.averageColor
+      : null;
 
   return {
     resolution,
@@ -239,7 +311,32 @@ export function assetTechnicalFacts(
     meshType: meshTypeValue == null ? null : String(meshTypeValue),
     hasHighpoly,
     hasZtool,
-    hasBrushes
+    hasBrushes,
+    closedMesh: closedMeshValue ? closedMeshValue === "closed" : null,
+    scaleFixed: booleanMeta(asset, "isScaleFixed"),
+    assembly: booleanMeta(asset, "assembly"),
+    smallAsset: booleanMeta(asset, "small3dasset"),
+    splitSubmeshes: booleanMeta(asset, "splitSubmeshes"),
+    modular: tags.some(tag => tag.includes("3d-mod")),
+    hasAlpha: mapTypes.includes("opacity"),
+    materialWorkflow,
+    averageColor,
+    packId,
+    packName,
+    revision,
+    revised,
+    semantic: {
+      subjectMatter:
+        typeof semantic.subject_matter === "string" ? semantic.subject_matter : null,
+      color: semanticList("color"),
+      state: semanticList("state"),
+      interiorExterior: semanticList("interior_exterior"),
+      industry: semanticList("industry"),
+      theme: semanticList("theme"),
+      descriptive: semanticList("descriptive"),
+      contains: semanticList("contains"),
+      orientation: semanticList("orientation")
+    }
   };
 }
 
@@ -407,6 +504,38 @@ export function lodMeshBytes(
     output[model.lod] = Math.max(output[model.lod] ?? 0, bytes);
   }
   return output;
+}
+export function inferAssetType(categories: string[] | undefined): string {
+  const values = new Set((categories ?? []).map(value => value.toLowerCase()));
+  if (values.has("3dplant") || values.has("3d plant") || values.has("plant")) return "3dplant";
+  if (values.has("3d") || values.has("3dasset") || values.has("3d asset")) return "3d";
+  for (const type of [
+    "surface",
+    "atlas",
+    "decal",
+    "brush",
+    "imperfection",
+    "displacement",
+    "tiles",
+    "substance"
+  ]) {
+    if (values.has(type)) return type;
+  }
+  return "";
+}
+export function catalogMetadataRecord(
+  asset: ExtendedAsset,
+  generatedAt = Date.now()
+): CatalogMetadataRecord {
+  return {
+    id: asset.id,
+    name: asset.name,
+    type: asset.type || asset.asset_type || inferAssetType(asset.categories),
+    categories: asset.categories ?? [],
+    tags: asset.tags ?? [],
+    technical: assetTechnicalFacts(asset),
+    generatedAt
+  };
 }
 export function mapTechnicalDetails(
   asset: ExtendedAsset | undefined,
