@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      OPENBRIDGE_EPIC_CLIENT_ID: ${{ secrets.OPENBRIDGE_EPIC_CLIENT_ID }}
+      OPENBRIDGE_ALGOLIA_APP_ID: ${{ secrets.OPENBRIDGE_ALGOLIA_APP_ID }}
+      OPENBRIDGE_ALGOLIA_API_KEY: ${{ secrets.OPENBRIDGE_ALGOLIA_API_KEY }}
+      OPENBRIDGE_ALGOLIA_INDEX: ${{ secrets.OPENBRIDGE_ALGOLIA_INDEX }}
+      OPENBRIDGE_API_BASE: ${{ secrets.OPENBRIDGE_API_BASE }}
+      OPENBRIDGE_SSO_BASE: ${{ secrets.OPENBRIDGE_SSO_BASE }}
+      OPENBRIDGE_SIGNED_URL_BASE: ${{ secrets.OPENBRIDGE_SIGNED_URL_BASE }}
+      OPENBRIDGE_REALM: ${{ secrets.OPENBRIDGE_REALM }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify service configuration
+        shell: pwsh
+        run: |
+          if (-not $env:OPENBRIDGE_EPIC_CLIENT_ID) { throw "OPENBRIDGE_EPIC_CLIENT_ID secret is not set" }
+          if (-not $env:OPENBRIDGE_ALGOLIA_API_KEY) { throw "OPENBRIDGE_ALGOLIA_API_KEY secret is not set" }
+
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run typecheck
+      - run: npm run dist:portable
+
+      - shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $zip = Get-ChildItem "dist" -Filter "OpenBridge-$version-win-x64-portable.zip" | Select-Object -First 1
+          if (-not $zip) { throw "Portable zip not found" }
+          node scripts/make-update-manifest.mjs $version $zip.FullName
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/OpenBridge-*-win-x64-portable.zip
+            latest.json
+          generate_release_notes: true

@@ -1,0 +1,45 @@
+{
+  "name": "openbridge",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Open-source reimplementation of the discontinued Quixel Bridge desktop app",
+  "productName": "OpenBridge",
+  "desktopName": "openbridge",
+  "main": "out/main/index.js",
+  "license": "MIT",
+  "author": "OpenBridge Contributors",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "dist:linux": "npm run build && electron-builder --linux rpm AppImage --x64",
+    "dist": "npm run build && electron-builder --win nsis --x64 --linux rpm AppImage --x64",
+    "dist:portable": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "yauzl": "^3.4.0",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/yauzl": "^3.4.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example-owner/openbridge.git"
+  },
+  "homepage": "https://github.com/example-owner/openbridge",
+  "bugs": {
+    "url": "https://github.com/example-owner/openbridge/issues"
+  }
+}

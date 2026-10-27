@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+tools/
+analysis/
+third_party/
+*.log
+.DS_Store
+Thumbs.db
+config.local.json
+config.local.*.json
+.env
+.env.*
+deepseek_api_key.txt
+latest.json
+.opencode/
