@@ -36,6 +36,7 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
   sample.
 - The Surfaces preset now exposes 16 real map choices and defaults to the 10 core/metal maps.
   `occlusion` is displayed and selected as AO while the original download type is preserved.
+
 ### Scale and virtualization
 
 - A synthetic 5,000-row index was used to test large-library behavior without creating files.
@@ -60,7 +61,7 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             FB4C2EB0AA70A7DAD998A47CAC4AD5541E7FB71C0759C9D548BB4EF2CCB1E7AD
+portable zip             261F6A5E53C5FBDC304D0E0A1AE5547B5B34CEEE9FD866A1B0E83FF531F13E6F
 ```
 
 ### Not tested in v1.2.2

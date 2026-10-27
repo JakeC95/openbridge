@@ -84,14 +84,14 @@ portable files after the app exits and restarts it.
 
 ```
 dist/OpenBridge-1.2.2-win-x64-portable/OpenBridge.exe
-dist/OpenBridge-1.2.2-win-x64-portable.zip   159,010,747 bytes
+dist/OpenBridge-1.2.2-win-x64-portable.zip   159,011,927 bytes
 ```
 
 SHA-256:
 
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
-portable zip             FB4C2EB0AA70A7DAD998A47CAC4AD5541E7FB71C0759C9D548BB4EF2CCB1E7AD
+portable zip             261F6A5E53C5FBDC304D0E0A1AE5547B5B34CEEE9FD866A1B0E83FF531F13E6F
 ```
 
 See [TESTING.md](TESTING.md) for the runtime validation log.
