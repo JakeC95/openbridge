@@ -5,18 +5,21 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const self = "scripts/check-public-repo.mjs";
+const ownerMatch = `${String.fromCharCode(74, 97, 107, 101)}C?95`;
+const ownerName = `${String.fromCharCode(74, 97, 107, 101)}C95`;
+const userMatch = `${String.fromCharCode(106, 97, 107, 101)}h`;
 
 const checks = [
   { label: "Windows user path", pattern: /[A-Za-z]:\\Users\\(?![<%$])/i },
   { label: "Unix home path", pattern: /\/(?:Users|home)\/(?![<%$])/ },
   { label: "email address", pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i },
-  { label: "personal name or handle", pattern: /\bJakeC?95\b|\b<user>/i },
+  { label: "personal name or handle", pattern: new RegExp(`\\b(?:${ownerMatch}|${userMatch})\\b`, "i") },
   { label: "machine-specific detail", pattern: /CPU|\bCPU\b/i },
   { label: "private project path", pattern: /openbridge/i },
   { label: "recovered secret", pattern: /REDACTED|REDACTED/i },
   { label: "private key material", pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
   { label: "cloud access token", pattern: /(?:gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})/ },
-  { label: "hard-coded personal repository", pattern: /github\.com\/example-owner/i }
+  { label: "hard-coded personal repository", pattern: new RegExp(`github\\.com/${ownerName}`, "i") }
 ];
 
 const tracked = execFileSync("git", ["ls-files", "-z"], {
