@@ -1,10 +1,10 @@
 # Builds the portable Windows app.
 #
-# Why this exists: electron-builder rewrites electron.exe (icon/version resources),
-# which invalidates its Authenticode/reputation hash. On machines with Windows
-# Smart App Control / WDAC, the rewritten exe is blocked while the untouched
-# Electron binary is allowed. This script keeps the Electron binary byte-for-byte
-# intact, copies it to OpenBridge.exe, and points it at resources/app.
+# Why this exists: rewriting electron.exe (icon/version resources) invalidates its
+# Authenticode/reputation hash. On machines with Windows Smart App Control / WDAC,
+# the rewritten exe is blocked while the untouched Electron binary is allowed. This
+# script keeps the Electron binary byte-for-byte intact, copies it to OpenBridge.exe,
+# and points it at resources/app.
 param(
   [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )

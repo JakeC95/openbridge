@@ -4,7 +4,7 @@
 
 - Unpacked `app.asar` (97,857 files) and recovered 1,085 renderer sources from the source map.
 - Prettified the main bundle and mapped IPC channels, service ports and file formats.
-- Confirmed live services (Algolia catalogue, plugin manifest, EOL config, AppImage).
+- Confirmed live services (Algolia catalogue, plugin manifest, EOL config).
 - Recorded the toolchain and evidence in `docs/`.
 
 ## Phase 1 - Local library manager (done)
@@ -14,7 +14,7 @@
 - Local HTTP API: folder, downloaded assets, reload, log, error.
 - Discovery (`28852`) and Mixer live-link sockets.
 - Asset grid UI with previews/search/import.
-- Windows portable + NSIS build configuration.
+- Windows portable build configuration.
 
 ## Phase 2 - Catalogue, auth and downloads (done for Windows v1.0)
 
@@ -75,15 +75,11 @@
 - Download/install plugin zips from the manifest.
 - Parse script headers, tool/renderer/script picker, per-tool version detection and rollback.
 
-## Phase 7 - Linux and polish
+## Phase 7 - Polish
 
-- Build and test RPM + AppImage on Rocky 9 (glibc 2.34).
-- Linux desktop integration: `.desktop`, MIME `x-scheme-handler` for `com.epicgames.launcher`,
-  tray and portal file pickers.
-- Code-signed Windows installer. Smart App Control currently blocks the unsigned
-  electron-builder exe; the portable build is the workaround.
+- Keep the Windows portable ZIP as the only distribution target.
 - Opt-in crash reporting, diagnostics export and update channels.
-- Accessibility, high-DPI, localization and a broader test matrix (Win10/11, Rocky 9, Ubuntu 24.04).
+- Accessibility, high-DPI, localization and a broader Windows test matrix.
 
 ## Non-goals
 
@@ -93,3 +89,4 @@
 - Automatic bulk downloading of all acquired assets. Sync only reports differences; users choose
   what to download.
 - Fab catalogue or Fab package-download bypasses.
+- Installer, MSI, RPM, AppImage and other non-portable package formats for now.

@@ -1,8 +1,8 @@
 # OpenBridge
 
 A clean-room, open-source reimplementation of the discontinued **Quixel Bridge** desktop app
-(`megascans-bridge` 2025.0.0, Electron 10 / Chrome 85), built for Windows 10/11 and prepared for
-Rocky Linux.
+(`megascans-bridge` 2025.0.0, Electron 10 / Chrome 85), built for Windows 10/11 and
+distributed as a portable app.
 
 The visual language, layout, category tree and download workflow follow the original; the code,
 branding and assets are independent. Quixel/Epic artwork, fonts, plugins and binaries are **not**
@@ -14,8 +14,7 @@ and a 120 px right-side asset drawer.
 
 ## Windows v1.1.2 artifact
 
-The working build is the portable app (the NSIS installer is also built but is unsigned and is
-blocked by this machine's Application Control policy):
+OpenBridge is distributed as a portable app. No installer is built or published:
 
 ```
 dist\OpenBridge-1.1.2-win-x64-portable\OpenBridge.exe
@@ -33,7 +32,6 @@ SHA-256:
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 portable zip             382E3F15F588E2D2A03C52C1D4405191DB78256A3CB5B341BDB22048BAE55F88
-unsigned NSIS installer  FB8869D1E13B023C07113CD46305E914A19860652B193D5DDEAB3252D0D5E521
 ```
 
 ## v1.1 features (Windows)
@@ -94,8 +92,9 @@ Verified against the live legacy services on this machine:
 - The Three.js preview and channel-packing image processor.
 - MetaHumans/DHI browsing.
 - Automatic bulk downloading of all acquired assets.
-- A signed Windows installer. The portable build is the supported Windows artifact.
-- Linux RPM/AppImage builds; configuration exists but must be built on Rocky 9.
+- NSIS/MSI installers and other non-portable package formats. The portable ZIP is the only
+  supported distribution.
+- Linux or macOS builds.
 
 ## Quick start (development)
 
@@ -115,10 +114,10 @@ If Electron's install script is blocked by npm's allow-list: `node node_modules/
 ## Build
 
 ```powershell
-npm run dist:portable   # portable folder + zip (recommended on this machine)
-npm run dist:win        # NSIS installer (needs code signing for Smart App Control)
-npm run dist:linux      # RPM + AppImage (run on Rocky 9)
+npm run dist:portable   # portable folder + zip
 ```
+
+Portable is the only build target. There is no installer or cross-platform package step.
 
 ### Update release
 
@@ -183,7 +182,7 @@ docs/
   REVERSE-ENGINEERING.md  architecture, formats, evidence
   PROTOCOL.md             local HTTP API, sockets, DCC ports, plugin format
   TOOLCHAIN.md            installed RE tools, runtime access
-  BUILD.md                Windows + Rocky Linux build instructions
+  BUILD.md                Windows portable build instructions
   TESTING.md              validation log and measured results
   ROADMAP.md              phased implementation plan
 scripts/                  build, dev, extraction, portable packaging, update manifest

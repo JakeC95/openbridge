@@ -6,14 +6,12 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 ### Build and package
 
-- `npm run typecheck`, `npm run build`, `npm run dist:portable` and `npm run dist:win` completed
-  successfully.
+- `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
 - Packaged portable reports `1.1.2`, title `OpenBridge`, 48 catalogue cards, 18,835 catalogue
   assets and 5 local assets.
 - Portable `OpenBridge.exe` is byte-identical to Electron 45 and passes Smart App Control.
 - The packaged 1.1.2 build checked the published GitHub manifest and returned `current: 1.1.2`,
   `latest: 1.1.2`, `available: false`.
-- The NSIS installer is unsigned and remains blocked on this machine.
 
 ### Settings and per-type defaults
 
@@ -60,7 +58,6 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 portable zip             382E3F15F588E2D2A03C52C1D4405191DB78256A3CB5B341BDB22048BAE55F88
-unsigned NSIS installer  FB8869D1E13B023C07113CD46305E914A19860652B193D5DDEAB3252D0D5E521
 ```
 
 ### Updater test
@@ -71,6 +68,7 @@ unsigned NSIS installer  FB8869D1E13B023C07113CD46305E914A19860652B193D5DDEAB325
 - Running the generated install script directly copied the payload and restarted the app as 1.1.3.
 - The test harness terminates detached children when the calling process exits, so the final
   unattended helper handoff was not observed end-to-end in this environment.
+
 ### Not tested in v1.1.2
 
 - Installing a newer release through the auto-updater (no newer published release existed at test
@@ -81,12 +79,13 @@ unsigned NSIS installer  FB8869D1E13B023C07113CD46305E914A19860652B193D5DDEAB325
   API and the renderer option builder.
 - Destructive library deletion and duplicate repair.
 - Highpoly/ZTool/brushes transfer variants.
-- NSIS installation under Application Control.
 
 ## Archived v1.0.0 log
 
-The section below records the original v1 scope and tests. Fab catalogue code and the Fab UI were
+The section below records the original v1.0 scope and tests. Fab catalogue code and the Fab UI were
 removed in v1.1.0; offline-library settings and the configurable update feed were also removed.
+NSIS and Linux packaging were removed in favour of the portable-only distribution. The packaging
+entries below are historical.
 
 
 ### Environment (v1.0.0)
@@ -299,9 +298,6 @@ library consumer:
 
 ### Packaging
 
-- `npm run dist:win` produced `dist/OpenBridge Setup 1.0.0.exe` (122,498,047 bytes).
-- The NSIS installer is unsigned; the rewritten `win-unpacked/OpenBridge.exe` is blocked by this
-  machine's Application Control policy.
 - `npm run dist:portable` produced the working build:
   - `dist/OpenBridge-1.0.0-win-x64-portable/OpenBridge.exe`
   - `dist/OpenBridge-1.0.0-win-x64-portable.zip` (158,973,887 bytes)
@@ -319,7 +315,6 @@ library consumer:
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 portable zip             98C11836EE340036AF0562D5E9F0A2B90487D171547F4D677B424F960AEBFCFC
-unsigned NSIS installer  ADE4EFABD4C0503D7A62CC4B8D9D517B4B905DB23DCDE9AE1F00605DFBE7AC54
 ```
 
 ## Not tested
@@ -334,7 +329,6 @@ unsigned NSIS installer  ADE4EFABD4C0503D7A62CC4B8D9D517B4B905DB23DCDE9AE1F00605
 - DCC export/plugins, 3D preview/channel packing, MetaHumans (out of v1 scope).
 - Fab checkout/package acquisition. The drawer only opens Fab/Epic Launcher; no entitlement or
   download bypass is implemented.
-- Linux RPM/AppImage (requires a Rocky 9 build host).
 - App auto-update feed (setting is implemented; no public feed exists).
 
 ## Resource use

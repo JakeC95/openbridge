@@ -13,9 +13,6 @@
     "dev": "node scripts/dev.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
-    "dist:win": "npm run build && electron-builder --win nsis --x64",
-    "dist:linux": "npm run build && electron-builder --linux rpm AppImage --x64",
-    "dist": "npm run build && electron-builder --win nsis --x64 --linux rpm AppImage --x64",
     "dist:portable": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
   "dependencies": {
@@ -30,7 +27,6 @@
     "@types/react-dom": "^19.3.0",
     "@types/yauzl": "^3.4.0",
     "electron": "^45.0.0",
-    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
     "typescript": "^5.9.3"
   },

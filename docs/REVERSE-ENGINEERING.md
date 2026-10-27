@@ -355,15 +355,14 @@ OpenBridge exposes this as `catalog:mapPreviews`, which fetches the extended ass
 signed wildcard URL until shortly before expiry, and returns labelled preview URLs. It does not
 write to the library.
 
-## 11. Linux notes
+## 11. Linux notes (research only)
 
 - The original shipped as an AppImage (`Bridge.AppImage`, still downloadable) and contains
   `process.platform === "linux"` branches for path handling, zip extraction (`unzip`), Assimp and
   the image processor.
-- The legacy app bundled an old Electron (10), which will not run reliably on current Rocky Linux.
-  The reimplementation uses current Electron and targets Rocky 9+ (glibc 2.34).
-- For RPM packaging electron-builder needs `rpmbuild` (`rpm-build`), `fakeroot`, and a recent
-  `glibc` on the build host. AppImage is the portable fallback.
+- The legacy app bundled an old Electron (10), which will not run reliably on current Linux.
+- OpenBridge currently ships as a Windows portable build only. Linux packaging is not configured
+  and no RPM/AppImage target is planned for the current scope.
 
 ## 12. What to reuse vs. reimplement
 

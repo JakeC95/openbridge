@@ -1,9 +1,12 @@
 # Build and packaging
 
-## Windows portable (recommended)
+OpenBridge ships as a Windows x64 portable app only. There are no NSIS, MSI, RPM or AppImage
+targets configured.
+
+## Portable build
 
 ```powershell
-npm run build
+npm run typecheck
 npm run dist:portable
 ```
 
@@ -14,33 +17,21 @@ dist\OpenBridge-<version>-win-x64-portable\OpenBridge.exe
 dist\OpenBridge-<version>-win-x64-portable.zip
 ```
 
-This keeps Electron's `electron.exe` byte-identical and copies it to `OpenBridge.exe`, then places
-the app under `resources\app`. On machines with Windows Smart App Control / WDAC, electron-builder's
-rewritten executable is blocked by hash/policy while the untouched Electron binary is accepted.
-The trade-off is the default Electron file icon; the window title and in-app branding are
-OpenBridge.
+`scripts/package-portable.ps1` keeps Electron's `electron.exe` byte-identical, copies it to
+`OpenBridge.exe`, and places the app under `resources\app`. On machines with Windows Smart App
+Control / WDAC, installer-built executables are often blocked by hash/policy while the untouched
+Electron binary is accepted. The trade-off is the default Electron file icon; the window title and
+in-app branding are OpenBridge.
 
-## Windows NSIS installer
-
-```powershell
-npm run dist:win
-```
-
-Output: `dist/OpenBridge Setup <version>.exe`.
-
-Notes:
-
-- The installer is unsigned. On this machine Application Control blocks both the installer and
-  `dist/win-unpacked/OpenBridge.exe`. Code-sign the installer (`CSC_LINK` / `CSC_KEY_PASSWORD`) or
-  distribute the portable build.
-- NSIS downloads `nsis`, `nsis-resources` and `winCodeSign` on first use.
-- Windows 10 1809+ and Windows 11 are supported by Electron 45. Windows 7/8 are not.
+The portable app requires no administrator rights. Settings, the Epic session, the library cache
+and the download queue live in `%APPDATA%\openbridge`; the app folder itself can be moved or
+deleted without removing user data.
 
 ## Legacy service configuration
 
-Copy `config.local.example.json` to `config.local.json` and fill in your own Epic OAuth client id
-and Algolia read key. `config.local.json` is git-ignored and is embedded into the built bundle by
-`scripts/build.mjs`; it is not read at runtime from the repository. Environment overrides:
+Copy `config.local.example.json` to `config.local.json` and fill in the Epic OAuth client ID and
+Algolia read key. `config.local.json` is git-ignored and is embedded into the built bundle by
+`scripts/build.mjs`. Environment overrides:
 
 ```
 OPENBRIDGE_EPIC_CLIENT_ID
@@ -53,29 +44,7 @@ OPENBRIDGE_SIGNED_URL_BASE
 OPENBRIDGE_REALM
 ```
 
-## Rocky Linux 9
-
-Build on Rocky 9 (or a matching container):
-
-```bash
-sudo dnf install -y curl
-curl -fsSL https://rpm.nodesource.com/setup_24.x | sudo bash -
-sudo dnf install -y nodejs rpm-build rpmdevtools fakeroot \
-  libX11 libXcomposite libXdamage libXrandr libXcursor libXi libXtst \
-  alsa-lib atk at-spi2-atk cups-libs gtk3 libdrm libgbm libxkbcommon \
-  mesa-libGL mesa-libEGL nss nspr
-
-npm ci
-npm run typecheck
-npm run dist:linux
-```
-
-Outputs: `dist/openbridge-<version>.x86_64.rpm` and `dist/OpenBridge-<version>.x86_64.AppImage`.
-
-- Electron 45 needs glibc >= 2.31; Rocky 8 (2.28) is not supported. Use Rocky 9 (2.34).
-- The AppImage needs FUSE 2 on the target or can run with `--appimage-extract-and-run`.
-- Cross-building Linux targets on Windows is not supported; an AppImage attempt fails on NTFS
-  symlink permissions.
+Never commit `config.local.json` or real service credentials.
 
 ## Update release
 
@@ -94,19 +63,18 @@ Manual release:
 ```powershell
 npm run dist:portable
 node scripts/make-update-manifest.mjs 1.1.2 "dist\OpenBridge-1.1.2-win-x64-portable.zip"
-gh release create v1.1.2 "dist\OpenBridge-1.1.2-win-x64-portable.zip" latest.json --title "OpenBridge 1.1.2"
 ```
 
-OpenBridge checks
-`https://github.com/example-owner/openbridge/releases/latest/download/latest.json`; the installer
-downloads the zip, verifies size and SHA-256, then replaces the portable files after the app exits.
+Upload that zip and `latest.json` to a GitHub release. OpenBridge checks
+`https://github.com/example-owner/openbridge/releases/latest/download/latest.json`; the updater
+downloads the zip, verifies size and SHA-256, extracts it with Windows `tar.exe`, then replaces the
+portable files after the app exits and restarts it.
 
-## Verified artifacts
+## Verified artifact
 
 ```
-dist/OpenBridge-1.1.2-win-x64-portable/OpenBridge.exe   working portable build
-dist/OpenBridge-1.1.2-win-x64-portable.zip               158,993,935 bytes
-dist/OpenBridge Setup 1.1.2.exe                          122,513,211 bytes (unsigned)
+dist/OpenBridge-1.1.2-win-x64-portable/OpenBridge.exe
+dist/OpenBridge-1.1.2-win-x64-portable.zip   158,993,935 bytes
 ```
 
 SHA-256:
@@ -114,8 +82,6 @@ SHA-256:
 ```
 portable/OpenBridge.exe  8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B9E0821A59
 portable zip             382E3F15F588E2D2A03C52C1D4405191DB78256A3CB5B341BDB22048BAE55F88
-NSIS installer           FB8869D1E13B023C07113CD46305E914A19860652B193D5DDEAB3252D0D5E521
 ```
 
 See [TESTING.md](TESTING.md) for the runtime validation log.
-
