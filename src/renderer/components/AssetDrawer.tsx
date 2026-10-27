@@ -331,7 +331,9 @@ export function AssetDrawer() {
   if (technical.dimensions) techRows.push(["Dimensions", formatMeasurementText(technical.dimensions)]);
   if (technical.scanArea) techRows.push(["Scan area", formatMeasurementText(technical.scanArea)]);
   if (technical.height && !technical.dimensions) techRows.push(["Height", formatMeasurementText(technical.height)]);
-  if (texelDensity) techRows.push(["Texel density", texelDensity]);
+  if (texelDensity && Number.parseFloat(texelDensity) > 0) {
+    techRows.push(["Texel density", texelDensity]);
+  }
   if (technical.tileable !== null) {
     techRows.push([
       "Tileable",
@@ -683,30 +685,6 @@ export function AssetDrawer() {
                       {threeD && lods.length > 0 && (
                         <div className="lod-options">
                           <span className="label">LODs</span>
-                          {lods.map(lod => (
-                            <label className="toggle inline lod-row" key={lod.index}>
-                              <input
-                                type="checkbox"
-                                checked={
-                                  (plant && options.downloadAllPlantLods) ||
-                                  (options.lods[lod.index] ?? true)
-                                }
-                                disabled={plant && options.downloadAllPlantLods}
-                                onChange={event => {
-                                  const next = options.lods.slice();
-                                  next[lod.index] = event.target.checked;
-                                  patch({ lods: next });
-                                }}
-                              />
-                              <span>LOD {lod.index}</span>
-                              <em>
-                                {lod.tris ? `${lod.tris.toLocaleString()} tris` : ""}
-                                {lodBytes[lod.index] > 0
-                                  ? ` · ${formatBytes(lodBytes[lod.index])}`
-                                  : ""}
-                              </em>
-                            </label>
-                          ))}
                           {plant && (
                             <label className="toggle">
                               <input
@@ -718,6 +696,32 @@ export function AssetDrawer() {
                               />
                               <span>Download all LODs for 3D Plants</span>
                             </label>
+                          )}
+                          {(!plant || !options.downloadAllPlantLods) &&
+                            lods.map(lod => (
+                              <label className="toggle inline lod-row" key={lod.index}>
+                                <input
+                                  type="checkbox"
+                                  checked={options.lods[lod.index] ?? true}
+                                  onChange={event => {
+                                    const next = options.lods.slice();
+                                    next[lod.index] = event.target.checked;
+                                    patch({ lods: next });
+                                  }}
+                                />
+                                <span>LOD {lod.index}</span>
+                                <em>
+                                  {lod.tris ? `${lod.tris.toLocaleString()} tris` : ""}
+                                  {lodBytes[lod.index] > 0
+                                    ? ` · ${formatBytes(lodBytes[lod.index])}`
+                                    : ""}
+                                </em>
+                              </label>
+                            ))}
+                          {plant && options.downloadAllPlantLods && (
+                            <p className="hint">
+                              All {lods.length} available LODs will be downloaded.
+                            </p>
                           )}
                         </div>
                       )}
@@ -733,40 +737,52 @@ export function AssetDrawer() {
                         </label>
                       )}
 
-                      <span className="label">Extras</span>
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={options.highpoly}
-                          onChange={event => patch({ highpoly: event.target.checked })}
-                        />
-                        <span>Highpoly Source</span>
-                      </label>
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={options.ztool}
-                          onChange={event => patch({ ztool: event.target.checked })}
-                        />
-                        <span>Source ZTool</span>
-                      </label>
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          checked={options.brushes}
-                          onChange={event => patch({ brushes: event.target.checked })}
-                        />
-                        <span>Brushes</span>
-                      </label>
+                      {(technical.hasHighpoly ||
+                        technical.hasZtool ||
+                        technical.hasBrushes) && (
+                        <>
+                          <span className="label">Extras</span>
+                          {technical.hasHighpoly && (
+                            <label className="toggle">
+                              <input
+                                type="checkbox"
+                                checked={options.highpoly}
+                                onChange={event => patch({ highpoly: event.target.checked })}
+                              />
+                              <span>Highpoly Source</span>
+                            </label>
+                          )}
+                          {technical.hasZtool && (
+                            <label className="toggle">
+                              <input
+                                type="checkbox"
+                                checked={options.ztool}
+                                onChange={event => patch({ ztool: event.target.checked })}
+                              />
+                              <span>Source ZTool</span>
+                            </label>
+                          )}
+                          {technical.hasBrushes && (
+                            <label className="toggle">
+                              <input
+                                type="checkbox"
+                                checked={options.brushes}
+                                onChange={event => patch({ brushes: event.target.checked })}
+                              />
+                              <span>Brushes</span>
+                            </label>
+                          )}
+                        </>
+                      )}
 
-                      {maxVariation > 1 && (
+                      {maxVariation > 1 && technical.variationDimensions.length <= 1 && (
                         <div className="form-row compact">
-                          <label>Variation</label>
+                          <label>Mesh variation</label>
                           <Dropdown
                             className="select-dropdown"
                             value={String(options.variation)}
                             onChange={value => patch({ variation: Number(value) })}
-                            ariaLabel="Variation"
+                            ariaLabel="Mesh variation"
                             options={Array.from({ length: maxVariation }, (_, index) => ({
                               value: String(index + 1),
                               label: `Var ${index + 1}`
@@ -799,6 +815,7 @@ export function AssetDrawer() {
                               );
                             })}
                           </div>
+                          <p className="hint">Mesh variation is independent of LOD selection.</p>
                         </div>
                       )}
                       <p className="hint">

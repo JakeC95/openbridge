@@ -514,7 +514,7 @@ export function SettingsView() {
           <h2>Updates</h2>
           <div className="inline-status">
             <span>
-              OpenBridge v{versions?.app ?? "1.3.1"}
+              OpenBridge v{versions?.app ?? "1.3.2"}
               {update?.available ? ` — version ${update.latest} is available` : ""}
               {update?.error ? ` — ${update.error}` : ""}
             </span>

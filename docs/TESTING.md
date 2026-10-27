@@ -1,13 +1,13 @@
 # Validation log
 
-## v1.3.1 (current)
+## v1.3.2 (current)
 
 Environment: Windows 11 Pro, Electron 45, live legacy services.
 
 ### Build and package
 
 - `npm run typecheck`, `npm run build` and `npm run dist:portable` completed successfully.
-- Packaged portable reports `1.3.1` and starts with 48 catalogue cards and 5 local assets.
+- Packaged portable reports `1.3.2` and starts with 48 catalogue cards and 5 local assets.
 - The packaged Electron runtime successfully loads `node:sqlite` and the FTS5 index.
 - Asset cards and the drawer no longer display point prices; free/owned states remain.
 
@@ -35,6 +35,11 @@ Environment: Windows 11 Pro, Electron 45, live legacy services.
 - Surface/2D drawers hide the Models & Extras tab, mesh-format footer, and unique-maps-per-LOD
   option. A surface download summary now ends with map counts only, never `FBX`.
 - Region rows hide literal `undefined` values.
+- Zero texel-density values are hidden instead of showing `0 px/m`.
+- Plant drawers hide Highpoly/ZTool/Brushes extras. When “Download all LODs” is enabled, the
+  individual LOD rows are replaced by “All 8 available LODs will be downloaded.”
+- Plant variations use dimension chips rather than a duplicate variation dropdown; the hint states
+  that mesh variation is independent of LOD selection. The plant plan reports 8 LODs / 8 files.
 ### Indexed library
 
 - The index is created at `%APPDATA%\openbridge\library-index.sqlite` in WAL mode; schema version 2
@@ -89,7 +94,7 @@ electron.exe             8E84549B05D27D444DA2957653200D1E0AC287EFF0FC5722B92835B
 portable zip             8E32C09DBFF7D4B5F942185AE375CCB745FA8990A18686542EB167BFAEF64A8D
 ```
 
-### Not tested in v1.3.1
+### Not tested in v1.3.2
 
 - A real library with tens of thousands of files; scale behavior was measured with synthetic index
   rows plus the 5-asset validation library.

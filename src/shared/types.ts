@@ -58,6 +58,7 @@ export interface AssetTechnicalSummary {
   meshType: string | null;
   hasHighpoly: boolean;
   hasZtool: boolean;
+  hasBrushes: boolean;
 }
 
 export interface AssetRecord {
@@ -241,6 +242,7 @@ export interface AssetModelDescriptor {
   lod?: number;
   mimeType?: string;
   tris?: number;
+  contentLength?: number;
   uri?: string;
   uris?: Array<{ mimeType?: string; contentLength?: number; uri?: string; [key: string]: unknown }>;
   variations?: number[];

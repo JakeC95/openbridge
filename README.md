@@ -12,19 +12,19 @@ The Windows shell follows the 2025 Bridge proportions: a responsive 320/280 px s
 nested category tree, header search, 48 px filter bar, image-first asset cards with hover labels,
 and a 120 px right-side asset drawer.
 
-## Windows v1.3.1 artifact
+## Windows v1.3.2 artifact
 
 OpenBridge is distributed as a portable app. No installer is built or published:
 
 ```
-dist\OpenBridge-1.3.1-win-x64-portable\OpenBridge.exe
-dist\OpenBridge-1.3.1-win-x64-portable.zip
+dist\OpenBridge-1.3.2-win-x64-portable\OpenBridge.exe
+dist\OpenBridge-1.3.2-win-x64-portable.zip
 ```
 
 Run `OpenBridge.exe` directly. The portable build deliberately keeps Electron's original executable
 bytes so Windows Smart App Control accepts it; only the file name changes.
 
-Release: <https://github.com/example-owner/openbridge/releases/tag/v1.3.1>
+Release: <https://github.com/example-owner/openbridge/releases/tag/v1.3.2>
 
 SHA-256:
 
@@ -134,7 +134,7 @@ For a local release:
 
 ```powershell
 npm run dist:portable
-node scripts/make-update-manifest.mjs 1.3.1 "dist\OpenBridge-1.3.1-win-x64-portable.zip"
+node scripts/make-update-manifest.mjs 1.3.2 "dist\OpenBridge-1.3.2-win-x64-portable.zip"
 ```
 
 OpenBridge checks

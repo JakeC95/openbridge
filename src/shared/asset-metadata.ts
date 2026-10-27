@@ -79,6 +79,21 @@ function allMapTypes(asset: ExtendedAsset | undefined): string[] {
   return [...types].sort();
 }
 
+function modelFiles(
+  model: AssetModelDescriptor
+): Array<{ mimeType?: string; contentLength?: number; uri?: string }> {
+  if (model.uris && model.uris.length > 0) return model.uris;
+  if (model.uri) {
+    return [
+      {
+        mimeType: model.mimeType,
+        contentLength: model.contentLength,
+        uri: model.uri
+      }
+    ];
+  }
+  return [];
+}
 function allModels(asset: ExtendedAsset | undefined): AssetModelDescriptor[] {
   return [...(asset?.meshes ?? []), ...(asset?.models ?? [])];
 }
@@ -193,6 +208,15 @@ export function assetTechnicalFacts(
 
   const hasHighpoly = models.some(model => model.type === "original");
   const hasZtool = models.some(model => model.type === "zbrush");
+  const brushList = (asset as { brushes?: unknown[] } | undefined)?.brushes;
+  const hasBrushes =
+    Array.isArray(brushList) &&
+    brushList.some(
+      item =>
+        item !== null &&
+        typeof item === "object" &&
+        ("uri" in item || "type" in item)
+    );
 
   return {
     resolution,
@@ -214,7 +238,8 @@ export function assetTechnicalFacts(
     variationDimensions,
     meshType: meshTypeValue == null ? null : String(meshTypeValue),
     hasHighpoly,
-    hasZtool
+    hasZtool,
+    hasBrushes
   };
 }
 
@@ -339,7 +364,7 @@ function selectedMeshBytes(
     const uniqueLods = new Set<number>();
     for (const model of selectedModels) {
       if (typeof model.lod === "number") uniqueLods.add(model.lod);
-      const uris = model.uris ?? [];
+      const uris = modelFiles(model);
       if (uris.length === 0) {
         partial = true;
         continue;
@@ -376,7 +401,7 @@ export function lodMeshBytes(
   }
   for (const model of asset?.models ?? []) {
     if (typeof model.lod !== "number") continue;
-    const bytes = (model.uris ?? [])
+    const bytes = modelFiles(model)
       .filter(uri => uri.mimeType === mime)
       .reduce((sum, uri) => sum + isoBytes(uri.contentLength), 0);
     output[model.lod] = Math.max(output[model.lod] ?? 0, bytes);
