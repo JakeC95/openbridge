@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { catalogFilterQuery } from "../browsing-state";
-import { BrowsingMenu, DensityControl, FacetGroup, PackBrowser, RecentBrowsing } from "../components/BrowsingTools";
+import { BrowsingMenu, DensityControl, FilterWorkbench, PackBrowser, RecentBrowsing } from "../components/BrowsingTools";
 import type { PackRef } from "../../shared/types";
 import { useBrowseScroll } from "../use-browse-scroll";
+import { LoadMore } from "../components/LoadMore";
+import { AssetList } from "../components/AssetList";
 import { useStore } from "../store";
 import { AssetCard } from "../components/AssetCard";
-import { hitId } from "../catalog-utils";
+import { galleryFacts, hitId, hitPreview, hitThumb, readinessBadges, typeLabel } from "../catalog-utils";
 import { CloseIcon, ChevronDownIcon, UserIcon } from "../icons";
 import { Dropdown } from "../components/Dropdown";
 import { VirtualGrid } from "../components/VirtualGrid";
@@ -107,7 +109,7 @@ export function DiscoverView() {
   const type = useStore(state => state.type);
   const hasMore = useStore(state => state.hasMore);
   const categoryPath = useStore(state => state.categoryPath);
-  const hits = useStore(state => state.hits);
+  const rawHits = useStore(state => state.hits);
   const nbHits = useStore(state => state.nbHits);
   const loading = useStore(state => state.catalogLoading);
   const error = useStore(state => state.catalogError);
@@ -139,6 +141,11 @@ export function DiscoverView() {
   const toast = useStore(state => state.toast);
 
   const [selectMode, setSelectMode] = useState(false);
+  const [listView, setListView] = useState(false);
+  const [catalogSort, setCatalogSort] = useState(() => {
+    const saved = localStorage.getItem("openbridge.catalogSort");
+    return ["relevance", "name", "type", "size", "resolution", "triangles", "maps"].includes(saved ?? "") ? saved! : "relevance";
+  });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState<FacetGroupKey>("biome");
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => loadSavedSearches());
@@ -157,6 +164,24 @@ export function DiscoverView() {
   }, [filterKey]);
 
   const ownSet = useMemo(() => new Set(acquired), [acquired]);
+  const hits = useMemo(() => {
+    if (catalogSort === "relevance") return rawHits;
+    const numeric: Record<string, (hit: typeof rawHits[number]) => number | null> = {
+      size: hit => typeof hit.maxSize === "number" ? hit.maxSize : typeof hit.minSize === "number" ? hit.minSize : null,
+      resolution: hit => hit.metadata?.technical?.resolution ?? hit.resolution ?? null,
+      triangles: hit => hit.metadata?.technical?.maxTris ?? null,
+      maps: hit => hit.metadata?.technical?.mapCount ?? null
+    };
+    return [...rawHits].sort((a, b) => {
+      if (catalogSort === "name") return a.name.localeCompare(b.name);
+      if (catalogSort === "type") return typeLabel(a.type).localeCompare(typeLabel(b.type)) || a.name.localeCompare(b.name);
+      const get = numeric[catalogSort];
+      const av = get?.(a) ?? null; const bv = get?.(b) ?? null;
+      if (av === null) return bv === null ? a.name.localeCompare(b.name) : 1;
+      if (bv === null) return -1;
+      return bv - av || a.name.localeCompare(b.name);
+    });
+  }, [catalogSort, rawHits]);
   const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
   const localMap = useMemo(
     () => new Map(localRefs.map(ref => [ref.id, ref.path])),
@@ -212,6 +237,12 @@ export function DiscoverView() {
     points: number | undefined,
     event?: { shiftKey: boolean }
   ): void {
+    if (!selectMode && event?.shiftKey) {
+      setSelectMode(true);
+      setSelectedIds(new Set());
+      setSelectedPoints(new Map());
+      useStore.getState().closeSelection();
+    }
     if (event?.shiftKey && selectionAnchor.current) {
       const ids = hits.map(hitId);
       const from = ids.indexOf(selectionAnchor.current);
@@ -241,7 +272,7 @@ export function DiscoverView() {
       else next.set(id, points);
       return next;
     });
-    if (!event?.shiftKey) selectionAnchor.current = id;
+    if (!event?.shiftKey || !selectionAnchor.current || !hits.some(hit => hitId(hit) === selectionAnchor.current)) selectionAnchor.current = id;
   }
 
   function selectLoaded(): void {
@@ -416,6 +447,14 @@ export function DiscoverView() {
             }))}
           />
 
+          <Dropdown className="filter-select" value={catalogSort} ariaLabel="Sort loaded catalogue results"
+            onChange={value => { setCatalogSort(value); localStorage.setItem("openbridge.catalogSort", value); }} options={[
+              { value: "relevance", label: "Sort: Relevance" }, { value: "name", label: "Name A–Z" },
+              { value: "type", label: "Asset type" }, { value: "size", label: "Physical size · largest" },
+              { value: "resolution", label: "Resolution · highest" }, { value: "triangles", label: "Triangles · most" },
+              { value: "maps", label: "Texture maps · most" }
+            ]} />
+
           <Dropdown
             className="filter-select"
             value={stateFilter}
@@ -552,38 +591,9 @@ export function DiscoverView() {
             {Object.keys(facets).length === 0 ? (
               <p className="hint">Run a search to load available filters.</p>
             ) : (
-              <div className="facet-workbench">
-                <nav className="facet-tabs" aria-label="Filter groups">
-                  {FACET_GROUPS.map(({ key, label }) => {
-                    const selectedCount = (facetFilters[key] ?? []).length;
-                    return (
-                      <button
-                        type="button"
-                        key={key}
-                        className={activeGroup === key ? "facet-tab active" : "facet-tab"}
-                        aria-pressed={activeGroup === key}
-                        onClick={() => setActiveGroup(key)}
-                      >
-                        <span>{label}</span>
-                        {selectedCount > 0 && <em>{selectedCount}</em>}
-                      </button>
-                    );
-                  })}
-                </nav>
-                <div className="facet-pane">
-                  {FACET_GROUPS.map(({ key, label }) => (
-                    <FacetGroup
-                      key={key}
-                      group={key}
-                      label={label}
-                      values={facets[key] ?? {}}
-                      selected={facetFilters[key] ?? []}
-                      toggle={value => toggleFacet(key, value)}
-                      hidden={activeGroup !== key}
-                    />
-                  ))}
-                </div>
-              </div>
+              <FilterWorkbench activeGroup={activeGroup} onActiveGroup={key => setActiveGroup(key as FacetGroupKey)}
+                groups={FACET_GROUPS.map(({ key, label }) => ({ key, label, values: facets[key] ?? {},
+                  selected: facetFilters[key] ?? [], toggle: value => toggleFacet(key, value) }))} />
             )}
 
             {savedSearches.length > 0 && (
@@ -633,6 +643,8 @@ export function DiscoverView() {
               <span className="bulk-scope-hint">Assets already downloaded or requiring acquisition are skipped.</span>
             </div>
             <div className="bulk-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setListView(value => !value)}>
+                {listView ? "Grid view" : "List / compare view"}</button>
               <button
                 type="button"
                 className="text-btn"
@@ -674,21 +686,6 @@ export function DiscoverView() {
           </div>
         )}
 
-        {categoryPath.length > 0 && (
-          <div className="category-breadcrumb">
-            <span>In:</span>
-            <strong>{selectedCategoryLabel}</strong>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => setCategoryPath([])}
-              title="Clear category"
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        )}
-
         {!auth.loggedIn && (
           <div className="login-banner">
             <UserIcon />
@@ -702,15 +699,32 @@ export function DiscoverView() {
 
       <div className="view-body discover-body">
         <div className="asset-area" ref={bodyRef}>
-          {error && <div className="error-box">{error}</div>}
+          {error && <div className="error-box" role="alert"><span>Could not load catalogue results: {error}</span>{" "}
+            <button type="button" className="btn btn-ghost" disabled={loading} onClick={() => void search(true)}>Retry search</button></div>}
 
           <div className="asset-heading">
               {catalogPack ? `Pack: ${catalogPack.name}` : query ? "Search results" : categoryPath.length > 0 ? selectedCategoryLabel : "Catalogue"}
           </div>
+          {hits.length > 0 && !selectMode && <button type="button" className="btn btn-ghost view-mode" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
 
-          {hits.length > 0 && (
+          {hits.length > 0 && listView && <AssetList key={selectMode ? "bulk" : "browse"}
+            selectedKeys={selectMode ? selectedIds : undefined}
+            totalSelected={selectMode ? selectedIds.size : undefined}
+            initialCompare={selectMode && selectedIds.size >= 2}
+            onToggle={selectMode ? id => { const hit = hits.find(item => hitId(item) === id); if (hit) toggleSelection(id, hit.points); } : undefined}
+            items={hits.map(hit => {
+            const id = hitId(hit); const technical = hit.metadata?.technical;
+            return { key: id, id, name: hit.name || id, type: typeLabel(hit.type), image: hitPreview(hit) ?? hitThumb(hit), technical,
+              dimensions: technical?.dimensions ?? hit.physicalSize,
+              resolution: technical?.resolution ? `${technical.resolution / 1024}K` : hit.resolution ? String(hit.resolution) : null,
+              category: hit.categories?.slice(0, 2).join(" / "), facts: [...galleryFacts(hit), ...readinessBadges(technical)],
+              status: localMap.has(id) ? "Downloaded" : ownSet.has(id) ? "Owned" : (hit.points ?? 0) === 0 ? "Free" : "Not acquired",
+              onOpen: () => void openHit(hit) };
+          })} />}
+          {hits.length > 0 && !listView && (
             <VirtualGrid
               items={hits}
+              itemKey={hitId}
               minItemWidth={density === "compact" ? 160 : density === "large" ? 320 : 220}
               gap={28}
               renderItem={hit => {
@@ -736,7 +750,7 @@ export function DiscoverView() {
                       else void window.openbridge.downloads.pause(id);
                     }}
                     onSelect={event => toggleSelection(id, hit.points, event)}
-                    onOpen={hitToOpen => void openHit(hitToOpen)}
+                    onOpen={hitToOpen => { selectionAnchor.current = hitId(hitToOpen); void openHit(hitToOpen); }}
                     onToggleFavorite={() => void toggleFavorite(id)}
                     onDownload={() => void downloadHit(hit)}
                   />
@@ -776,18 +790,7 @@ export function DiscoverView() {
           )}
 
           {hasMore && (
-            <div className="load-more">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={loading}
-                onClick={() => void search(false)}
-              >
-                {loading
-                  ? "Loading..."
-                  : `Load more (${Math.max(0, nbHits - hits.length).toLocaleString()} left)`}
-              </button>
-            </div>
+            <LoadMore loading={loading} remaining={Math.max(0, nbHits - hits.length)} onLoad={() => void search(false)} />
           )}
         </div>
       </div>

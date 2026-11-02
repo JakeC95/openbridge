@@ -89,6 +89,10 @@ export function SettingsView() {
 
   const [draft, setDraft] = useState<AppSettings | null>(settings);
   const [saving, setSaving] = useState(false);
+  const [uiScale, setUiScale] = useState(() => {
+    const saved = Number(localStorage.getItem("openbridge.uiScale") ?? "100");
+    return [100, 115, 130, 150].includes(saved) ? saved : 100;
+  });
 
   useEffect(() => {
     setDraft(settings);
@@ -144,6 +148,18 @@ export function SettingsView() {
       </div>
 
       <div className="view-body settings-body">
+        <section className="settings-section">
+          <h2>Display</h2>
+          <div className="form-row"><label htmlFor="ui-scale">Interface size</label>
+            <select id="ui-scale" value={uiScale} onChange={event => {
+              const value = Number(event.target.value); setUiScale(value);
+              localStorage.setItem("openbridge.uiScale", String(value));
+              window.dispatchEvent(new Event("openbridge-display-change"));
+            }}>{[100, 115, 130, 150].map(value => <option key={value} value={value}>{value}%</option>)}</select>
+          </div>
+          <p className="hint">Applies immediately. Thumbnail size is controlled separately in Discover and Library.</p>
+          <button type="button" className="btn btn-ghost" onClick={() => { setUiScale(100); localStorage.setItem("openbridge.uiScale", "100"); window.dispatchEvent(new Event("openbridge-display-change")); }}>Reset display settings</button>
+        </section>
         <section className="settings-section">
           <h2>Library</h2>
           <div className="form-row">

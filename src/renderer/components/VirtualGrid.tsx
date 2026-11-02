@@ -15,6 +15,7 @@ interface Props<T> {
   aspectRatio?: number;
   overscanRows?: number;
   className?: string;
+  itemKey?: (item: T) => string;
 }
 
 interface Metrics {
@@ -40,7 +41,8 @@ export function VirtualGrid<T>({
   gap = 28,
   aspectRatio = 1,
   overscanRows = 3,
-  className = ""
+  className = "",
+  itemKey
 }: Props<T>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLElement | null>(null);
@@ -130,6 +132,31 @@ export function VirtualGrid<T>({
   const endIndex = Math.min(items.length, endRow * columns);
   const visible = items.slice(startIndex, endIndex);
 
+  // Loaded catalogue results can be sorted again when a page arrives. Preserve the visible
+  // card, not merely scrollTop, when newly inserted items move it to another row.
+  const anchorRef = useRef<{ key: string; top: number; count: number } | null>(null);
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const parent = scrollRef.current;
+    const anchor = anchorRef.current;
+    if (container && parent && itemKey && anchor && items.length > anchor.count && width > 0) {
+      const index = items.findIndex(item => itemKey(item) === anchor.key);
+      if (index >= 0) {
+        const newTop = container.getBoundingClientRect().top + Math.floor(index / columns) * rowStep;
+        parent.scrollTop += newTop - anchor.top;
+        measure();
+      }
+    }
+    anchorRef.current = null;
+    return () => {
+      if (!container || !parent || !itemKey) return;
+      const parentTop = parent.getBoundingClientRect().top;
+      const cards = Array.from(container.querySelectorAll<HTMLElement>("[data-grid-key]"));
+      const card = cards.find(element => element.getBoundingClientRect().bottom > parentTop);
+      if (card?.dataset.gridKey) anchorRef.current = { key: card.dataset.gridKey, top: card.getBoundingClientRect().top, count: items.length };
+    };
+  }, [items, itemKey, columns, rowStep, width, measure]);
+
   return (
     <div
       ref={containerRef}
@@ -144,7 +171,9 @@ export function VirtualGrid<T>({
           gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`
         }}
       >
-        {visible.map((item, index) => renderItem(item, startIndex + index))}
+        {visible.map((item, index) => itemKey
+          ? <div key={itemKey(item)} data-grid-key={itemKey(item)}>{renderItem(item, startIndex + index)}</div>
+          : renderItem(item, startIndex + index))}
       </div>
     </div>
   );

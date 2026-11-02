@@ -99,15 +99,17 @@ export function PackBrowser({ packs, local = false }: { packs: PackSummary[]; lo
   </BrowsingMenu>;
 }
 
-export function FacetGroup({ group, label, values, selected, toggle, hidden = false }: {
+export function FacetGroup({ group, label, values, selected, toggle, hidden = false, showCounts = true, labels = {} }: {
   group: string; label: string; values: Record<string, number>; selected: string[]; toggle(value: string): void;
   hidden?: boolean;
+  showCounts?: boolean;
+  labels?: Record<string, string>;
 }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
   const entries = [...new Set([...selected, ...Object.keys(values)])]
     .filter(value => value && value !== "undefined")
-    .filter(value => value.toLowerCase().includes(query.toLowerCase()))
+    .filter(value => (labels[value] ?? value).toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => Number(selected.includes(b)) - Number(selected.includes(a)) || (values[b] ?? 0) - (values[a] ?? 0) || a.localeCompare(b));
   const visible = query || expanded ? entries : entries.slice(0, Math.max(12, selected.length));
   return (
@@ -162,8 +164,8 @@ export function FacetGroup({ group, label, values, selected, toggle, hidden = fa
               <span className="facet-option-check" aria-hidden="true">
                 {active && <CheckIcon />}
               </span>
-              <span className="facet-option-label">{value}</span>
-              <span className="facet-option-count">{(values[value] ?? 0).toLocaleString()}</span>
+              <span className="facet-option-label">{labels[value] ?? value}</span>
+              {showCounts && <span className="facet-option-count">{(values[value] ?? 0).toLocaleString()}</span>}
             </button>
           );
         })}
@@ -183,4 +185,32 @@ export function FacetGroup({ group, label, values, selected, toggle, hidden = fa
       )}
     </section>
   );
+}
+
+export interface FilterGroup {
+  key: string;
+  label: string;
+  values: Record<string, number>;
+  selected: string[];
+  toggle(value: string): void;
+  labels?: Record<string, string>;
+}
+
+export function FilterWorkbench({ groups, showCounts = true, activeGroup, onActiveGroup }: {
+  groups: FilterGroup[]; showCounts?: boolean; activeGroup?: string; onActiveGroup?(key: string): void;
+}) {
+  const [active, setActive] = useState(groups[0]?.key ?? "");
+  const selected = activeGroup ?? active;
+  const current = groups.some(group => group.key === selected) ? selected : groups[0]?.key;
+  return <div className="facet-workbench">
+    <nav className="facet-tabs" aria-label="Filter groups">
+      {groups.map(group => <button type="button" key={group.key}
+        className={current === group.key ? "facet-tab active" : "facet-tab"}
+        aria-pressed={current === group.key} onClick={() => { setActive(group.key); onActiveGroup?.(group.key); }}>
+        <span>{group.label}</span>{group.selected.length > 0 && <em>{group.selected.length}</em>}
+      </button>)}
+    </nav>
+    <div className="facet-pane">{groups.map(({ key, ...group }) => <FacetGroup key={key} group={key}
+      {...group} hidden={current !== key} showCounts={showCounts} />)}</div>
+  </div>;
 }

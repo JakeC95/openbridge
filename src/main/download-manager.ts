@@ -24,6 +24,8 @@ import type { DownloadResponse, FileDescriptor, LegacyApi } from "./legacy-api";
 import type { Logger } from "./logger";
 import { isRetryable } from "./network";
 import { DownloadStats } from "./download-stats";
+import { DownloadCompletions } from "./download-completions";
+import type { DownloadOverview } from "../shared/types";
 
 interface Job {
   assetId: string;
@@ -407,6 +409,13 @@ export class DownloadManager {
   private listeners = new Set<(progress: DownloadProgress) => void>();
   private readonly queueFile: string;
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
+  private completions?: DownloadCompletions;
+  private historyError?: string;
+  private sessionBytes = 0;
+  private sessionCompleted = 0;
+  private sessionPeak = 0;
+  private jobStarted = 0;
+  private jobElapsed = 0;
 
   constructor(
     private readonly auth: AuthService,
@@ -418,6 +427,8 @@ export class DownloadManager {
     private readonly notify: (message: string, error?: boolean) => void
   ) {
     this.queueFile = join(app.getPath("userData"), "download-queue.json");
+    try { this.completions = new DownloadCompletions(join(app.getPath("userData"), "download-history.sqlite")); }
+    catch (error) { this.historyError = "Download history is unavailable."; this.logger.error("Could not open download history", { error }); }
     this.restoreQueue();
   }
 
@@ -429,6 +440,20 @@ export class DownloadManager {
   list(): DownloadProgress[] {
     return [...this.jobs.values()].map(job => this.toProgress(job));
   }
+
+  overview(): Pick<DownloadOverview, "history" | "historyError" | "session"> {
+    let history: DownloadOverview["history"] = [];
+    try { history = this.completions?.recent() ?? []; }
+    catch (error) { this.historyError = "Download history could not be read."; this.logger.error(this.historyError, { error }); }
+    const elapsed = this.jobElapsed + (this.jobStarted ? performance.now() - this.jobStarted : 0);
+    return { history, historyError: this.historyError, session: {
+      receivedBytes: this.sessionBytes, completed: this.sessionCompleted,
+      averageBytesPerSecond: elapsed > 0 ? this.sessionBytes / (elapsed / 1000) : 0,
+      peakBytesPerSecond: this.sessionPeak
+    } };
+  }
+
+  closeHistory(): void { this.completions?.close(); this.completions = undefined; }
 
   async pauseAll(): Promise<void> {
     for (const job of this.jobs.values()) {
@@ -519,6 +544,12 @@ export class DownloadManager {
     this.emit(job);
     this.persistQueue();
     void this.processQueue();
+  }
+
+  async retry(assetId: string): Promise<void> {
+    const job = this.jobs.get(assetId);
+    if (!job || job.status !== "error") throw new Error("Only failed downloads can be retried");
+    await this.start(assetId, job.options);
   }
 
   async startMany(
@@ -651,6 +682,7 @@ export class DownloadManager {
   }
 
   private async runJob(job: Job): Promise<void> {
+    this.jobStarted = performance.now();
     const temp = join(app.getPath("temp"), "openbridge", `asset-${job.assetId}`);
     job.abort = new AbortController();
     job.stats = new DownloadStats();
@@ -840,7 +872,7 @@ export class DownloadManager {
                 DOWNLOAD_TIMEOUT_SEC,
                 job.abort?.signal,
                 expected,
-                sample => job.stats?.record(relative, sample)
+                sample => { job.stats?.record(relative, sample); this.sessionBytes += Math.max(0, sample.receivedBytes); }
               );
               const downloaded = await stat(target);
               if (typeof expected === "number" && downloaded.size !== expected) {
@@ -924,6 +956,10 @@ export class DownloadManager {
       job.path = destination;
       job.received = job.total || job.received;
       job.ratio = 1;
+      this.sessionCompleted += 1;
+      try { this.completions?.record({ assetId: job.assetId, name: job.name ?? job.assetId,
+        path: destination, bytes: job.received, completedAt: Date.now() }); }
+      catch (error) { this.historyError = "A completion could not be saved to history."; this.logger.error(this.historyError, { error }); }
       this.setStatus(job, "complete", "Downloaded");
       this.notify(`${json.name ?? job.assetId} downloaded`);
       this.scanLibrary();
@@ -956,6 +992,8 @@ export class DownloadManager {
       }
       this.emit(job);
     } finally {
+      this.jobElapsed += performance.now() - this.jobStarted;
+      this.jobStarted = 0;
       if (statsTimer) clearInterval(statsTimer);
       job.abort = undefined;
     }
@@ -992,6 +1030,7 @@ export class DownloadManager {
 
   private emit(job: Job): void {
     const progress = this.toProgress(job);
+    this.sessionPeak = Math.max(this.sessionPeak, progress.diagnostics?.receiveBytesPerSecond ?? 0);
     for (const listener of this.listeners) {
       try {
         listener(progress);

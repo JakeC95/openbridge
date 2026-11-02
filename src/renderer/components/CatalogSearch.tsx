@@ -1,85 +1,59 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../store";
 import { CloseIcon, SearchIcon } from "../icons";
 
+/** One search surface; each scope retains its own query and filters. */
 export function CatalogSearch() {
+  const view = useStore(state => state.view);
   const query = useStore(state => state.query);
-  const nbHits = useStore(state => state.nbHits);
-  const setQuery = useStore(state => state.setQuery);
-  const search = useStore(state => state.search);
-
-  const [draft, setDraft] = useState(query);
-  const firstRender = useRef(true);
-
+  const localQuery = useStore(state => state.localQuery);
+  const local = view === "library";
+  const value = local ? localQuery : query;
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value, local]);
   useEffect(() => {
-    setDraft(query);
-  }, [query]);
-
-  useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      return;
-    }
     const timer = setTimeout(() => {
-      if (draft !== useStore.getState().query) {
-        setQuery(draft);
-        void search(true);
+      const state = useStore.getState();
+      if (state.view !== view) return;
+      if (local) {
+        if (draft !== state.localQuery) state.setLocalQuery(draft);
+      } else if (draft !== state.query) {
+        state.setQuery(draft);
+        void state.search(true);
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [draft, search, setQuery]);
-
-  useEffect(() => {
-    return window.openbridge.onSearchPaste(({ text, search: shouldSearch }) => {
-      setDraft(text);
-      setQuery(text);
-      if (shouldSearch) {
-        useStore.getState().rememberSearch(text);
-        void search(true);
-      }
-    });
-  }, [search, setQuery]);
-
-  const placeholder = `Search ${nbHits ? nbHits.toLocaleString() : "Megascans"} assets, or paste an asset ID / URL...`;
-
-  return (
+  }, [draft, local, view]);
+  useEffect(() => window.openbridge.onSearchPaste(({ text, search }) => {
+    const state = useStore.getState();
+    if (state.view !== "discover" && state.view !== "library") return;
+    setDraft(text);
+    if (state.view === "library") state.setLocalQuery(text);
+    else {
+      state.setQuery(text);
+      if (search) { state.rememberSearch(text); void state.search(true); }
+    }
+  }), []);
+  const submit = (text: string) => {
+    const state = useStore.getState();
+    setDraft(text);
+    if (local) state.setLocalQuery(text);
+    else { state.setQuery(text); state.rememberSearch(text); void state.search(true); }
+  };
+  return <div className="scoped-search">
+    <div className="search-scope" role="group" aria-label="Search scope">
+      {(["discover", "library"] as const).map(scope => <button key={scope} type="button"
+        aria-pressed={view === scope} className={view === scope ? "active" : ""}
+        onClick={() => useStore.getState().setView(scope)}>{scope === "discover" ? "Catalogue" : "Library"}</button>)}
+    </div>
     <div className="search-wrap catalog-search">
       <SearchIcon className="search-icon" />
-      <input
-        value={draft}
-        onChange={event => setDraft(event.target.value)}
-        onKeyDown={event => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            setQuery(draft);
-            useStore.getState().rememberSearch(draft);
-            void search(true);
-          }
-        }}
-        onContextMenu={event => {
-          event.preventDefault();
-          void window.openbridge.contextMenu.search();
-        }}
-        placeholder={placeholder}
-        spellCheck={false}
-        maxLength={256}
-        aria-label="Search Megascans"
-        autoFocus
-      />
-      {draft && (
-        <button
-          type="button"
-          className="search-clear"
-          onClick={() => {
-            setDraft("");
-            setQuery("");
-            void search(true);
-          }}
-          aria-label="Clear search"
-        >
-          <CloseIcon />
-        </button>
-      )}
+      <input value={draft} onChange={event => setDraft(event.target.value)}
+        onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); submit(draft); } }}
+        onContextMenu={event => { event.preventDefault(); void window.openbridge.contextMenu.search(); }}
+        placeholder={local ? "Search your local library…" : "Search Megascans, asset ID or URL…"}
+        spellCheck={false} maxLength={256} aria-label={local ? "Search local library" : "Search Megascans"} />
+      {draft && <button type="button" className="search-clear" onClick={() => submit("")} aria-label="Clear search"><CloseIcon /></button>}
     </div>
-  );
+  </div>;
 }

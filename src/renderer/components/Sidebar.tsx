@@ -7,6 +7,7 @@ import {
   SettingsIcon
 } from "../icons";
 import { CategoryTree } from "./CategoryTree";
+import { formatTransferBytes, summarizeDownloads } from "../download-summary";
 
 export function Sidebar() {
   const view = useStore(state => state.view);
@@ -21,6 +22,7 @@ export function Sidebar() {
   const nbHits = useStore(state => state.nbHits);
   const libraryTotal = useStore(state => state.libraryTotal);
   const downloads = useStore(state => state.downloads);
+  const downloadSummary = summarizeDownloads(Object.values(downloads));
   const localCategories = useStore(state => state.localCategories);
   const localCategoryPath = useStore(state => state.localCategoryPath);
   const setLocalCategoryPath = useStore(state => state.setLocalCategoryPath);
@@ -67,7 +69,7 @@ export function Sidebar() {
             <button
               type="button"
               key={item.id}
-              className={view === item.id ? "nav-item active" : "nav-item"}
+              className={`${view === item.id ? "nav-item active" : "nav-item"}${item.id === "downloads" && downloadSummary.active.length ? " nav-downloading" : ""}`}
               onClick={() => setView(item.id)}
             >
               {item.icon}
@@ -75,6 +77,10 @@ export function Sidebar() {
               {item.count > 0 && (
                 <span className="nav-count">{item.count.toLocaleString()}</span>
               )}
+              {item.id === "downloads" && downloadSummary.active.length > 0 && <span className="nav-transfer">
+                <span className="progress"><span className="progress-fill" style={{ width: `${(downloadSummary.ratio ?? 0) * 100}%` }} /></span>
+                <small>{downloadSummary.active.length} active · {formatTransferBytes(downloadSummary.rate)}/s</small>
+              </span>}
             </button>
           ))}
         </nav>

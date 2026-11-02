@@ -43,6 +43,7 @@ const api: OpenBridgeApi = {
   localPreviews: (assetId, indexedPath) => ipcRenderer.invoke("library:previews", assetId, indexedPath),
   libraryHealth: (force = false) =>
     ipcRenderer.invoke("library:health", force) as Promise<LibraryHealthReport>,
+  cancelLibraryHealth: () => ipcRenderer.invoke("library:cancelHealth") as Promise<void>,
   onLibraryHealthProgress: callback => {
     const listener = (_event: unknown, progress: LibraryHealthProgress): void => callback(progress);
     ipcRenderer.on("library:healthProgress", listener);
@@ -151,6 +152,7 @@ const api: OpenBridgeApi = {
       ipcRenderer.invoke("downloads:acquire", assetId) as Promise<void>,
     cancel: (assetId: string) =>
       ipcRenderer.invoke("downloads:cancel", assetId) as Promise<void>,
+    retry: (assetId: string) => ipcRenderer.invoke("downloads:retry", assetId) as Promise<void>,
     pause: (assetId: string) =>
       ipcRenderer.invoke("downloads:pause", assetId) as Promise<void>,
     resume: (assetId: string) =>
@@ -160,6 +162,7 @@ const api: OpenBridgeApi = {
     resumeAll: () => ipcRenderer.invoke("downloads:resumeAll") as Promise<void>,
     clearFinished: () => ipcRenderer.invoke("downloads:clearFinished") as Promise<void>,
     list: () => ipcRenderer.invoke("downloads:list") as Promise<DownloadProgress[]>,
+    overview: () => ipcRenderer.invoke("downloads:overview") as Promise<import("../shared/types").DownloadOverview>,
     onProgress: callback => {
       const listener = (_event: unknown, progress: DownloadProgress): void => callback(progress);
       ipcRenderer.on("downloads:progress", listener);

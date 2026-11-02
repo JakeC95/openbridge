@@ -35,6 +35,14 @@ workflow dispatch. The check only reads tracked files, so stage new files before
 
 ## Browsing regression checks
 
+The local 1.5.6 UI additionally offers retry, filtered download queue, adjustable interface size,
+opt-in automatic paging, saved browsing state, image-led loaded-item comparison, guidance and
+health-scan cancellation. Verify session restoration with a real library and a multi-page catalogue;
+restored scroll is limited to currently loaded results. Duplicate review is informational and never
+deletes. Catalogue sorting applies to currently loaded results; Library sorting is applied in the
+SQLite query before paging. Metadata-based sort keys place assets without that metadata after those
+with it.
+
 ```powershell
 npm run test:browsing
 npm run test:network
@@ -48,6 +56,11 @@ check launches Electron with an isolated profile and fixture preload: it does no
 services or libraries. It covers local categories/sorting, catalogue and local selection, drawer
 Back/Next, local maps, expanded previews, zoom, density, pack browsing, scroll restoration and
 compact live download statistics (speed, write rate, collapsed source details, no signed URLs).
+It also checks scoped search retention, both filter workbenches, docked/overlay drawer behavior,
+mid-scroll grid reflow, pinned footer visibility, inspector sections, mini-queue dismissal and
+fixture-backed disk/history rendering. SQLite tests reopen completion history and check it is
+independent of queue clearing; transfer tests verify actual session receive counters and completion
+recording. ETA checks cover startup, stalls, unknown sizes and paused jobs.
 
 `test:network` checks request/cache/auth concurrency, safe retries and cancellation using fixture
 responses, then exercises range resume, ignored/bad ranges, compression, stalled transfers and
@@ -65,6 +78,29 @@ is stored. Pause and confirm the line disappears; resume and confirm it returns.
 during a stall is expected; it should recover when data flows again.
 
 For manual browsing verification:
+
+- In Discover, click a card normally and Shift-click another visible card. Confirm the inclusive
+  loaded range is selected, the drawer closes, bulk controls appear, and further Shift-clicks extend
+  the selection. Verify this also works with the narrow overlay drawer, with keyboard Shift+Enter,
+  and that ordinary clicks and the explicit Select button retain their existing behavior.
+
+- At 2560/1920px, open an asset mid-scroll: the grid/filter panel must end at the docked drawer edge.
+  At 1100px, confirm overlay/backdrop behavior. Switch inspector sections, scroll settings to the
+  bottom, and verify the footer remains visible and no toast covers its actions.
+- In Overview, compare a small measured asset and a tall one against the 1.78 m human. Confirm the
+  scale reference is not visible in Technical. Width and
+  height must share the human's scale and ground line; depth is listed but not projected. Variation
+  measurements must follow the selected recorded variation. Missing/invalid/2D-only measurements
+  must show an unavailable state, not an invented box. Automated checks cover metres, cm/mm, axis
+  order, missing data and proportional geometry, including a very wide/thin object.
+- In the topbar, search Library and Catalogue separately; switch scope and verify each retains its
+  own query. Local Filters must offer the same search/checkbox/clear interaction as catalogue facets.
+- During a real download, inspect the nav progress and activity popover; test pause/resume all and
+  Escape/outside dismissal. ETA describes active transfers only and is omitted without enough data.
+- Complete a disposable download, clear finished, restart, and check Recent completions still lists
+  it and opens its folder. Missing/deleted folders should surface an error, not disappear silently.
+- Verify volume free/total space against Windows. Cached library bytes may be partial until Library
+  Health runs; verify the measured-asset count is honest. Test an inaccessible library folder.
 
 - In Library, combine repository, type/category, favorites, readiness, colour and triangle filters.
   Verify **Select all** matches the visible scope; check exports/deletion only in a disposable library.

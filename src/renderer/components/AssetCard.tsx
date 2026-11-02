@@ -67,7 +67,7 @@ export function AssetCard({
       data-asset-id={id}
       aria-pressed={selectionMode ? selected : undefined}
       onClick={event => {
-        if (selectionMode) {
+        if (selectionMode || event.shiftKey) {
           event.preventDefault();
           onSelect?.(event);
           return;
@@ -75,9 +75,10 @@ export function AssetCard({
         onOpen(hit);
       }}
       onKeyDown={event => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          if (selectionMode) onSelect?.(event);
+          if (selectionMode || event.shiftKey) onSelect?.(event);
           else onOpen(hit);
         }
       }}

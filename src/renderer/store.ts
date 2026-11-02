@@ -212,6 +212,47 @@ const emptySync: SyncStatus = {
 let unsubscribers: Array<() => void> = [];
 let toastId = 0;
 let initPromise: Promise<void> | null = null;
+let restoreSubscription: (() => void) | null = null;
+
+function readBrowsingRestore(authenticated: boolean): Partial<State> {
+  const saved = readPreference<unknown>("browsingSession", null);
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+  const data = saved as Record<string, unknown>;
+  const text = (key: string) => typeof data[key] === "string" ? String(data[key]).slice(0, 256) : "";
+  const list = (key: string) => Array.isArray(data[key]) ? (data[key] as unknown[]).filter((v): v is string => typeof v === "string").slice(0, 30) : [];
+  const facets: Record<string, string[]> = {};
+  const pack = (key: string): PackRef | null => {
+    const value = data[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const item = value as Record<string, unknown>;
+    return typeof item.name === "string" && item.name.length <= 256
+      ? { name: item.name, id: typeof item.id === "string" ? item.id.slice(0, 256) : undefined } : null;
+  };
+  if (data.facetFilters && typeof data.facetFilters === "object" && !Array.isArray(data.facetFilters)) {
+    for (const [key, value] of Object.entries(data.facetFilters)) if (["biome", "region", "resolution", "color", "environment", "theme"].includes(key) && Array.isArray(value))
+      facets[key] = value.filter((v): v is string => typeof v === "string").slice(0, 30);
+  }
+  return {
+    view: data.view === "library" || data.view === "downloads" || data.view === "settings" ? data.view : "discover",
+    query: text("query"), type: text("type"), categoryPath: list("categoryPath"), facetFilters: facets, catalogPack: pack("catalogPack"), localPack: pack("localPack"),
+    freeOnly: data.freeOnly === true, favoritesOnly: authenticated && data.favoritesOnly === true,
+    sizeFilter: ["small", "medium", "large", "huge"].includes(text("sizeFilter")) ? text("sizeFilter") as SizeFilter : "any",
+    localQuery: text("localQuery"), localType: text("localType"), localCategoryPath: list("localCategoryPath"),
+    localRepo: ["downloaded", "custom", "dhi"].includes(text("localRepo")) ? text("localRepo") as LocalRepo : "all",
+    localFavoritesOnly: authenticated && data.localFavoritesOnly === true,
+    localReady: list("localReady"), localMaxTris: typeof data.localMaxTris === "number" && data.localMaxTris > 0 ? data.localMaxTris : null,
+    localColor: text("localColor"), localState: text("localState"), localInterior: text("localInterior")
+  };
+}
+
+function browsingSnapshot(state: State) {
+  const { view, query, type, categoryPath, facetFilters, freeOnly, favoritesOnly, sizeFilter, catalogPack, localPack,
+    localQuery, localType, localCategoryPath, localRepo, localFavoritesOnly, localReady,
+    localMaxTris, localColor, localState, localInterior } = state;
+  return { view, query, type, categoryPath, facetFilters, freeOnly, favoritesOnly, sizeFilter, catalogPack, localPack,
+    localQuery, localType, localCategoryPath, localRepo, localFavoritesOnly, localReady,
+    localMaxTris, localColor, localState, localInterior };
+}
 
 export const useStore = create<State>((set, get) => ({
   density: (() => {
@@ -367,10 +408,10 @@ export const useStore = create<State>((set, get) => ({
         window.openbridge.versions(),
         window.openbridge.catalogMetadata().catch(() => null)
       ]);
+      set(readBrowsingRestore(auth.loggedIn));
       const library = await window.openbridge.librarySnapshot(false);
       const firstPage = await window.openbridge.queryLibrary({
-        query: "",
-        repo: "all",
+        ...libraryFilterQuery(get()),
         limit: 300,
         offset: 0
       });
@@ -407,6 +448,12 @@ export const useStore = create<State>((set, get) => ({
       }
       void get().search(true);
       void get().refreshPacks();
+      restoreSubscription?.();
+      let previous = JSON.stringify(browsingSnapshot(get()));
+      restoreSubscription = useStore.subscribe(state => {
+        const current = JSON.stringify(browsingSnapshot(state));
+        if (current !== previous) { previous = current; writePreference("browsingSession", browsingSnapshot(state)); }
+      });
 
       unsubscribers = [
         window.openbridge.onLibraryUpdated(result => {
@@ -452,6 +499,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   dispose() {
+    restoreSubscription?.(); restoreSubscription = null;
     for (const off of unsubscribers) off();
     unsubscribers = [];
     initPromise = null;

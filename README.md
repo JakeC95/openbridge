@@ -23,15 +23,23 @@ losing user data.
   saved searches, related assets and a command palette.
 - **Browsing productivity** with local categories/favorites, recorded-pack exploration, recent
   searches/assets, drawer Back/Next, preserved scroll position and adjustable thumbnail sizes.
+- **Workspace improvements (1.5, unreleased)** with scoped Catalogue/Library search, a shared filter
+  workbench, a docked wide-screen inspector and always-visible download controls. Narrow windows
+  retain an overlay drawer.
 - **Visual inspection** with expanded render/map previews, zoom/pan and offline JPG/PNG/WebP maps.
 - **Epic sign-in** via OAuth. Tokens are encrypted with Windows DPAPI (`safeStorage`); passwords are
   never stored.
 - **Download engine** with per-type presets, map/LOD/variation selection, resumable transfers, size
   verification, pause/resume, persistent queues and the original library folder layout.
+- **Transfer awareness (1.5, unreleased)** with sidebar progress, a mini queue, session totals, volume
+  free space and completion history saved independently of the queue. Library-size figures are cached
+  health measurements, not a live folder scan.
 - **Local library index** backed by SQLite/WAL and FTS5, with incremental scans, server-side counts,
   virtualized grids, health reports and bulk tools.
 - **Asset intelligence** with download plans, per-map technical details, LOD triangle counts,
   physical dimensions, readiness badges and plant billboard previews.
+- **Relative size (1.5, unreleased)** shows a front-view bounding box next to a 1.78 m human on the
+  Overview page, using one shared scale. Assets without complete dimensions are explicitly marked.
 - **Local-first metadata pack** that optionally adds remote catalogue readiness, semantic, pack and
   freshness metadata without bundling the raw catalogue.
 - **Portable updates** from GitHub releases with size and SHA-256 verification.

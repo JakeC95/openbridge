@@ -1,4 +1,4 @@
-﻿import { useEffect } from "react";
+﻿import { useEffect, useState } from "react";
 import { useStore } from "./store";
 import { Sidebar } from "./components/Sidebar";
 import { CatalogSearch } from "./components/CatalogSearch";
@@ -9,6 +9,7 @@ import { LibraryView } from "./views/LibraryView";
 import { DownloadsView } from "./views/DownloadsView";
 import { SettingsView } from "./views/SettingsView";
 import { CloseIcon, SyncIcon, UserIcon } from "./icons";
+import { DownloadActivity } from "./components/DownloadActivity";
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   discover: { title: "Discover", subtitle: "Megascans catalogue" },
@@ -29,21 +30,42 @@ export function App() {
   const dismissToast = useStore(state => state.dismissToast);
   const login = useStore(state => state.login);
   const runSync = useStore(state => state.runSync);
+  const selection = useStore(state => state.selection);
+  const [showGuide, setShowGuide] = useState(() => localStorage.getItem("openbridge.guideDismissed") !== "true");
+  const [shiftHeld, setShiftHeld] = useState(false);
 
   useEffect(() => {
     void init();
     return () => dispose();
   }, [dispose, init]);
 
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => { if (event.key === "Shift") setShiftHeld(true); };
+    const up = (event: KeyboardEvent) => { if (event.key === "Shift") setShiftHeld(false); };
+    const blur = () => setShiftHeld(false);
+    window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); };
+  }, []);
+
+  useEffect(() => {
+    const apply = () => {
+      const raw = Number(localStorage.getItem("openbridge.uiScale") ?? "100");
+      document.documentElement.style.zoom = `${[100, 115, 130, 150].includes(raw) ? raw : 100}%`;
+    };
+    apply();
+    window.addEventListener("openbridge-display-change", apply);
+    return () => window.removeEventListener("openbridge-display-change", apply);
+  }, []);
+
   const meta = TITLES[view] ?? TITLES.discover;
 
   return (
-    <div className="shell">
+    <div className={`shell${selection ? " drawer-open" : ""}${shiftHeld && view === "discover" ? " shift-selecting" : ""}`}>
       <Sidebar />
 
       <main className="main">
-        <header className={view === "discover" ? "topbar topbar-catalog" : "topbar"}>
-          {view === "discover" ? (
+        <header className={view === "discover" || view === "library" ? "topbar topbar-catalog" : "topbar"}>
+          {view === "discover" || view === "library" ? (
             <CatalogSearch />
           ) : (
             <div className="topbar-title">
@@ -53,6 +75,13 @@ export function App() {
           )}
 
           <div className="topbar-actions">
+            <DownloadActivity />
+            <details className="help-menu"><summary aria-label="Keyboard shortcuts and help" title="Keyboard shortcuts">?</summary>
+              <div className="help-menu-panel"><strong>Keyboard shortcuts</strong><p>Ctrl + K — command palette</p>
+                <p>Esc — close preview or drawer</p><p>Alt + Left — previous asset</p>
+                <p>Left / Right — next asset or map when not typing</p>
+                <button type="button" className="text-btn" onClick={() => { setShowGuide(true); localStorage.removeItem("openbridge.guideDismissed"); }}>Show getting started</button></div>
+            </details>
             {auth.loggedIn && (
               <button
                 type="button"
@@ -88,6 +117,18 @@ export function App() {
             )}
           </div>
         </header>
+
+        {showGuide && view === "discover" && <section className="getting-started" aria-label="Getting started">
+          <div><strong>Getting started</strong><span>Browse the catalogue online, or use Library for local assets. Sign in to download assets you own.</span></div>
+          <button type="button" className="text-btn" onClick={() => useStore.getState().setView("settings")}>Choose library & metadata</button>
+          <button type="button" className="text-btn" onClick={() => useStore.getState().setView("library")}>Open Library</button>
+          <button type="button" className="icon-btn" aria-label="Dismiss getting started" onClick={() => { localStorage.setItem("openbridge.guideDismissed", "true"); setShowGuide(false); }}><CloseIcon /></button>
+        </section>}
+        {(view === "discover" || view === "library") && <button type="button" className="start-fresh text-btn" onClick={() => {
+          const state = useStore.getState();
+          if (state.view === "library") state.resetLocalFilters();
+          else { state.setQuery(""); state.clearFilters(); }
+        }}>Start fresh</button>}
 
         <div className="content">
           <div className="view-slot" hidden={view !== "discover"}><DiscoverView /></div>

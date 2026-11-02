@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AssetScaleDiagram } from "./AssetScaleDiagram";
 import { useStore } from "../store";
 import { Dropdown } from "./Dropdown";
 import { ImageViewer } from "./ImageViewer";
@@ -106,6 +107,18 @@ export function AssetDrawer() {
 
   const [options, setOptions] = useState<DownloadOptions | null>(null);
   const [tab, setTab] = useState<"textures" | "models">("textures");
+  const [section, setSection] = useState<"overview" | "settings" | "technical" | "related">("overview");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); }, [assetId]);
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    if (section === "overview") scroll.scrollTo({ top: 0 });
+    else {
+      const tabs = scroll.querySelector<HTMLElement>(".inspector-tabs");
+      if (tabs) scroll.scrollTop += tabs.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 20;
+    }
+  }, [section]);
   const [previewMode, setPreviewMode] = useState<"render" | "maps">("render");
   const [mapPreviews, setMapPreviews] = useState<MapPreview[]>([]);
   const [mapIndex, setMapIndex] = useState(0);
@@ -147,6 +160,7 @@ export function AssetDrawer() {
   }, [assetId, extended, settings]);
 
   useEffect(() => {
+    setSection("overview");
     setPreviewMode("render");
     setMapPreviews([]);
     setMapIndex(0);
@@ -486,7 +500,7 @@ export function AssetDrawer() {
           </button>
         </div>
 
-        <div className="drawer-scroll">
+        <div className="drawer-scroll" ref={scrollRef}>
           <div className="drawer-preview">
             {(
               <div className="preview-switch">
@@ -573,6 +587,12 @@ export function AssetDrawer() {
 
           <h2 className="drawer-title" title={name}>{name}</h2>
           <p className="drawer-id">{assetId}</p>
+          <div className="inspector-tabs" role="group" aria-label="Asset sections">
+            {(["overview", "settings", "technical", "related"] as const).map(value => <button type="button" key={value}
+              className={section === value ? "active" : ""} aria-pressed={section === value}
+              onClick={() => setSection(value)}>{value === "settings" ? (local ? "Files" : "Download settings") : value === "overview" ? "Overview" : value === "technical" ? "Technical" : "Related"}</button>)}
+          </div>
+          <div hidden={section !== "overview"}>
           {(technical.packId || technical.packName) && <div className="pack-link">
             <button type="button" className="btn btn-ghost" disabled={!local && !catalogMetadata?.available}
               onClick={() => useStore.getState().browsePack({ id: technical.packId || undefined,
@@ -583,7 +603,8 @@ export function AssetDrawer() {
           </div>}
 
           {selection.loading && <div className="loading-line">Loading asset details...</div>}
-          {selection.error && <div className="error-box small">{selection.error}</div>}
+          {selection.error && <div className="error-box small" role="alert">Could not load asset details: {selection.error}{" "}
+            {hit && <button type="button" className="text-btn" onClick={() => void openHit(hit)}>Retry details</button>}</div>}
 
           <div className="meta-grid">
             <span>Type</span>
@@ -641,6 +662,10 @@ export function AssetDrawer() {
             </section>
           )}
 
+          <AssetScaleDiagram technical={technical} variation={local ? undefined : options?.variation} />
+          </div>
+          <div hidden={section !== "technical"}>
+          {techRows.length === 0 && !averageColor && <p className="hint">No technical metadata available.</p>}
           {(techRows.length > 0 || averageColor) && (
             <section className="technical-panel">
               <div className="technical-head">
@@ -663,6 +688,9 @@ export function AssetDrawer() {
             </section>
           )}
 
+          </div>
+          <div hidden={section !== "related"}>
+          {!relatedLoading && related.length === 0 && <p className="hint">No related assets available.</p>}
           {(relatedLoading || related.length > 0) && (
             <div className="related-assets">
               <h3>Related assets</h3>
@@ -691,6 +719,8 @@ export function AssetDrawer() {
             </div>
           )}
 
+          </div>
+          <div hidden={section !== "settings"}>
           {local ? (
             <div className="download-box">
               <h3>Local asset</h3>
@@ -1031,16 +1061,24 @@ export function AssetDrawer() {
                       )}
                     </div>
                   )}
-                  <div className="download-summary">
-                    <span>
-                      {plan?.bytes ? `~${formatBytes(plan.bytes)}${plan.partial ? "+" : ""}` : "Size unavailable"} - {selectedMaps} maps
-                      {threeD ? ` - ${selectedLods} LOD${selectedLods === 1 ? "" : "s"}` : ""}
-                    </span>
-                    {threeD && <span>{options.meshFormat.toUpperCase()}</span>}
-                  </div>
                 </>
               )}
-
+            </div>
+          )}
+          </div>
+        </div>
+        <footer className="drawer-footer">
+          {local ? <button type="button" className="btn btn-primary btn-wide" onClick={() => void window.openbridge.openPath(local.path)}>
+            <FolderIcon /> Open folder</button> : <>
+          <div className="download-summary">
+            <span>{plan?.bytes ? `~${formatBytes(plan.bytes)}${plan.partial ? "+" : ""}` : "Size unavailable"} · {selectedMaps} maps
+              {threeD ? ` · ${selectedLods} LOD${selectedLods === 1 ? "" : "s"}` : ""}</span>
+            <button type="button" className="text-btn" onClick={() => setSection("settings")}>Edit plan</button>
+          </div>
+          {options && <div className="footer-resolution" role="group" aria-label="Quick download resolution">
+            {resolutionOptions.map(value => <button type="button" key={value} className={options.resolution === value ? "chip active" : "chip"}
+              aria-pressed={options.resolution === value} disabled={active} onClick={() => patch({ resolution: value })}>{value / 1024}K</button>)}
+          </div>}
               {!auth.loggedIn ? (
                 <button type="button" className="btn btn-primary btn-wide" onClick={() => void login()}>
                   <UserIcon /> Sign in with Epic to download
@@ -1095,7 +1133,7 @@ export function AssetDrawer() {
                   type="button"
                   className="btn btn-accent btn-wide"
                   onClick={() => void download()}
-                  disabled={!options}
+                  disabled={!options || selection.loading || Boolean(selection.error)}
                 >
                   <DownloadIcon /> {points === 0 && !owned ? "Download free" : "Download"}
                 </button>
@@ -1127,9 +1165,8 @@ export function AssetDrawer() {
                   acquired automatically.
                 </p>
               )}
-            </div>
-          )}
-        </div>
+          </>}
+        </footer>
       </aside>
     </>
   );

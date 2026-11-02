@@ -436,12 +436,20 @@ export class LibraryIndex {
     const from = searchTokens
       ? "FROM assets a JOIN assets_fts ON assets_fts.rowid = a.rowid"
       : "FROM assets a";
-    const order =
-      options.sort === "name"
-        ? "a.name COLLATE NOCASE ASC, a.id ASC"
-        : options.sort === "type"
-          ? "a.type COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC"
-          : "a.mtime DESC, a.name COLLATE NOCASE ASC";
+    const orderBy: Record<NonNullable<LibraryQuery["sort"]>, string> = {
+      recent: "a.mtime DESC, a.name COLLATE NOCASE ASC",
+      name: "a.name COLLATE NOCASE ASC, a.id ASC",
+      "name-desc": "a.name COLLATE NOCASE DESC, a.id ASC",
+      type: "a.type COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
+      resolution: "CAST(json_extract(a.technical_json, '$.resolution') AS REAL) DESC, a.name COLLATE NOCASE ASC",
+      triangles: "CAST(json_extract(a.technical_json, '$.maxTris') AS REAL) DESC, a.name COLLATE NOCASE ASC",
+      maps: "CAST(json_extract(a.technical_json, '$.mapCount') AS REAL) DESC, a.name COLLATE NOCASE ASC",
+      lods: "CAST(json_extract(a.technical_json, '$.lodCount') AS REAL) DESC, a.name COLLATE NOCASE ASC",
+      variations: "CAST(json_extract(a.technical_json, '$.variationCount') AS REAL) DESC, a.name COLLATE NOCASE ASC",
+      size: "a.bytes DESC, a.name COLLATE NOCASE ASC",
+      issues: "(SELECT COUNT(*) FROM issues i WHERE i.path = a.path) DESC, a.name COLLATE NOCASE ASC"
+    };
+    const order = orderBy[options.sort ?? "recent"] ?? orderBy.recent;
     return { from, where, order, params };
   }
 
@@ -589,6 +597,12 @@ export class LibraryIndex {
       .prepare("SELECT value FROM meta WHERE key = ?")
       .get(key) as ColumnRow | undefined;
     return row?.value ?? null;
+  }
+
+  storageSummary(): { measuredLibraryBytes: number; measuredAssets: number; totalAssets: number } {
+    const row = this.db.prepare(`SELECT COALESCE(SUM(CASE WHEN health_at > 0 THEN bytes ELSE 0 END),0) AS bytes,
+      COALESCE(SUM(CASE WHEN health_at > 0 THEN 1 ELSE 0 END),0) AS measured, COUNT(*) AS total FROM assets`).get()!;
+    return { measuredLibraryBytes: Number(row.bytes), measuredAssets: Number(row.measured), totalAssets: Number(row.total) };
   }
 
   setMeta(key: string, value: string): void {

@@ -385,6 +385,23 @@ export interface DownloadProgress {
   diagnostics?: DownloadDiagnostics;
 }
 
+export interface DownloadCompletion {
+  id: number;
+  assetId: string;
+  name: string;
+  path: string;
+  bytes: number;
+  completedAt: number;
+}
+
+export interface DownloadOverview {
+  history: DownloadCompletion[];
+  historyError?: string;
+  session: { receivedBytes: number; completed: number; averageBytesPerSecond: number; peakBytesPerSecond: number };
+  disk: { libraryPath: string; totalBytes: number | null; freeBytes: number | null;
+    measuredLibraryBytes: number; measuredAssets: number; totalAssets: number; error?: string };
+}
+
 export interface DownloadSource {
   host: string;
   provider?: string;
@@ -514,7 +531,7 @@ export interface LibraryCounts {
   dhi: number;
 }
 
-export type LibrarySort = "recent" | "name" | "type";
+export type LibrarySort = "recent" | "name" | "name-desc" | "type" | "resolution" | "triangles" | "maps" | "lods" | "variations" | "size" | "issues";
 
 export interface PackRef {
   id?: string;
@@ -614,6 +631,7 @@ export interface OpenBridgeApi {
   queryLibraryIds(query: LibraryQuery): Promise<string[]>;
   localPreviews(assetId: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }>;
   libraryHealth(force?: boolean): Promise<LibraryHealthReport>;
+  cancelLibraryHealth(): Promise<void>;
   onLibraryHealthProgress(callback: (progress: LibraryHealthProgress) => void): () => void;
   removeLibraryAssets(assetIds: string[], scope?: LibraryQuery): Promise<{ removed: number }>;
   exportLibraryAssets(assetIds: string[], folder: string, scope?: LibraryQuery): Promise<string>;
@@ -674,6 +692,7 @@ export interface OpenBridgeApi {
     ): Promise<BatchStartResult>;
     acquire(assetId: string): Promise<void>;
     cancel(assetId: string): Promise<void>;
+    retry(assetId: string): Promise<void>;
     pause(assetId: string): Promise<void>;
     resume(assetId: string): Promise<void>;
     cancelAll(): Promise<void>;
@@ -681,6 +700,7 @@ export interface OpenBridgeApi {
     resumeAll(): Promise<void>;
     clearFinished(): Promise<void>;
     list(): Promise<DownloadProgress[]>;
+    overview(): Promise<DownloadOverview>;
     onProgress(callback: (progress: DownloadProgress) => void): () => void;
   };
   sync: {

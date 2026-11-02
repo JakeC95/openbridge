@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
-import { typeLabel } from "../catalog-utils";
-import { CheckIcon, CloseIcon, FolderIcon, SearchIcon, UploadIcon } from "../icons";
+import { readinessBadges, typeLabel } from "../catalog-utils";
+import { CheckIcon, CloseIcon, FolderIcon, UploadIcon } from "../icons";
 import type { AssetRecord, LibraryHealthReport, RepoKind } from "../../shared/types";
 import { VirtualGrid } from "../components/VirtualGrid";
 import { Dropdown } from "../components/Dropdown";
 import { formatMeasurementText } from "../../shared/measurements";
 import { libraryFilterQuery } from "../browsing-state";
-import { DensityControl, PackBrowser, RecentBrowsing } from "../components/BrowsingTools";
+import { DensityControl, FilterWorkbench, PackBrowser, RecentBrowsing, type FilterGroup } from "../components/BrowsingTools";
 import { categoryLabel } from "../../shared/browsing";
 import { useBrowseScroll } from "../use-browse-scroll";
+import { LoadMore } from "../components/LoadMore";
+import { AssetList } from "../components/AssetList";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
   { value: "all", label: "All" },
@@ -61,7 +63,6 @@ export function LibraryView() {
   const hasMore = useStore(state => state.libraryHasMore);
   const query = useStore(state => state.localQuery);
   const repo = useStore(state => state.localRepo);
-  const setQuery = useStore(state => state.setLocalQuery);
   const setRepo = useStore(state => state.setLocalRepo);
   const queryLocalLibrary = useStore(state => state.queryLocalLibrary);
   const localReady = useStore(state => state.localReady);
@@ -83,23 +84,20 @@ export function LibraryView() {
   const toast = useStore(state => state.toast);
 
   const [selectMode, setSelectMode] = useState(false);
+  const [listView, setListView] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [health, setHealth] = useState<LibraryHealthReport | null>(null);
   const [healthOpen, setHealthOpen] = useState(false);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [healthFilter, setHealthFilter] = useState("all");
+  const cancellingHealth = useRef(false);
   const [healthProgress, setHealthProgress] = useState<{ checked: number; total: number; percent: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectingAll, setSelectingAll] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   useBrowseScroll(bodyRef, "library", JSON.stringify(libraryFilterQuery(useStore.getState())));
   const firstQuery = useRef(true);
-
-  useEffect(() => {
-    return window.openbridge.onSearchPaste(({ text }) => {
-      if (useStore.getState().view === "library") setQuery(text);
-    });
-  }, [setQuery]);
 
   useEffect(() => {
     return window.openbridge.onLibraryHealthProgress(setHealthProgress);
@@ -165,10 +163,12 @@ export function LibraryView() {
     setHealthOpen(true);
     setHealthProgress(null);
     setHealthLoading(true);
+    cancellingHealth.current = false;
     try {
       setHealth(await window.openbridge.libraryHealth(force));
     } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), true);
+      if (cancellingHealth.current) toast("Health scan cancelled. Completed batches remain cached.");
+      else toast(error instanceof Error ? error.message : String(error), true);
     } finally {
       setHealthLoading(false);
     }
@@ -224,27 +224,27 @@ export function LibraryView() {
         ? `All ${total.toLocaleString()} matching assets`
         : selectedIds.size === assets.length
           ? `${assets.length.toLocaleString()} loaded assets`
-          : `${selectedIds.size.toLocaleString()} of ${total.toLocaleString()} matching assets`;
+           : `${selectedIds.size.toLocaleString()} of ${total.toLocaleString()} matching assets`;
+
+  const readyLabels: Record<string, string> = { tileable: "Tileable", closed: "Closed mesh", "scale-fixed": "Scale fixed",
+    billboards: "Billboards", highpoly: "Highpoly", ztool: "ZTool", modular: "Modular" };
+  const singleGroup = (key: string, label: string, values: string[], selected: string, change: (value: string) => void,
+    labels?: Record<string, string>): FilterGroup => ({ key, label, values: Object.fromEntries(values.map(value => [value, 0])),
+    selected: selected ? [selected] : [], toggle: value => change(value === selected ? "" : value), labels });
+  const filterGroups: FilterGroup[] = [
+    { key: "ready", label: "Readiness", values: Object.fromEntries(Object.keys(readyLabels).map(value => [value, 0])),
+      selected: localReady, toggle: toggleLocalReady, labels: readyLabels },
+    singleGroup("tris", "Triangles", ["10000", "25000", "50000", "100000"], localMaxTris ? String(localMaxTris) : "",
+      value => setLocalMaxTris(value ? Number(value) : null), { "10000": "Up to 10k tris", "25000": "Up to 25k tris", "50000": "Up to 50k tris", "100000": "Up to 100k tris" }),
+    singleGroup("colour", "Colour", ["Brown", "Gray", "Green", "Red", "Orange", "Yellow", "Blue", "White", "Black"], localColor, setLocalColor),
+    singleGroup("condition", "Condition", ["new", "old"], localState, setLocalState, { new: "New", old: "Old" }),
+    singleGroup("setting", "Setting", ["interior", "exterior"], localInterior, setLocalInterior, { interior: "Interior", exterior: "Exterior" })
+  ];
 
   return (
     <div className="view library">
       <div className="view-header">
         <div className="header-line">
-          <div className="search-wrap">
-            <SearchIcon className="search-icon" />
-            <input
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-              onContextMenu={event => {
-                event.preventDefault();
-                void window.openbridge.contextMenu.search();
-              }}
-              placeholder="Search your local library..."
-              spellCheck={false}
-              maxLength={256}
-              aria-label="Search local library"
-            />
-          </div>
           <div className="header-actions">
             <button type="button" className="btn btn-ghost" onClick={() => void loadHealth()}>
               Health
@@ -276,11 +276,18 @@ export function LibraryView() {
           <Dropdown className="filter-select" value={localSort} ariaLabel="Sort local library"
             onChange={value => useStore.getState().setLocalSort(value as typeof localSort)} options={[
               { value: "recent", label: "Recently modified" }, { value: "name", label: "Name A–Z" },
-              { value: "type", label: "Asset type" }
+              { value: "name-desc", label: "Name Z–A" }, { value: "type", label: "Asset type" },
+              { value: "resolution", label: "Resolution · highest first" },
+              { value: "triangles", label: "Triangles · most first" },
+              { value: "maps", label: "Texture maps · most first" },
+              { value: "lods", label: "LODs · most first" },
+              { value: "variations", label: "Variations · most first" },
+              { value: "size", label: "Library size · largest first" },
+              { value: "issues", label: "Health issues · most first" }
             ]} />
           <button
             type="button"
-            className={filtersOpen ? "chip active" : "chip"}
+            className={filtersOpen ? "filter-action active" : "filter-action"}
             aria-expanded={filtersOpen}
             aria-controls="library-refine-filters"
             onClick={() => setFiltersOpen(value => !value)}
@@ -320,100 +327,26 @@ export function LibraryView() {
           {localType && <button type="button" className="facet-chip active" onClick={() => useStore.getState().setLocalType("")}>{categoryLabel(localType)} ×</button>}
           {localPack && <button type="button" className="facet-chip active" onClick={() => useStore.getState().clearPack()}>Pack: {localPack.name} ×</button>}
           {localFavoritesOnly && <button type="button" className="facet-chip active" onClick={() => useStore.getState().setLocalFavoritesOnly(false)}>Favorites ×</button>}
-          {localReady.map(value => <button type="button" key={value} className="facet-chip active" onClick={() => toggleLocalReady(value)}>{value} ×</button>)}
+          {localReady.map(value => <button type="button" key={value} className="facet-chip active" onClick={() => toggleLocalReady(value)}>{readyLabels[value] ?? value} ×</button>)}
           {localMaxTris && <button type="button" className="facet-chip active" onClick={() => setLocalMaxTris(null)}>≤ {localMaxTris.toLocaleString()} tris ×</button>}
           {localColor && <button type="button" className="facet-chip active" onClick={() => setLocalColor("")}>{localColor} ×</button>}
           {localState && <button type="button" className="facet-chip active" onClick={() => setLocalState("")}>{localState} ×</button>}
           {localInterior && <button type="button" className="facet-chip active" onClick={() => setLocalInterior("")}>{localInterior} ×</button>}
+          {(refineFilterCount > 0 || localCategoryPath.length > 0 || localType || localPack || localFavoritesOnly || repo !== "all") &&
+            <button type="button" className="text-btn" onClick={resetLocalFilters}>Clear filters</button>}
         </div>
 
         {filtersOpen && (
-          <div className="library-refine" id="library-refine-filters">
-            <div className="library-refine-head">
-              <strong>Technical filters</strong>
-              <span>{refineFilterCount} active</span>
+          <section className="facet-panel" id="library-refine-filters" aria-label="Library filters">
+            <div className="facet-panel-head">
+              <div className="facet-panel-heading"><strong>Refine library</strong><span>{refineFilterCount} active · filters apply instantly</span></div>
+              <div className="facet-panel-actions">
+                <button type="button" className="text-btn" onClick={resetLocalFilters}>Clear filters</button>
+                <button type="button" className="icon-btn" onClick={() => setFiltersOpen(false)} aria-label="Close filters"><CloseIcon /></button>
+              </div>
             </div>
-            <div className="refine-chips">
-              {[
-                ["tileable", "Tileable"],
-                ["closed", "Closed mesh"],
-                ["scale-fixed", "Scale fixed"],
-                ["billboards", "Billboards"],
-                ["highpoly", "Highpoly"],
-                ["ztool", "ZTool"],
-                ["modular", "Modular"]
-              ].map(([value, label]) => (
-                <button
-                  type="button"
-                  key={value}
-                  className={localReady.includes(value) ? "chip active" : "chip"}
-                  onClick={() => toggleLocalReady(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="refine-selects">
-              <Dropdown
-                className="select-dropdown"
-                value={localMaxTris ? String(localMaxTris) : "any"}
-                onChange={value =>
-                  setLocalMaxTris(value === "any" ? null : Number(value))
-                }
-                ariaLabel="Maximum triangle count"
-                options={[
-                  { value: "any", label: "Any tris" },
-                  { value: "10000", label: "≤ 10k tris" },
-                  { value: "25000", label: "≤ 25k tris" },
-                  { value: "50000", label: "≤ 50k tris" },
-                  { value: "100000", label: "≤ 100k tris" }
-                ]}
-              />
-              <Dropdown
-                className="select-dropdown"
-                value={localColor || "any"}
-                onChange={value => setLocalColor(value === "any" ? "" : value)}
-                ariaLabel="Colour"
-                options={[
-                  { value: "any", label: "Any colour" },
-                  { value: "Brown", label: "Brown" },
-                  { value: "Gray", label: "Gray" },
-                  { value: "Green", label: "Green" },
-                  { value: "Red", label: "Red" },
-                  { value: "Orange", label: "Orange" },
-                  { value: "Yellow", label: "Yellow" },
-                  { value: "Blue", label: "Blue" },
-                  { value: "White", label: "White" },
-                  { value: "Black", label: "Black" }
-                ]}
-              />
-              <Dropdown
-                className="select-dropdown"
-                value={localState || "any"}
-                onChange={value => setLocalState(value === "any" ? "" : value)}
-                ariaLabel="Condition"
-                options={[
-                  { value: "any", label: "Any condition" },
-                  { value: "new", label: "New" },
-                  { value: "old", label: "Old" }
-                ]}
-              />
-              <Dropdown
-                className="select-dropdown"
-                value={localInterior || "any"}
-                onChange={value => setLocalInterior(value === "any" ? "" : value)}
-                ariaLabel="Interior or exterior"
-                options={[
-                  { value: "any", label: "Any setting" },
-                  { value: "interior", label: "Interior" },
-                  { value: "exterior", label: "Exterior" }
-                ]}
-              />
-              <button type="button" className="text-btn" onClick={resetLocalFilters}>
-                Reset filters
-              </button>
-            </div>
-          </div>
+            <FilterWorkbench groups={filterGroups} showCounts={false} />
+          </section>
         )}
 
         {selectMode && (
@@ -424,6 +357,7 @@ export function LibraryView() {
               <span className="bulk-scope-hint">Export writes JSON records. Delete removes local asset folders from disk.</span>
             </div>
             <div className="bulk-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>
               <button type="button" className="text-btn" onClick={selectVisible}>
                 Select loaded
               </button>
@@ -477,7 +411,19 @@ export function LibraryView() {
       </div>
 
       <div className="view-body" ref={bodyRef}>
-        {assets.length > 0 && (
+        {assets.length > 0 && !selectMode && <button type="button" className="btn btn-ghost view-mode" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
+        {assets.length > 0 && listView && <AssetList key={selectMode ? "bulk" : "browse"}
+          selectedKeys={selectMode ? new Set(assets.filter(asset => selectedIds.has(asset.id)).map(asset => asset.path)) : undefined}
+          totalSelected={selectMode ? selectedIds.size : undefined} initialCompare={selectMode && selectedIds.size >= 2}
+          onToggle={selectMode ? path => { const asset = assets.find(item => item.path === path); if (asset) toggleSelected(asset.id); } : undefined}
+          items={assets.map(asset => ({
+          key: asset.path, id: asset.id, name: asset.name, type: typeLabel(asset.type), dimensions: asset.technical?.dimensions,
+          image: asset.preview ? window.openbridge.toFileUrl(asset.preview) : null, technical: asset.technical,
+          category: asset.categories?.slice(0, 2).join(" / "), facts: readinessBadges(asset.technical),
+          resolution: asset.technical?.resolution ? `${asset.technical.resolution / 1024}K` : null,
+          status: asset.repo, onOpen: () => void openLocal(asset)
+        }))} />}
+        {assets.length > 0 && !listView && (
           <VirtualGrid
             items={assets}
             minItemWidth={density === "compact" ? 160 : density === "large" ? 320 : 220}
@@ -579,22 +525,12 @@ export function LibraryView() {
                 Clear search and filters
               </button>
             )}
+            {allTotal === 0 && <button type="button" className="btn btn-ghost" onClick={() => useStore.getState().setView("settings")}>Choose an existing library</button>}
           </div>
         )}
 
         {hasMore && (
-          <div className="load-more">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={loading}
-              onClick={() => void queryLocalLibrary(false)}
-            >
-              {loading
-                ? "Loading..."
-                : `Load more (${Math.max(0, total - assets.length).toLocaleString()} left)`}
-            </button>
-          </div>
+          <LoadMore loading={loading} remaining={Math.max(0, total - assets.length)} onLoad={() => void queryLocalLibrary(false)} />
         )}
       </div>
 
@@ -622,6 +558,7 @@ export function LibraryView() {
                 {healthProgress
                   ? ` ${healthProgress.checked.toLocaleString()} / ${healthProgress.total.toLocaleString()} (${healthProgress.percent}%)`
                   : ""}
+                <button type="button" className="btn btn-ghost" onClick={() => { cancellingHealth.current = true; void window.openbridge.cancelLibraryHealth(); }}>Cancel scan</button>
               </div>
             )}
             {health && !healthLoading && (
@@ -657,11 +594,25 @@ export function LibraryView() {
                     ))}
                 </div>
 
+                {health.duplicates.length > 0 && <section className="duplicate-review">
+                  <h3>Review duplicate IDs</h3>
+                  <p className="hint">No files are selected or deleted. Open each folder and verify which copy you want to keep before using Windows to remove anything.</p>
+                  {health.duplicates.map(duplicate => <div className="duplicate-group" key={duplicate.assetId}>
+                    <strong>{duplicate.assetId}</strong>
+                    {duplicate.paths.map(path => <div key={path} className="duplicate-path"><code>{path}</code>
+                      <button type="button" className="text-btn" onClick={() => void window.openbridge.openPath(path).catch(error => toast(String(error), true))}>Open folder</button></div>)}
+                  </div>)}
+                </section>}
+
                 <div className="health-issues">
+                  <label>Show issues <select value={healthFilter} onChange={event => setHealthFilter(event.target.value)}>
+                    <option value="all">All</option><option value="duplicate-id">Duplicate IDs</option>
+                    <option value="error">Errors</option><option value="warning">Warnings</option>
+                  </select></label>
                   {health.issues.length === 0 ? (
                     <p className="hint">No issues found.</p>
                   ) : (
-                    health.issues.slice(0, 200).map((issue, index) => (
+                    health.issues.filter(issue => healthFilter === "all" || issue.kind === healthFilter || issue.severity === healthFilter).slice(0, 200).map((issue, index) => (
                       <div className="health-issue" key={`${issue.path}:${issue.kind}:${index}`}>
                         <span className={`issue-dot ${issue.severity}`} />
                         <div>

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
-import { cp, mkdir, readFile } from "node:fs/promises";
+import { cp, mkdir, readFile, statfs } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { AuthService } from "./auth";
 import { LocalApiServer } from "./api-server";
@@ -40,6 +40,7 @@ let mainWindow: BrowserWindow | null = null;
 let logger: Logger | null = null;
 let settingsStore: SettingsStore | null = null;
 let library: LibraryService | null = null;
+let healthAbort: AbortController | null = null;
 let apiServer: LocalApiServer | null = null;
 let bridgeLink: BridgeLink | null = null;
 let authService: AuthService | null = null;
@@ -429,10 +430,13 @@ function registerIpc(): void {
 
   ipcMain.handle("library:health", async (_event, force?: boolean) => {
     if (!library) throw new Error("Library service is not ready");
-    return library.health(Boolean(force), progress => {
+    if (healthAbort) throw new Error("A library health scan is already running");
+    const controller = new AbortController(); healthAbort = controller;
+    try { return await library.health(Boolean(force), progress => {
       mainWindow?.webContents.send("library:healthProgress", progress);
-    });
+    }, controller.signal); } finally { if (healthAbort === controller) healthAbort = null; }
   });
+  ipcMain.handle("library:cancelHealth", () => { healthAbort?.abort(); });
 
   ipcMain.handle("library:removeAssets", async (_event, assetIds: string[], scope?: LibraryQuery) => {
     if (!library) throw new Error("Library service is not ready");
@@ -702,6 +706,7 @@ function registerIpc(): void {
   ipcMain.handle("downloads:cancel", (_event, assetId: string) =>
     requireDownloads().cancel(assetId)
   );
+  ipcMain.handle("downloads:retry", (_event, assetId: string) => requireDownloads().retry(assetId));
   ipcMain.handle("downloads:pause", (_event, assetId: string) =>
     requireDownloads().pause(assetId)
   );
@@ -713,6 +718,17 @@ function registerIpc(): void {
   ipcMain.handle("downloads:resumeAll", () => requireDownloads().resumeAll());
   ipcMain.handle("downloads:clearFinished", () => requireDownloads().clearFinished());
   ipcMain.handle("downloads:list", () => requireDownloads().list());
+  ipcMain.handle("downloads:overview", async () => {
+    const libraryPath = settings().libraryPath;
+    const measured = library?.storageSummary() ?? { measuredLibraryBytes: 0, measuredAssets: 0, totalAssets: 0 };
+    let totalBytes: number | null = null;
+    let freeBytes: number | null = null;
+    let error: string | undefined;
+    try { const volume = await statfs(libraryPath); totalBytes = Number(volume.blocks) * Number(volume.bsize);
+      freeBytes = Number(volume.bavail) * Number(volume.bsize); }
+    catch { error = "Disk space unavailable. Check that the library folder is accessible."; }
+    return { ...requireDownloads().overview(), disk: { libraryPath, ...measured, totalBytes, freeBytes, error } };
+  });
 
   ipcMain.handle("catalog:metadata:status", () => requireCatalogMetadata().status());
   ipcMain.handle("catalog:metadata:packs", () => requireCatalogMetadata().packs());
@@ -908,6 +924,7 @@ if (!gotLock) {
     void apiServer?.stop();
     void bridgeLink?.stop();
   });
+  app.on("will-quit", () => downloads?.closeHistory());
 }
 
 

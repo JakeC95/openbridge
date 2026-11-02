@@ -355,7 +355,12 @@ try {
       assert.deepEqual(await readFile(join(job.path, "two.jpg")), body);
       assert.ok(observations.some(item => item.diagnostics?.sources.some(source => source.location === "London, UK")));
       assert.equal(observations.at(-1).diagnostics.receiveBytesPerSecond, 0);
-    } finally { manager.flushQueue(); }
+      assert.equal(manager.overview().session.completed, 1);
+      assert.equal(manager.overview().session.receivedBytes, body.length * 2);
+      assert.equal(manager.overview().history[0].assetId, "managed");
+      manager.clearFinished();
+      assert.equal(manager.overview().history[0].path, job.path);
+    } finally { manager.flushQueue(); manager.closeHistory(); }
   });
   await test("empty signing responses cannot be finalized as successful asset downloads", async () => {
     const asset = { id: "empty", name: "Fixture", type: "surface", categories: ["surface"], components: [{ type: "albedo" }] };
@@ -364,7 +369,7 @@ try {
     try {
       const job = manager.createJob("empty"); await manager.runJob(job);
       assert.equal(job.status, "error"); assert.match(job.message, /no asset files/);
-    } finally { manager.flushQueue(); }
+    } finally { manager.flushQueue(); manager.closeHistory(); }
   });
   await test("exhausted transient failures pause jobs without deleting verified work", async () => {
     const temp = join(directory, "openbridge", "asset-paused");
@@ -378,7 +383,7 @@ try {
       const job = manager.createJob("paused"); await manager.runJob(job);
       assert.equal(job.status, "paused"); assert.match(job.message, /Resume/);
       assert.deepEqual(await readFile(join(temp, "already.jpg")), body);
-    } finally { manager.flushQueue(); globalThis.fixtureFetch = (...args) => fetch(...args); }
+    } finally { manager.flushQueue(); manager.closeHistory(); globalThis.fixtureFetch = (...args) => fetch(...args); }
   });
   await test("real Electron net.fetch streams and resumes correctly on Windows", async () => {
     const target = await seed("/electron-range", 16384);

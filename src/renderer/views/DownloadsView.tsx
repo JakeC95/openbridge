@@ -1,7 +1,9 @@
-﻿import { useStore } from "../store";
+﻿import { useState } from "react";
+import { useStore } from "../store";
 import { FolderIcon, CloseIcon, DownloadIcon, CheckIcon } from "../icons";
 import type { DownloadProgress } from "../../shared/types";
 import { DownloadStats } from "../components/DownloadStats";
+import { DownloadsRail } from "../components/DownloadsRail";
 
 function bytes(value: number): string {
   if (!value) return "0 B";
@@ -38,6 +40,13 @@ export function DownloadsView() {
   const cancel = useStore(state => state.cancelDownload);
   const clear = useStore(state => state.clearFinishedDownloads);
   const settings = useStore(state => state.settings);
+  const toast = useStore(state => state.toast);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const retry = async (item: DownloadProgress) => {
+    try { await window.openbridge.downloads.retry(item.assetId); }
+    catch (error) { toast(`Could not retry ${item.name || item.assetId}: ${String(error)}`, true); }
+  };
 
   const items = Object.values(downloads).sort((a, b) => {
     const order: Record<string, number> = {
@@ -60,7 +69,10 @@ export function DownloadsView() {
   const paused = items.filter(item => item.status === "paused");
   const attention = items.filter(item => item.status === "error");
   const hasActive = active.length + queued.length > 0;
-  const visibleItems = items.slice(0, 300);
+  const filteredItems = items.filter(item => (status === "all" ||
+    (status === "active" ? ["downloading", "requesting", "extracting"].includes(item.status) : item.status === status)) &&
+    `${item.name ?? ""} ${item.assetId}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const visibleItems = filteredItems.slice(0, 300);
 
   const groups = [
     {
@@ -138,6 +150,7 @@ export function DownloadsView() {
           </div>
         </div>
         <div className="download-actions">
+          {item.status === "error" && <button type="button" className="text-btn" onClick={() => void retry(item)}>Retry</button>}
           {running && (
             <button
               type="button"
@@ -235,7 +248,18 @@ export function DownloadsView() {
         </div>
       </div>
 
-      <div className="view-body">
+      <div className="view-body downloads-layout">
+        <div className="downloads-queue">
+        {items.length > 0 && <div className="queue-filters">
+          <input aria-label="Search downloads" placeholder="Search downloads by name or ID" value={search} onChange={event => setSearch(event.target.value)} />
+          <label>Status <select value={status} onChange={event => setStatus(event.target.value)}>
+            {[["all", "All"], ["active", "Active"], ["queued", "Queued"], ["paused", "Paused"], ["error", "Failed"], ["complete", "Completed"], ["cancelled", "Cancelled"]].map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+          </select></label>
+          <span>{filteredItems.length} matching</span>
+          {attention.length > 0 && <button type="button" className="btn btn-ghost" onClick={() => void (async () => {
+            for (const item of attention) await retry(item);
+          })()}>Retry failed ({attention.length})</button>}
+        </div>}
         {items.length === 0 ? (
           <div className="empty">
             <DownloadIcon className="empty-icon" />
@@ -277,15 +301,19 @@ export function DownloadsView() {
               </section>
             ))}
 
-            {items.length > visibleItems.length && (
+            {filteredItems.length === 0 && <div className="empty"><h2>No matching downloads</h2><p>Try another search or status.</p>
+              <button type="button" className="btn btn-ghost" onClick={() => { setSearch(""); setStatus("all"); }}>Clear search and status</button></div>}
+            {filteredItems.length > visibleItems.length && (
               <div className="download-limit">
                 Showing {visibleItems.length.toLocaleString()} of{" "}
-                {items.length.toLocaleString()} downloads. Clear finished downloads to
+                {filteredItems.length.toLocaleString()} matching downloads. Narrow your search to
                 reduce this list.
               </div>
             )}
           </div>
         )}
+        </div>
+        <DownloadsRail />
       </div>
     </div>
   );

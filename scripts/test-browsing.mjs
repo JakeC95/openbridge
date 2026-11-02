@@ -25,6 +25,10 @@ const result = await build({
     export { searchCatalog, searchCatalogIds } from './src/main/legacy-api';
     export { highResolutionPreviewPayload, highResolutionPreview } from './src/main/high-resolution-preview';
     export { buildMapPreviews, buildBillboardPreviews } from './src/main/map-previews';
+    export { DownloadCompletions } from './src/main/download-completions';
+    export { summarizeDownloads } from './src/renderer/download-summary';
+    export { recordDownloadSpeed, clearDownloadSpeed } from './src/renderer/download-history';
+    export { assetBounds, scaleDiagramLayout } from './src/shared/asset-scale';
   `, resolveDir: process.cwd(), loader: "ts" },
   bundle: true, platform: "node", format: "esm", write: false,
   banner: { js: 'import { createRequire as fixtureRequire } from "node:module"; const require = fixtureRequire(process.cwd() + "/package.json");' },
@@ -51,6 +55,50 @@ let library;
 let checks = 0;
 const check = (name, fn) => { fn(); checks++; console.log(`PASS ${name}`); };
 try {
+  check("scale diagram parses metre metadata and explicit cm/mm without guessing missing axes", () => {
+    const technical = assetTechnicalFacts({});
+    assert.deepEqual(api.assetBounds({ ...technical, dimensions: "0.21 x 0.13 x 0.10" }), { depth: .21, width: .13, height: .1 });
+    assert.deepEqual(api.assetBounds({ ...technical, dimensions: "21 × 13 × 10 cm" }), { depth: .21, width: .13, height: .1 });
+    assert.deepEqual(api.assetBounds({ ...technical, dimensions: "210mm x 13cm x .1m" }), { depth: .21, width: .13, height: .1 });
+    for (const dimensions of [null, "2 x 2", "-1 x 2 x 3", "0 x 2 x 3", "unknown", "2 x 2 x 2 px", "1 x NaN x 2"])
+      assert.equal(api.assetBounds({ ...technical, dimensions, scanArea: "2 x 2" }), null);
+    const variations = { ...technical, variationDimensions: [{ variation: 2, width: ".3", length: ".4", height: "2" }] };
+    assert.equal(api.assetBounds(variations, 1), null);
+    assert.equal(api.assetBounds(variations, 2).height, 2);
+    assert.equal(api.assetBounds(variations).variation, 2);
+  });
+  check("orthographic scale uses identical pixels per metre for brick, tree and wide asset", () => {
+    for (const bounds of [{ width: .13, height: .1, depth: .21 }, { width: 5, height: 18, depth: 4 }, { width: 100, height: .001, depth: 2 }]) {
+      const layout = api.scaleDiagramLayout(bounds);
+      assert.ok(Math.abs(layout.boxHeight / layout.humanHeight - bounds.height / 1.78) < 1e-10);
+      assert.equal(layout.boxWidth, bounds.width * layout.pixelsPerMeter);
+      assert.equal(layout.boxY + layout.boxHeight, layout.ground);
+      assert.ok(layout.boxX + layout.boxWidth <= 396);
+      assert.ok(layout.boxY >= 0 && layout.humanY >= 0);
+    }
+  });
+  check("completion history survives reopen, repeats and queue clearing", () => {
+    const path = join(directory, "completions.sqlite");
+    let history = new api.DownloadCompletions(path);
+    const completion = { assetId: "oak", name: "Oak", path: "fixture/oak", bytes: 1024, completedAt: 100 };
+    history.record(completion); history.record({ ...completion, completedAt: 200 }); history.close();
+    history = new api.DownloadCompletions(path);
+    try { assert.equal(history.recent().length, 2); assert.equal(history.recent()[0].completedAt, 200); }
+    finally { history.close(); }
+  });
+  check("aggregate download ETA is observed, smoothed and scoped to active transfers", () => {
+    const now = 20000;
+    const item = { assetId: "eta", status: "downloading", total: 10000, received: 1000, ratio: .1,
+      diagnostics: { receiveBytesPerSecond: 100, activeTransfers: 1 } };
+    assert.equal(api.summarizeDownloads([item], now).eta, null);
+    for (let second = 14; second >= 0; second--) api.recordDownloadSpeed("eta", 100, now - second * 1000);
+    const summary = api.summarizeDownloads([item, { ...item, assetId: "queued", status: "queued", total: 0 }], now);
+    assert.equal(summary.eta, "~2 min"); assert.equal(summary.rate, 100); assert.equal(summary.queued.length, 1);
+    assert.equal(api.summarizeDownloads([{ ...item, diagnostics: { receiveBytesPerSecond: 0 } }], now).eta, null);
+    assert.equal(api.summarizeDownloads([{ ...item, total: 0 }], now).eta, null);
+    assert.equal(api.summarizeDownloads([{ ...item, status: "paused" }], now).rate, 0);
+    api.clearDownloadSpeed("eta");
+  });
   const makeAsset = (id, type, categories, overrides = {}) => ({
     id, name: id, type, categories, tags: [], repo: "downloaded", path: join(directory, id),
     jsonPath: join(directory, id, "asset.json"), preview: null, thumb: null, mtime: 1,

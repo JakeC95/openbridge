@@ -67,7 +67,8 @@
 Still open from this area:
 
 - Duplicate repair and orphan-folder cleanup (detection is implemented).
-- Persist download history in the index instead of only the queue file.
+- Completion history is implemented for 1.5 in a separate SQLite database, independent of the queue
+  and rebuildable library index (see below).
 - Cancellable background health jobs and richer issue filters.
 
 ## Phase 4b - Local-first metadata (done in 1.4)
@@ -152,6 +153,22 @@ end-to-end benchmark against original Bridge has been performed.
 - Keep the Windows portable ZIP as the only distribution target.
 - Opt-in crash reporting, diagnostics export and update channels.
 - Accessibility, high-DPI, localization and a broader Windows test matrix.
+
+## Workspace quality (1.5.0, unreleased)
+
+- Dock the inspector above 1180px; reserve workspace width so virtualized grids and filters reflow.
+- Overview, Download settings/Files, Technical and Related sections, with a pinned plan/resolution/
+  action footer and progress/pause/resume controls. Local assets retain folder/export/validation tools.
+- Scoped Catalogue/Library topbar search, independent queries and one shared facet workbench with
+  local readiness/triangle/colour/condition/setting groups. Remove the duplicate catalogue breadcrumb.
+- Shell download activity: nav progress, live aggregate speed, mini queue and bulk pause/resume.
+  ETA uses observed trailing samples and applies only to active transfers, not unsigned queued jobs.
+- Responsive Downloads queue/rail with main-process session counters, actual volume free space,
+  explicitly partial cached library measurements and up to 5,000 durable completion records.
+- Completion history lives in `download-history.sqlite` in app user data, separate from the asset
+  index so index rebuilds/library changes cannot erase it. The rail shows the latest 30; clearing
+  finished queue entries does not delete history. Earlier completions cannot be recovered retroactively.
+- Version selected locally; no tag or GitHub release published yet.
 
 ## Non-goals
 

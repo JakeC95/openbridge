@@ -389,11 +389,13 @@ export class LibraryService {
 
   async health(
     force = false,
-    onProgress?: (progress: LibraryHealthProgress) => void
+    onProgress?: (progress: LibraryHealthProgress) => void,
+    signal?: AbortSignal
   ): Promise<LibraryHealthReport> {
     const libraryPath = this.getLibraryPath();
     const started = Date.now();
     await this.scan(false, false);
+    signal?.throwIfAborted();
     this.snapshotCache = this.index.getSnapshot(libraryPath);
     const rows = this.index.healthRows(force);
     const total = rows.length;
@@ -405,7 +407,9 @@ export class LibraryService {
     }> = [];
     onProgress?.({ checked: 0, total, percent: 0 });
     for (const row of rows) {
+      signal?.throwIfAborted();
       const walked = await walkAssetFolder(row.path);
+      signal?.throwIfAborted();
       batch.push({
         path: row.path,
         stats: {
@@ -462,6 +466,9 @@ export class LibraryService {
 
   invalidate(): void {
     this.snapshotCache = null;
+  }
+  storageSummary(): { measuredLibraryBytes: number; measuredAssets: number; totalAssets: number } {
+    return this.index.storageSummary();
   }
   close(): void {
     if (this.closed) return;
