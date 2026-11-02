@@ -50,8 +50,7 @@ Changes after `v1.4.2` are unreleased. Choose the next version when new work is 
   contained images and surface-specific details instead of inapplicable mesh/height fields.
 - Catalogue pagination anchors the visible asset when client-side sorting inserts newly loaded
   assets above it; the UI regression tests sorted paging rather than scroll offset alone. The user
-  reported that the previous 1.5.7 scroll fix did not work; 1.5.8 still needs their real-world
-  confirmation with automatic paging and their preferred sort.
+  reported that the previous 1.5.7 scroll fix did not work, and later said 1.5.8 was OK for now.
 - The local 1.5.8 portable folder and ZIP are in `dist/`; older versioned portable folders and ZIPs
   were removed at the user's request. `dist/` is ignored and is not pushed to GitHub.
 
