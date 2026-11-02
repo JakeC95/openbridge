@@ -162,7 +162,7 @@ app.whenReady().then(async()=>{
      await until(()=>window.fixtureCalls().some(call=>call.kind==='catalog' && call.query.page===1),'Auto load did not request page 2');
      await wait(400);
      const afterAnchor=[...pagingScroll.querySelectorAll('[data-grid-key]')].find(card=>card.dataset.gridKey===anchorKey);
-     assert(afterAnchor && Math.abs(afterAnchor.getBoundingClientRect().top-beforePage)<5,'Auto loading moved the visible asset: '+anchorKey);
+     assert(afterAnchor && Math.abs(afterAnchor.getBoundingClientRect().top-beforePage)<5,'Auto loading moved the visible asset: '+anchorKey+' from '+beforePage+' to '+(afterAnchor?.getBoundingClientRect().top ?? 'not rendered'));
      await choose('Sort loaded catalogue results','Sort: Relevance');
      window.fixturePaged(false);
      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(pagingInput,'');

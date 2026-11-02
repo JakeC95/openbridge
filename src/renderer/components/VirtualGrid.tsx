@@ -147,14 +147,16 @@ export function VirtualGrid<T>({
         measure();
       }
     }
-    anchorRef.current = null;
-    return () => {
-      if (!container || !parent || !itemKey) return;
+    if (anchor && items.length > anchor.count) anchorRef.current = null;
+    const capture = (event: Event) => {
+      if (!container || !parent || !itemKey || !parent.contains((event as CustomEvent<Node>).detail)) return;
       const parentTop = parent.getBoundingClientRect().top;
       const cards = Array.from(container.querySelectorAll<HTMLElement>("[data-grid-key]"));
       const card = cards.find(element => element.getBoundingClientRect().bottom > parentTop);
       if (card?.dataset.gridKey) anchorRef.current = { key: card.dataset.gridKey, top: card.getBoundingClientRect().top, count: items.length };
     };
+    window.addEventListener("openbridge:before-page-load", capture);
+    return () => window.removeEventListener("openbridge:before-page-load", capture);
   }, [items, itemKey, columns, rowStep, width, measure]);
 
   return (

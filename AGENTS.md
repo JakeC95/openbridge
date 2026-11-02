@@ -8,7 +8,7 @@ Quixel Megascans library. It is an Electron 45 + React 19 + TypeScript applicati
 
 - Branch: `main`, tracking `origin/main`
 - Last verified application commit: `781c962` (tagged `v1.4.2`)
-- Current app version: `1.5.8` (unreleased)
+- Current app version: `1.5.9` (unreleased)
 - Latest published release: `v1.4.2`
 - Repo visibility: public
 - Distribution: portable ZIP only; no installer, Linux or macOS build
@@ -16,7 +16,7 @@ Quixel Megascans library. It is an Electron 45 + React 19 + TypeScript applicati
 
 Changes after `v1.4.2` are unreleased. Choose the next version when new work is ready to publish.
 
-## 1.5.8 workspace pass (unreleased)
+## 1.5.9 workspace pass (unreleased)
 
 - All five approved UI improvements implemented: docked wide-screen inspector, section navigation
   and pinned download footer, scoped search/shared filter workbench, shell download activity and
@@ -53,6 +53,9 @@ Changes after `v1.4.2` are unreleased. Choose the next version when new work is 
   reported that the previous 1.5.7 scroll fix did not work, and later said 1.5.8 was OK for now.
 - The local 1.5.8 portable folder and ZIP are in `dist/`; older versioned portable folders and ZIPs
   were removed at the user's request. `dist/` is ignored and is not pushed to GitHub.
+- GitHub Quality exposed a sorted auto-paging regression at 1024x768; 1.5.9 captures the visible
+  anchor before a page request. Verify both narrow and wide browsing in the UI regression test.
+  A fresh 1.5.9 portable build is available locally in `dist/`.
 
 ## Mandatory checks
 

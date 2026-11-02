@@ -1,6 +1,6 @@
 {
   "name": "openbridge",
-  "version": "1.5.8",
+  "version": "1.5.9",
   "private": true,
   "description": "Open-source, portable library manager for Quixel Megascans assets on Windows",
   "productName": "OpenBridge",
