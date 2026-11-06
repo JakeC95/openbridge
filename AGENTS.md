@@ -186,8 +186,9 @@ Changes after `v1.4.2` are unreleased. Choose the next version when new work is 
 - The local 1.5.8 portable folder and ZIP are in `dist/`; older versioned portable folders and ZIPs
   were removed at the user's request. `dist/` is ignored and is not pushed to GitHub.
 - GitHub Quality exposed a sorted auto-paging regression at 1024x768; 1.5.9 captures the visible
-  anchor before a page request. Verify both narrow and wide browsing in the UI regression test.
-  A fresh 1.5.9 portable build is available locally in `dist/`.
+  anchor before a page request. The UI regression scrolls near the bottom with headroom below the
+  anchor (the last row cannot keep its viewport position once new pages extend the list), and runs
+  at both narrow and wide widths. A fresh 1.5.9 portable build is available locally in `dist/`.
 
 ## Mandatory checks
 

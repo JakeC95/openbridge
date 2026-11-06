@@ -176,7 +176,7 @@ app.whenReady().then(async()=>{
      const pagingScroll=document.querySelector('.discover .asset-area');
      await choose('Sort loaded catalogue results','Name A–Z');
      const auto=root().querySelector('.auto-load-toggle input');
-     pagingScroll.scrollTop=pagingScroll.scrollHeight-pagingScroll.clientHeight;
+     pagingScroll.scrollTop=pagingScroll.scrollHeight-pagingScroll.clientHeight-120;
      await wait(80);
      const visibleAnchor=[...pagingScroll.querySelectorAll('[data-grid-key]')].find(card=>card.getBoundingClientRect().bottom>pagingScroll.getBoundingClientRect().top);
      assert(visibleAnchor,'Paging anchor missing');const anchorKey=visibleAnchor.dataset.gridKey;
