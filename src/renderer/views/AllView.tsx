@@ -566,6 +566,7 @@ export function AllView() {
   };
 
   const openItem = (item: UnifiedItem): void => {
+    anchor.current = item.key;
     if (item.provider === "megascans") {
       usePoliigonStore.getState().closeAsset();
       usePolyHavenStore.getState().closeAsset();
@@ -582,7 +583,14 @@ export function AllView() {
   };
 
   const toggleSelection = (item: UnifiedItem, event?: { shiftKey: boolean }): void => {
-    if (!selectMode && event?.shiftKey) setSelectMode(true);
+    if (!selectMode && event?.shiftKey) {
+      setSelectMode(true);
+      setSelectedKeys(new Set());
+      setPointsByKey(new Map());
+      useStore.getState().closeSelection();
+      usePoliigonStore.getState().closeAsset();
+      usePolyHavenStore.getState().closeAsset();
+    }
     setPointsByKey(previous => {
       const next = new Map(previous);
       next.set(item.key, item.provider === "megascans" ? item.hit.points : undefined);

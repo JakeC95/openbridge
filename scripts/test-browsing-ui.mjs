@@ -42,7 +42,7 @@ const api = {
   localPreviews:async()=>({renders:[{type:'render',label:'Render',url:image}],maps:[{type:'albedo',label:'Set A / Albedo',url:image},{type:'normal',label:'Set A / Normal',url:image}]}),
   toFileUrl:path=>image,
   catalog:{categories:async()=>categories, acquired:async()=>[],favorites:async()=>['asset0'],cancel:async()=>{},
-    search:async query=>{calls.push({kind:'catalog',query}); if(paged) await new Promise(resolve=>setTimeout(resolve,180)); return {hits:paged ? hits.slice(query.page*40,query.page*40+40) : hits,nbHits:80,page:paged ? query.page : 0,nbPages:paged ? 2 : 1,hitsPerPage:paged ? 40 : 80,facets:{biome:{forest:80},region:{Europe:80}}}},
+    search:async query=>{calls.push({kind:'catalog',query}); if(paged) await new Promise(resolve=>setTimeout(resolve,180)); return {hits:paged ? hits.slice(query.page*40,query.page*40+40) : hits,nbHits:80,page:paged ? query.page : 0,nbPages:paged ? 2 : 1,hitsPerPage:paged ? 40 : 80,facets:{biome:{forest:80},region:{Europe:80},resolution:{'4096':80},color:{Green:80},environment:{natural:80},theme:{wood:80}}}},
     ids:async query=>{calls.push({kind:'catalogIds',query});return {entries:hits.map(h=>({id:h.id})),nbHits:80}},
      extended:async id=>({id,name:id,type:'3d',categories:['3d','nature'],tags:['wood'],similarAssets:[hits[1]],
        meta:[{key:'length',value:'0.21'},{key:'width',value:'0.13'},{key:'height',value:'0.10'}]}),
@@ -54,6 +54,28 @@ const api = {
       if(mode==='failure')throw new Error('Fixture server unavailable');
       return {type:map.type,label:map.type,url:highImage(map.type),resolution:'4096'};
     }
+  },
+  smartThumbnail:async source=>source,
+  poliigon:{
+    status:async()=>({state:'ready',count:0,published:0,refreshedAt:1}),
+    refresh:async()=>({state:'ready',count:0,published:0,refreshedAt:1}),
+    categories:async()=>[],
+    search:async()=>({hits:[],total:0,offset:0,limit:40,hasMore:false,tookMs:1,
+      facets:{types:[],resolutions:[],creationMethods:[],mapTypes:[],free:0}}),
+    ids:async()=>[],extended:async()=>null,mapPreviews:async()=>[],highResolutionMapPreview:async()=>({}),hdrPreview:async()=>({}),
+    onStatus:noop,
+    auth:{state:async()=>({loggedIn:false,userName:'',userId:null,planName:'',planPaused:false,isUnlimited:false,credits:null,onDemandCredits:null,ownedCount:0,expiresAt:null}),
+      login:async()=>({loggedIn:false}),loginBrowser:async()=>({loggedIn:false}),cancelBrowserLogin:async()=>{},logout:async()=>{},
+      refresh:async()=>null,owned:async()=>[],recentDownloads:async()=>[],syncOwned:async()=>[],onChanged:noop}
+  },
+  polyhaven:{
+    status:async()=>({state:'ready',count:0,enriched:0,refreshedAt:1}),
+    refresh:async()=>({state:'ready',count:0,enriched:0,refreshedAt:1}),
+    categories:async()=>[],
+    search:async()=>({hits:[],total:0,offset:0,limit:40,hasMore:false,tookMs:1,
+      facets:{types:[],resolutions:[],mapTypes:[],categories:[],collections:[],attributes:{}}}),
+    ids:async()=>[],extended:async()=>null,mapPreviews:async()=>[],highResolutionMapPreview:async()=>({}),hdrPreview:async()=>({}),
+    onStatus:noop
   },
    downloads:{list:async()=>[downloadItem],onProgress:callback=>{progressListeners.add(callback);return()=>progressListeners.delete(callback)},
      pauseAll:async()=>progressListener({...downloadItem,status:'paused'}),resumeAll:async()=>progressListener(downloadItem),
@@ -103,7 +125,8 @@ app.whenReady().then(async()=>{
        assert(button,'Missing navigation: '+name);button.click();
      };
     const choose = async (label, text) => {
-      const trigger=root().querySelector('[aria-label="'+label+'"]');
+      let trigger=root().querySelector('[aria-label="'+label+'"]');
+      if(!trigger && /^Sort/.test(label)) trigger=[...root().querySelectorAll('.filter-row .dropdown-trigger')].find(item=>/^Sort/.test(item.getAttribute('aria-label')||''));
       assert(trigger,'Missing dropdown: '+label); trigger.click(); await wait(120);
       clickText(document.querySelector('[role="listbox"]'),text); await wait(350);
     };
@@ -186,12 +209,12 @@ app.whenReady().then(async()=>{
     await choose('Local asset type','3D Assets');
      clickText(root(),'Filters'); await wait(30);
      assert(root().querySelectorAll('.facet-tab').length===5,'Library does not use the shared workbench');
-    clickText(root(),'Tileable'); await wait(200);
+    clickText(root(),'Closed mesh'); await wait(200);
     clickText(root(),'Select'); await wait(20);
     clickText(root(),'Select all 80'); await wait(50);
     const calls=window.fixtureCalls();
     const ids=calls.filter(call=>call.kind==='localIds').at(-1).query;
-    assert(ids.sort==='name' && ids.type==='3d' && ids.ready.includes('tileable'),'Local selection omitted filters');
+    assert(ids.sort==='name' && ids.type==='3d' && ids.ready.includes('closed'),'Local selection omitted filters');
     clickText(root(),'Done'); await wait(50);
      root().querySelector('.asset-card').click(); await wait(150);
      assert(document.querySelector('.drawer'),'Local drawer missing');
@@ -225,13 +248,14 @@ app.whenReady().then(async()=>{
     assert(!document.getElementById('root').inert,'Background remained inert');
     document.querySelector('.drawer [title="Close"]').click();
     navigate('Discover80');await wait(80);
+    [...document.querySelectorAll('.provider-switch button')].find(item=>/Megascans/i.test(item.textContent)).click();await wait(300);
     clickText(root(),'Filters');await wait(20);
     const facetPanel=document.querySelector('.facet-panel');
     assert(facetPanel,'Catalogue filter panel missing');
     assert(facetPanel.querySelectorAll('.facet-tab').length===6,'Filter groups are not presented as a workbench');
     const activeTab=facetPanel.querySelector('.facet-tab.active');
     assert(activeTab && activeTab.textContent.includes('Biome'),'Biome filter group is not selected by default');
-    const forest=[...root().querySelectorAll('.facet-option')].find(item=>item.textContent.startsWith('forest'));
+    const forest=[...root().querySelectorAll('.facet-option')].find(item=>/^forest/i.test(item.textContent.trim()));
     assert(forest,'Facet missing');forest.click();await wait(80);
     assert(facetPanel.querySelector('.facet-tab.active').textContent.includes('1'),'Selected facet count missing from the group rail');
     clickText(root(),'Select');await wait(20);clickText(root(),'Select all 80');await wait(50);
@@ -458,7 +482,7 @@ app.whenReady().then(async()=>{
     }
   }
   app.exit(0);
- } catch(error) { console.error(error.stack || error.message);app.exit(1); }
+ } catch(error) { console.error('RENDERER_ERRORS',errors);console.error(error.stack || error.message);app.exit(1); }
 }).catch(error=>{console.error(error.message);app.exit(1)});
 `;
 try {

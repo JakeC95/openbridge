@@ -145,8 +145,10 @@ Changes after `v1.4.2` are unreleased. Choose the next version when new work is 
   facets use canonical order; Megascans facet values are humanised.
 - Verified counts after the audit: 28,670 total (18,835 Megascans · 7,448 Poliigon · 2,387 Poly
   Haven); Poliigon Normal 7,072 and Base Color 7,035; Poly Haven models 2–5 m 71. `npm run check`,
-  `npm run build` and `npm run check:public` pass. These changes are pushed to `main`; no tag or
-  release has been created.
+  `npm run build`, `npm run test:browsing`, `npm run test:network` and `npm run test:browsing:ui`
+  pass. The UI fixture now covers the three-provider All view, and All-view Shift selection closes
+  open drawers and anchors the range like the focused Megascans view. These changes are pushed to
+  `main`; no tag or release has been created.
 
 - All five approved UI improvements implemented: docked wide-screen inspector, section navigation
   and pinned download footer, scoped search/shared filter workbench, shell download activity and

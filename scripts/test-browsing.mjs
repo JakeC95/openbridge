@@ -276,7 +276,15 @@ try {
   const customFolder = join(libraryRoot, "Custom", "duplicate");
   await mkdir(customFolder, { recursive: true });
   await writeFile(join(customFolder, "fixture.json"), JSON.stringify({ id: "fixture", name: "Custom copy", type: "surface" }));
-  library = new LibraryService(() => libraryRoot, join(directory, "library.sqlite"), logger);
+  library = new LibraryService(
+    () => libraryRoot,
+    () => join(directory, "poliigon-library"),
+    () => join(directory, "polyhaven-library"),
+    () => null,
+    () => null,
+    join(directory, "library.sqlite"),
+    logger
+  );
   await library.scan(true);
   const previews = await library.previews("fixture", folder);
   check("local renders and nested browser-readable maps work offline", () => {
