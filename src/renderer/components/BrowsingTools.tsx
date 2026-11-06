@@ -46,9 +46,9 @@ export function DensityControl() {
   const setDensity = useStore(state => state.setDensity);
   return <Dropdown className="filter-select" value={density} ariaLabel="Thumbnail size"
     onChange={value => setDensity(value as typeof density)} options={[
-      { value: "compact", label: "Compact thumbnails" },
-      { value: "comfortable", label: "Comfortable thumbnails" },
-      { value: "large", label: "Large thumbnails" }
+      { value: "compact", label: "Compact" },
+      { value: "comfortable", label: "Comfortable" },
+      { value: "large", label: "Large" }
     ]} />;
 }
 
@@ -244,6 +244,7 @@ export function FilterWorkbench({ groups, showCounts = true, activeGroup, onActi
     <nav className="facet-tabs" aria-label="Filter groups">
       {groups.map(group => <button type="button" key={group.key}
         className={current === group.key ? "facet-tab active" : "facet-tab"}
+        title={group.label}
         aria-pressed={current === group.key} onClick={() => { setActive(group.key); onActiveGroup?.(group.key); }}>
         <span>{group.label}</span>{group.selected.length > 0 && <em>{group.selected.length}</em>}
       </button>)}

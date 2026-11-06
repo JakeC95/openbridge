@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
-import { readinessBadges, typeLabel } from "../catalog-utils";
+import { assetCountLabel, readinessBadges, typeLabel } from "../catalog-utils";
 import { assetTypeClass } from "../asset-visuals";
 import { CheckIcon, CloseIcon, FolderIcon, UploadIcon } from "../icons";
 import type { AssetProvider, AssetRecord, LibraryHealthReport, LibrarySort, RepoKind } from "../../shared/types";
@@ -225,7 +225,7 @@ export function LibraryView() {
     (localInterior ? 1 : 0);
   const selectionScope =
     selectedIds.size === 0
-      ? `${total.toLocaleString()} assets match current filters`
+      ? `${assetCountLabel(total)} matching current filters`
       : selectedIds.size === total
         ? `All ${total.toLocaleString()} matching assets`
         : selectedIds.size === assets.length
@@ -462,7 +462,7 @@ export function LibraryView() {
           <span className="result-count">
             {loading && assets.length === 0
               ? "Searching..."
-              : `${total.toLocaleString()} assets${assets.length < total ? `, ${assets.length.toLocaleString()} loaded` : ""}`}
+              : `${assetCountLabel(total)}${assets.length < total ? `, ${assets.length.toLocaleString()} loaded` : ""}`}
           </span>
         </div>
 

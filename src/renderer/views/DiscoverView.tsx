@@ -6,7 +6,7 @@ import { useBrowseScroll } from "../use-browse-scroll";
 import { LoadMore } from "../components/LoadMore";
 import { AssetList } from "../components/AssetList";
 import { useStore } from "../store";
-import { resolutionFacetValue, sortResolutionRecord } from "../catalog-utils";
+import { assetCountLabel, resolutionFacetValue, sortResolutionRecord } from "../catalog-utils";
 import { SIZE_FILTER_LABELS, SIZE_FILTER_OPTIONS, type SizeFilter } from "../size-filter";
 import { AssetCard } from "../components/AssetCard";
 import { galleryFacts, hitId, hitPreview, hitThumb, readinessBadges, typeLabel } from "../catalog-utils";
@@ -579,7 +579,7 @@ export function DiscoverView() {
           <span className="result-count">
             {loading && hits.length === 0
               ? "Searching..."
-              : `${nbHits.toLocaleString()} assets`}
+              : assetCountLabel(nbHits)}
           </span>
           <DensityControl />
           <PackBrowser packs={packs} />
@@ -701,7 +701,7 @@ export function DiscoverView() {
               </span>
               <span className="bulk-scope-detail">
                 {selectedIds.size === 0
-                  ? `${nbHits.toLocaleString()} assets match current filters`
+                  ? `${assetCountLabel(nbHits)} match current filters`
                   : selectedIds.size === nbHits
                     ? `All ${nbHits.toLocaleString()} matching assets`
                     : selectedIds.size === hits.length
@@ -849,9 +849,9 @@ export function DiscoverView() {
                   ? "You have no favorites yet."
                   : "Try a different search or clear the filters."}
               </p>
-              {(favoritesOnly || freeOnly || categoryPath.length > 0 || sizeFilter !== "any" || activeFacetCount > 0 || catalogPack) && (
-                <button type="button" className="btn btn-ghost" onClick={clearFilters}>
-                  Clear filters
+              {(query || favoritesOnly || freeOnly || categoryPath.length > 0 || sizeFilter !== "any" || activeFacetCount > 0 || catalogPack) && (
+                <button type="button" className="btn btn-ghost" onClick={() => { useStore.getState().setQuery(""); clearFilters(); }}>
+                  {query ? "Clear search and filters" : "Clear filters"}
                 </button>
               )}
             </div>

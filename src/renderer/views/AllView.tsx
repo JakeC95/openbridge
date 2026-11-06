@@ -25,7 +25,8 @@ import { PoliigonCard } from "../components/PoliigonCard";
 import { PolyHavenCard } from "../components/PolyHavenCard";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { VirtualGrid } from "../components/VirtualGrid";
-import { galleryFacts, hitId, hitPreview, hitThumb, readinessBadges, resolutionFacetValue, sortBucketsBy, sortResolutionBuckets, sortResolutionRecord, typeLabel } from "../catalog-utils";
+import { assetCountLabel, galleryFacts, hitId, hitPreview, hitThumb, readinessBadges, resolutionFacetValue, sortBucketsBy, sortResolutionBuckets, sortResolutionRecord, typeLabel } from "../catalog-utils";
+import { assetTypeLabel } from "../asset-visuals";
 import { ChevronDownIcon, CloseIcon, UserIcon } from "../icons";
 import { poliigonTechnical } from "../poliigon-technical";
 import { poliigonMapName, poliigonMapRank } from "../poliigon-labels";
@@ -168,7 +169,7 @@ function bucketRecord(buckets: Array<{ value: string; count: number }> | undefin
 
 function itemTypeLabel(item: UnifiedItem): string {
   if (item.provider === "megascans") return typeLabel(item.hit.type);
-  return item.hit.typeLabel;
+  return assetTypeLabel(item.hit.typeLabel);
 }
 
 function itemName(item: UnifiedItem): string {
@@ -490,6 +491,7 @@ export function AllView() {
       values: bucketRecord(polyResolutionBuckets),
       selected: polyResolutions,
       toggle: (value: string) => usePolyHavenStore.getState().toggleResolution(value),
+      labels: Object.fromEntries(polyResolutionBuckets.map(bucket => [bucket.value, bucket.value.toUpperCase()])),
       compare: (a: string, b: string) => resolutionFacetValue(a) - resolutionFacetValue(b)
     },
     ...(isHdri ? [] : [
@@ -744,6 +746,10 @@ export function AllView() {
   const clearFilters = (): void => {
     useStore.getState().clearAllFilters();
   };
+  const clearSearchAndFilters = (): void => {
+    useStore.getState().setQuery("");
+    clearFilters();
+  };
 
   const saveCurrentSearch = (): void => {
     const name =
@@ -894,7 +900,7 @@ export function AllView() {
             className="result-count"
             title={`Megascans ${megaTotal.toLocaleString()} · Poliigon ${poliTotal.toLocaleString()} · Poly Haven ${polyTotal.toLocaleString()}`}
           >
-            {loading && merged.length === 0 ? "Searching all sources…" : `${total.toLocaleString()} assets`}
+            {loading && merged.length === 0 ? "Searching all sources…" : assetCountLabel(total)}
           </span>
           <DensityControl />
           <RecentBrowsing />
@@ -988,36 +994,42 @@ export function AllView() {
             <span>All</span>
             <strong>{total.toLocaleString()}</strong>
           </button>
-          <button
-            type="button"
-            className="all-source-pill"
-            title="Focus the Megascans catalogue"
-            onClick={() => useStore.getState().setProvider("megascans")}
-          >
-            <ProviderLogo provider="megascans" />
-            <span>Megascans</span>
-            <strong>{megaTotal.toLocaleString()}</strong>
-          </button>
-          <button
-            type="button"
-            className="all-source-pill"
-            title="Focus the Poliigon catalogue"
-            onClick={() => useStore.getState().setProvider("poliigon")}
-          >
-            <ProviderLogo provider="poliigon" />
-            <span>Poliigon</span>
-            <strong>{poliTotal.toLocaleString()}</strong>
-          </button>
-          <button
-            type="button"
-            className="all-source-pill"
-            title="Focus the Poly Haven catalogue"
-            onClick={() => useStore.getState().setProvider("polyhaven")}
-          >
-            <ProviderLogo provider="polyhaven" />
-            <span>Poly Haven</span>
-            <strong>{polyTotal.toLocaleString()}</strong>
-          </button>
+          {megaTotal > 0 && (
+            <button
+              type="button"
+              className="all-source-pill"
+              title="Focus the Megascans catalogue"
+              onClick={() => useStore.getState().setProvider("megascans")}
+            >
+              <ProviderLogo provider="megascans" />
+              <span>Megascans</span>
+              <strong>{megaTotal.toLocaleString()}</strong>
+            </button>
+          )}
+          {poliTotal > 0 && (
+            <button
+              type="button"
+              className="all-source-pill"
+              title="Focus the Poliigon catalogue"
+              onClick={() => useStore.getState().setProvider("poliigon")}
+            >
+              <ProviderLogo provider="poliigon" />
+              <span>Poliigon</span>
+              <strong>{poliTotal.toLocaleString()}</strong>
+            </button>
+          )}
+          {polyTotal > 0 && (
+            <button
+              type="button"
+              className="all-source-pill"
+              title="Focus the Poly Haven catalogue"
+              onClick={() => useStore.getState().setProvider("polyhaven")}
+            >
+              <ProviderLogo provider="polyhaven" />
+              <span>Poly Haven</span>
+              <strong>{polyTotal.toLocaleString()}</strong>
+            </button>
+          )}
         </div>
 
         {isHdri && (
@@ -1156,7 +1168,7 @@ export function AllView() {
               <span className="bulk-count" aria-live="polite">{selectedKeys.size.toLocaleString()} selected</span>
               <span className="bulk-scope-detail">
                 {selectedKeys.size === 0
-                  ? `${total.toLocaleString()} assets match current filters`
+                  ? `${assetCountLabel(total)} match current filters`
                   : selectedKeys.size === total
                     ? `All ${total.toLocaleString()} matching assets`
                     : `${selectedKeys.size.toLocaleString()} of ${total.toLocaleString()} matching assets`}
@@ -1302,7 +1314,7 @@ export function AllView() {
                     key: item.key,
                     id: hit.id,
                     name: hit.name,
-                    type: hit.typeLabel,
+                    type: assetTypeLabel(hit.typeLabel),
                     image: hit.type === "hdris"
                       ? polyHavenPrimaryPreview(hit.thumbnail, 512) ?? hit.thumbnail
                       : hit.thumbnail,
@@ -1330,7 +1342,7 @@ export function AllView() {
                   key: item.key,
                   id: String(hit.id),
                   name: hit.name,
-                  type: hit.typeLabel,
+                  type: assetTypeLabel(hit.typeLabel),
                   image: hit.thumbnail,
                   technical,
                   dimensions: hit.physicalSize,
@@ -1460,9 +1472,9 @@ export function AllView() {
             <div className="empty">
               <h2>No assets found</h2>
               <p>Try a different search or clear the filters.</p>
-              {(allType || allStateFilter !== "all" || sizeFilter !== "any" || hasTimeFilter || activeFacetCount > 0) && (
-                <button type="button" className="btn btn-ghost" onClick={clearFilters}>
-                  Clear filters
+              {(query || allType || allStateFilter !== "all" || sizeFilter !== "any" || hasTimeFilter || activeFacetCount > 0) && (
+                <button type="button" className="btn btn-ghost" onClick={clearSearchAndFilters}>
+                  {query ? "Clear search and filters" : "Clear filters"}
                 </button>
               )}
             </div>

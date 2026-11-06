@@ -203,7 +203,7 @@ export function DownloadsView() {
           <div>
             <p className="view-subtitle">{summary}</p>
             {settings?.libraryPath && (
-              <p className="view-subtitle download-library-path">{settings.libraryPath}</p>
+              <p className="view-subtitle download-library-path">Megascans library · {settings.libraryPath}</p>
             )}
           </div>
           <div className="header-actions">
@@ -242,7 +242,7 @@ export function DownloadsView() {
               className="btn btn-ghost"
               onClick={() => settings && void window.openbridge.openPath(settings.libraryPath)}
             >
-              <FolderIcon /> Open library
+              <FolderIcon /> Open Megascans
             </button>
           </div>
         </div>

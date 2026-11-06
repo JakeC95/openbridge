@@ -655,7 +655,7 @@ export function AssetDrawer() {
           <div className="inspector-tabs" role="group" aria-label="Asset sections">
             {(["overview", "settings", "technical", "related"] as const).map(value => <button type="button" key={value}
               className={section === value ? "active" : ""} aria-pressed={section === value}
-              onClick={() => setSection(value)}>{value === "settings" ? (local ? "Files" : "Download settings") : value === "overview" ? "Overview" : value === "technical" ? "Technical" : "Related"}</button>)}
+              onClick={() => setSection(value)}>{value === "settings" ? (local ? "Files" : "Download") : value === "overview" ? "Overview" : value === "technical" ? "Technical" : "Related"}</button>)}
           </div>
           <div hidden={section !== "overview"}>
           {(technical.packId || technical.packName) && <div className="pack-link">

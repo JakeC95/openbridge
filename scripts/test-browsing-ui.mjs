@@ -274,7 +274,7 @@ app.whenReady().then(async()=>{
      const humanHeight=1.78*human.transform.baseVal.consolidate().matrix.a;
      assert(Math.abs(Number(scaleBox.getAttribute('height'))/humanHeight-.1/1.78)<1e-8,'Human and bounding box use different scales');
      assert(document.querySelector('.asset-scale-legend').textContent.includes('1.78 m tall'),'Human height reference missing');
-     clickText(document.querySelector('.inspector-tabs'),'Download settings');await wait(40);
+     clickText(document.querySelector('.inspector-tabs'),'Download');await wait(40);
      assert(document.querySelector('.download-box:not([hidden])'),'Download settings missing');
      const inspectorScroll=document.querySelector('.drawer-scroll');inspectorScroll.scrollTop=inspectorScroll.scrollHeight;await wait(40);
      assert(document.querySelector('.drawer-footer').getBoundingClientRect().bottom<=innerHeight,'Footer scrolled offscreen');
@@ -313,7 +313,7 @@ app.whenReady().then(async()=>{
     document.querySelector('.drawer [title="Close"]').click();
     const columnCount=()=>getComputedStyle(root().querySelector('.virtual-grid-window')).gridTemplateColumns.split(' ').length;
     const comfortableColumns=columnCount();
-    await choose('Thumbnail size','Compact thumbnails');
+    await choose('Thumbnail size','Compact');
     const compactColumns=columnCount();
     assert(compactColumns>comfortableColumns,'Compact density did not add columns: '+comfortableColumns+' -> '+compactColumns);
     assert(compactColumns>=3,'Compact density produced too few columns: '+compactColumns);
@@ -406,7 +406,7 @@ app.whenReady().then(async()=>{
        await win.webContents.executeJavaScript(\`[...document.querySelectorAll('.inspector-tabs button')].find(b=>b.textContent==='Overview').click();document.querySelector('.asset-scale-panel').scrollIntoView({block:'center'});\`);
        await new Promise(resolve=>setTimeout(resolve,120));
        if(output)await writeFile(join(output,'workspace-scale-'+requestedWidth+'.png'),(await win.webContents.capturePage()).toPNG());
-       await win.webContents.executeJavaScript(\`[...document.querySelectorAll('.inspector-tabs button')].find(b=>b.textContent==='Download settings').click();\`);
+       await win.webContents.executeJavaScript(\`[...document.querySelectorAll('.inspector-tabs button')].find(b=>b.textContent==='Download').click();\`);
        await new Promise(resolve=>setTimeout(resolve,100));
        if(output)await writeFile(join(output,'workspace-settings-'+requestedWidth+'.png'),(await win.webContents.capturePage()).toPNG());
        await win.webContents.executeJavaScript(\`document.querySelector('.drawer [title="Close"]').click();document.querySelectorAll('.nav-item')[1].click();\`);

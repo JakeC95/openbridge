@@ -38,7 +38,7 @@ export function DownloadsRail() {
       </dl> : <p className="hint">Loading session totals…</p>}
       <p className="hint">Network bytes exclude resumed files already on disk. Average includes request and finalization time.</p>
     </section>
-    <section className="download-rail-card"><h3>Library storage</h3>
+    <section className="download-rail-card"><h3>Megascans storage</h3>
       {disk ? <>
         <p className="storage-path" title={disk.libraryPath}>{disk.libraryPath}</p>
         {used !== null && <><strong className="storage-free">{bytes(disk.freeBytes!)} free</strong>

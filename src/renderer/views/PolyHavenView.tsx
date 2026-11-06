@@ -8,10 +8,11 @@ import { VirtualGrid } from "../components/VirtualGrid";
 import { AssetList } from "../components/AssetList";
 import { ChevronDownIcon, CloseIcon } from "../icons";
 import { TimeOfDaySlider } from "../components/TimeOfDaySlider";
-import { FilterWorkbench, type FilterGroup } from "../components/BrowsingTools";
+import { DensityControl, FilterWorkbench, type FilterGroup } from "../components/BrowsingTools";
 import { formatClockValue } from "../../shared/hdri-time";
 import { SIZE_FILTER_OPTIONS, sizeBounds, sizeFilterFromBounds, type SizeFilter } from "../size-filter";
-import { sortBucketsBy, sortResolutionBuckets, resolutionFacetValue } from "../catalog-utils";
+import { assetCountLabel, sortBucketsBy, sortResolutionBuckets, resolutionFacetValue } from "../catalog-utils";
+import { assetTypeLabel } from "../asset-visuals";
 import {
   POLYHAVEN_ATTRIBUTE_TYPES,
   polyHavenAttributeLabel,
@@ -187,6 +188,7 @@ export function PolyHavenView() {
         values: bucketRecord(sortResolutionBuckets(resolutionsFacet)),
         selected: resolutions,
         toggle: toggleResolution,
+        labels: Object.fromEntries(resolutionsFacet.map(bucket => [bucket.value, bucket.value.toUpperCase()])),
         compare: (a, b) => resolutionFacetValue(a) - resolutionFacetValue(b)
       });
     }
@@ -438,9 +440,11 @@ export function PolyHavenView() {
               ? "Indexing Poly Haven…"
               : loading && hits.length === 0
                 ? "Searching…"
-                : `${total.toLocaleString()} assets`}
+                : assetCountLabel(total)}
           </span>
-
+        </div>
+        <div className="filter-row">
+          <DensityControl />
           <button
             type="button"
             className="btn btn-ghost"
@@ -485,7 +489,7 @@ export function PolyHavenView() {
           {resolutions.map(value => (
             <button type="button" key={`resolution:${value}`} className="facet-chip active" onClick={() => toggleResolution(value)}>
               <span>Resolution</span>
-              <strong>{value}</strong>
+              <strong>{value.toUpperCase()}</strong>
               <em aria-hidden="true">×</em>
             </button>
           ))}
@@ -660,7 +664,7 @@ export function PolyHavenView() {
                 key: hit.id,
                 id: hit.id,
                 name: hit.name,
-                type: hit.typeLabel,
+                type: assetTypeLabel(hit.typeLabel),
                 image: hit.type === "hdris"
                   ? polyHavenPrimaryPreview(hit.thumbnail, 512) ?? hit.thumbnail
                   : hit.thumbnail,
@@ -728,11 +732,11 @@ export function PolyHavenView() {
             <div className="empty">
               <h2>No Poly Haven assets found</h2>
               <p>Try a different search or clear the filters.</p>
-              {activeCount > 0 && (
+              {activeCount > 0 || query ? (
                 <button type="button" className="btn btn-ghost" onClick={clearFilters}>
-                  Clear filters
+                  {query ? "Clear search and filters" : "Clear filters"}
                 </button>
-              )}
+              ) : null}
             </div>
           )}
 

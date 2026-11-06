@@ -53,10 +53,14 @@ export function hitPreview(hit: CatalogHit): string | null {
 export function typeLabel(type: string | undefined): string {
   switch ((type ?? "").toLowerCase()) {
     case "3d":
-      return "3D";
+    case "model":
+    case "models":
+      return "3D Model";
     case "3dplant":
       return "3D Plant";
     case "surface":
+    case "texture":
+    case "textures":
       return "Surface";
     case "atlas":
       return "Atlas";
@@ -64,14 +68,18 @@ export function typeLabel(type: string | undefined): string {
       return "Brush";
     case "decal":
       return "Decal";
-    case "texture":
-      return "Texture";
-    case "model":
-      return "Model";
+    case "imperfection":
+      return "Imperfection";
+    case "displacement":
+      return "Displacement";
     case "hdri":
+    case "hdris":
+    case "hdrs":
       return "HDRI";
     default:
-      return type ? type.toUpperCase() : "ASSET";
+      return type
+        ? type.replace(/[_-]+/g, " ").replace(/\b\w/g, letter => letter.toUpperCase())
+        : "Asset";
   }
 }
 
@@ -174,5 +182,10 @@ export function sortResolutionRecord(record: Record<string, number>): Record<str
 
 export function sortBucketsBy<T extends { value: string }>(buckets: T[], rank: (value: string) => number): T[] {
   return [...buckets].sort((a, b) => rank(a.value) - rank(b.value) || a.value.localeCompare(b.value));
+}
+
+/** "1 asset" / "2 assets" without changing the numeral formatting. */
+export function assetCountLabel(count: number): string {
+  return `${count.toLocaleString()} ${count === 1 ? "asset" : "assets"}`;
 }
 

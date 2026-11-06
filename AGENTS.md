@@ -149,6 +149,14 @@ Changes after `v1.4.2` are unreleased. Choose the next version when new work is 
   pass. The UI fixture now covers the three-provider All view, and All-view Shift selection closes
   open drawers and anchors the range like the focused Megascans view. These changes are pushed to
   `main`; no tag or release has been created.
+- UI polish pass after the audit: the provider switch is a 2×2 grid so “Poly Haven” no longer wraps
+  or clips at narrow widths; thumbnail density labels are short (`Compact`/`Comfortable`/`Large`);
+  result counts pluralise correctly (`1 asset`); Megascans ownership checks are hover-only; list and
+  drawer type labels use the shared provider-neutral vocabulary (`3D Model`, `Surface`, `HDRI`);
+  drawer tabs use `Download` and no longer wrap; Downloads wording is Megascans-specific where the
+  measured path is Megascans-only; zero-count source pills are hidden; empty search results offer
+  `Clear search and filters`; filter tabs ellipsise with tooltips and show thin scrollbars; and the
+  list view fits or scrolls cleanly at 1024/900 widths.
 
 - All five approved UI improvements implemented: docked wide-screen inspector, section navigation
   and pinned download footer, scoped search/shared filter workbench, shell download activity and

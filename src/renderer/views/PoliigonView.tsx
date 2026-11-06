@@ -11,7 +11,8 @@ import { TimeOfDaySlider } from "../components/TimeOfDaySlider";
 import { FilterWorkbench, type FilterGroup } from "../components/BrowsingTools";
 import { formatClockValue } from "../../shared/hdri-time";
 import { SIZE_FILTER_OPTIONS, sizeBounds, sizeFilterFromBounds, type SizeFilter } from "../size-filter";
-import { sortBucketsBy, sortResolutionBuckets, resolutionFacetValue } from "../catalog-utils";
+import { assetCountLabel, sortBucketsBy, sortResolutionBuckets, resolutionFacetValue } from "../catalog-utils";
+import { assetTypeLabel } from "../asset-visuals";
 import { poliigonMapName, poliigonMapRank } from "../poliigon-labels";
 import { usePoliigonStore } from "../poliigon-store";
 import { poliigonTechnical } from "../poliigon-technical";
@@ -397,7 +398,7 @@ export function PoliigonView() {
               ? "Indexing Poliigon…"
               : loading && hits.length === 0
                 ? "Searching…"
-                : `${total.toLocaleString()} assets`}
+                : assetCountLabel(total)}
           </span>
 
           <button
@@ -620,7 +621,7 @@ export function PoliigonView() {
                 key: String(hit.id),
                 id: String(hit.id),
                 name: hit.name,
-                type: hit.typeLabel,
+                type: assetTypeLabel(hit.typeLabel),
                 image: hit.thumbnail,
                 technical: poliigonTechnical(hit),
                 dimensions: hit.physicalSize,
@@ -701,11 +702,11 @@ export function PoliigonView() {
             <div className="empty">
               <h2>No Poliigon assets found</h2>
               <p>Try a different search or clear the filters.</p>
-              {activeCount > 0 && (
+              {activeCount > 0 || query ? (
                 <button type="button" className="btn btn-ghost" onClick={clearFilters}>
-                  Clear filters
+                  {query ? "Clear search and filters" : "Clear filters"}
                 </button>
-              )}
+              ) : null}
             </div>
           )}
 

@@ -857,7 +857,7 @@ export function PoliigonDrawer() {
                 aria-pressed={section === value}
                 onClick={() => setSection(value)}
               >
-                {value === "overview" ? "Overview" : value === "download" ? "Download settings" : value === "technical" ? "Technical" : "Related"}
+                {value === "overview" ? "Overview" : value === "download" ? "Download" : value === "technical" ? "Technical" : "Related"}
               </button>
             ))}
           </div>
