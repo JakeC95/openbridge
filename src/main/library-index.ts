@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
+  AssetProvider,
   AssetRecord,
   LibraryCounts,
   LibraryHealthReport,
@@ -15,12 +16,13 @@ import type {
 import type { Logger } from "./logger";
 import { canonicalType, categoryTree, localCategoryPath } from "../shared/browsing";
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 8;
 
 interface AssetRow {
   rowid: number;
   path: string;
   id: string;
+  provider: string;
   name: string;
   type: string;
   categories: string;
@@ -80,6 +82,7 @@ function parseList(value: string): string[] {
 function rowToAsset(row: AssetRow): AssetRecord {
   return {
     id: row.id,
+    provider: (row.provider as AssetProvider) || "megascans",
     name: row.name,
     type: row.type,
     categories: parseList(row.categories),
@@ -138,16 +141,16 @@ export class LibraryIndex {
     this.db.close();
   }
 
-  ensureLibraryPath(libraryPath: string): void {
-    const current = this.getMeta("library_path");
-    if (!current) {
-      this.setMeta("library_path", libraryPath);
-      return;
-    }
-    if (current === libraryPath) return;
+  ensureLibraryPaths(megascansPath: string, poliigonPath: string, polyhavenPath: string): void {
+    const currentMega = this.getMeta("library_path");
+    const currentPoli = this.getMeta("poliigon_library_path");
+    const currentPoly = this.getMeta("polyhaven_library_path");
+    if (currentMega === megascansPath && currentPoli === poliigonPath && currentPoly === polyhavenPath) return;
     this.transaction(() => {
       this.db.exec("DELETE FROM assets;");
-      this.setMeta("library_path", libraryPath);
+      this.setMeta("library_path", megascansPath);
+      this.setMeta("poliigon_library_path", poliigonPath);
+      this.setMeta("polyhaven_library_path", polyhavenPath);
       this.setMeta("scanned_at", "0");
     });
   }
@@ -169,11 +172,12 @@ export class LibraryIndex {
     if (entries.length === 0) return;
     const statement = this.db.prepare(
       `INSERT INTO assets (
-        path, id, name, type, categories, tags, repo, json_path, preview, thumb,
+        path, id, provider, name, type, categories, tags, repo, json_path, preview, thumb,
         mtime, preview_relative_size, search_str, folder_mtime, json_mtime, technical_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         id = excluded.id,
+        provider = excluded.provider,
         name = excluded.name,
         type = excluded.type,
         categories = excluded.categories,
@@ -195,6 +199,7 @@ export class LibraryIndex {
         statement.run(
           asset.path,
           asset.id,
+          asset.provider ?? "megascans",
           asset.name,
           asset.type,
           JSON.stringify(asset.categories),
@@ -233,14 +238,16 @@ export class LibraryIndex {
     return Number(this.getMeta("scanned_at") ?? 0) || 0;
   }
 
-  getSnapshot(libraryPath: string): LibrarySnapshot {
+  getSnapshot(libraryPath: string, poliigonLibraryPath?: string, polyhavenLibraryPath?: string): LibrarySnapshot {
     const counts = this.counts();
     return {
       refs: this.refs(),
       total: counts.all,
       counts,
       scannedAt: this.getScannedAt(),
-      libraryPath
+      libraryPath,
+      poliigonLibraryPath,
+      polyhavenLibraryPath
     };
   }
 
@@ -251,14 +258,17 @@ export class LibraryIndex {
   }
 
   counts(): LibraryCounts {
-    const counts: LibraryCounts = { all: 0, downloaded: 0, custom: 0, dhi: 0 };
+    const counts: LibraryCounts = { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, downloaded: 0, custom: 0, dhi: 0 };
     const rows = this.db
-      .prepare("SELECT repo, COUNT(*) AS total FROM assets GROUP BY repo")
-      .all() as Array<{ repo: string; total: number }>;
+      .prepare("SELECT provider, repo, COUNT(*) AS total FROM assets GROUP BY provider, repo")
+      .all() as Array<{ provider: string; repo: string; total: number }>;
     for (const row of rows) {
       if (row.repo === "downloaded" || row.repo === "custom" || row.repo === "dhi") {
-        counts[row.repo] = Number(row.total);
+        counts[row.repo] += Number(row.total);
       }
+      if (row.provider === "poliigon") counts.poliigon += Number(row.total);
+      else if (row.provider === "polyhaven") counts.polyhaven += Number(row.total);
+      else counts.megascans += Number(row.total);
       counts.all += Number(row.total);
     }
     return counts;
@@ -382,6 +392,10 @@ export class LibraryIndex {
     if (options.ids) {
       clauses.push("a.id IN (SELECT value FROM json_each(?))");
       params.push(JSON.stringify(options.ids));
+    }
+    if (options.provider && options.provider !== "all") {
+      clauses.push("a.provider = ?");
+      params.push(options.provider);
     }
     if (options.repo && options.repo !== "all") {
       clauses.push("a.repo = ?");
@@ -512,7 +526,7 @@ export class LibraryIndex {
     });
   }
 
-  healthReport(libraryPath: string): LibraryHealthReport {
+  healthReport(libraryPath: string, poliigonLibraryPath?: string, polyhavenLibraryPath?: string): LibraryHealthReport {
     const totals = this.db
       .prepare(
         `SELECT COUNT(*) AS assets,
@@ -582,6 +596,8 @@ export class LibraryIndex {
 
     return {
       libraryPath,
+      poliigonLibraryPath,
+      polyhavenLibraryPath,
       scannedAt: Date.now(),
       assets: Number(totals.assets),
       files: Number(totals.files),
@@ -640,6 +656,7 @@ export class LibraryIndex {
         rowid INTEGER PRIMARY KEY AUTOINCREMENT,
         path TEXT NOT NULL UNIQUE,
         id TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'megascans',
         name TEXT NOT NULL,
         type TEXT NOT NULL,
         categories TEXT NOT NULL,
@@ -664,6 +681,7 @@ export class LibraryIndex {
       );
 
       CREATE INDEX assets_id_idx ON assets(id);
+      CREATE INDEX assets_provider_idx ON assets(provider);
       CREATE INDEX assets_type_idx ON assets(type);
       CREATE INDEX assets_repo_idx ON assets(repo);
       CREATE INDEX assets_mtime_idx ON assets(mtime DESC);

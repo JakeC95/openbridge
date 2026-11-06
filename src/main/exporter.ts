@@ -81,7 +81,7 @@ async function walk(dir: string, output: string[] = []): Promise<string[]> {
 function exportName(asset: AssetRecord, file: string, resolution: string): string {
   const extension = extname(file).replace(".", "").toLowerCase();
   const mapName = guessMapType(file) ?? basename(file, extname(file));
-  return `${asset.id}_${mapName}_${resolution}.${extension}`;
+  return `${asset.id}_${mapName}_${resolution}.${extension}`.replace(/[\\/:*?"<>|]+/g, "_");
 }
 
 function folderName(asset: AssetRecord): string {
@@ -191,9 +191,10 @@ export async function buildExportAsset(
     meta: json.meta ?? [],
     materials: json.materials ?? {},
     textureSets: json.textureSets ?? {},
-    workflow: "specular",
-    origin:
-      typeof json.origin === "string"
+    workflow: asset.provider === "poliigon" ? "metal-rough" : "specular",
+    origin: asset.provider === "poliigon"
+      ? "poliigon"
+      : typeof json.origin === "string"
         ? json.origin
         : asset.repo === "custom"
           ? "mixer-created"

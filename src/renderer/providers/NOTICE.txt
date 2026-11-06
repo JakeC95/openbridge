@@ -1,0 +1,13 @@
+﻿Provider marks
+==============
+
+The Poliigon, Quixel/Megascans and Poly Haven names and marks are trademarks of
+their respective owners. They are used only to identify the catalogue source in
+the OpenBridge UI.
+
+- poliigon.svg: favicon from poliigon.com (embedded 48 px PNG)
+- megascans.svg: Megascans mark supplied for the product (source:
+  escape-technology.de/images/products/Epic-Games/megascans-logo.png),
+  resized and rounded with transparent corners.
+- polyhaven.png: official Poly Haven logo from polyhaven.com/Logo%20256.png,
+  used only to identify the catalogue source. Poly Haven assets are CC0.

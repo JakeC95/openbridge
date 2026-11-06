@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { AssetTechnicalSummary } from "../../shared/types";
 import { assetBounds, scaleMeasurement } from "../../shared/asset-scale";
 import { formatMeasurementText } from "../../shared/measurements";
+import { SmartThumbImage } from "./SmartThumbImage";
+import { poliigonMapName } from "../poliigon-labels";
 
 export interface AssetListItem {
   key: string;
@@ -49,7 +51,7 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
           const isSurface = /surface|atlas|decal|imperfection|displacement|brush/i.test(item.type);
           const max = bounds ? Math.max(bounds.height, 1.78) : 1.78;
           return <article className="comparison-card" key={item.key}>
-            <div className="comparison-preview">{item.image ? <img src={item.image} alt="" referrerPolicy="no-referrer" /> : <span>No preview available</span>}
+            <div className="comparison-preview">{item.image ? <SmartThumbImage source={item.image} alt="" /> : <span>No preview available</span>}
               <span className="comparison-status">{item.status || "Unknown status"}</span></div>
             <div className="comparison-card-body"><div className="comparison-title"><div><span>{item.type || "Asset"}</span><h3 title={item.name}>{item.name}</h3></div>
               <button type="button" className="icon-btn" onClick={() => toggle(item.key)} aria-label={`Remove ${item.name} from comparison`}>×</button></div>
@@ -71,7 +73,7 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
                   <div><i style={{ width: `${1.78 / max * 100}%` }} /><small>Human · 1.78 m</small></div>
                 </div> : <p className="hint">Complete bounding dimensions unavailable.</p>}
               </div>}
-              {technical?.mapTypes && technical.mapTypes.length > 0 && <div className="comparison-tags" aria-label="Available map types">{technical.mapTypes.map(map => <span key={map}>{map}</span>)}</div>}
+              {technical?.mapTypes && technical.mapTypes.length > 0 && <div className="comparison-tags" aria-label="Available map types">{technical.mapTypes.map(map => <span key={map}>{/^[A-Z0-9_]+$/.test(map) ? poliigonMapName(map) : map}</span>)}</div>}
               {item.facts && item.facts.length > 0 && <div className="comparison-tags">{item.facts.map(fact => <span key={fact}>{fact}</span>)}</div>}
               <button type="button" className="btn btn-ghost comparison-open" onClick={item.onOpen}>Open asset</button>
             </div>
@@ -81,9 +83,9 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
       <p className="comparison-footnote">Preview images are not to scale. Where available, height bars are scaled within each card against a 1.78 m reference; compare numerical labels across cards.</p>
     </section>}
     <div className="asset-list-scroll"><table className="asset-list"><thead><tr><th>Select</th><th>Asset</th><th>Type</th><th>Dimensions</th><th>Resolution</th><th>Status</th></tr></thead>
-      <tbody>{items.map(item => <tr key={item.key}>
-        <td><input type="checkbox" aria-label={`Select ${item.name} for comparison`} checked={selected.has(item.key)} onChange={() => toggle(item.key)} /></td>
-        <td><button type="button" className="text-btn asset-list-name" onClick={item.onOpen}>{item.name}</button></td>
+      <tbody>{items.map(item => <tr key={item.key} onClick={item.onOpen}>
+        <td onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${item.name} for comparison`} checked={selected.has(item.key)} onChange={() => toggle(item.key)} /></td>
+        <td><button type="button" className="text-btn asset-list-name" onClick={event => { event.stopPropagation(); item.onOpen(); }}>{item.name}</button></td>
         <td>{item.type || "Unknown"}</td><td>{item.dimensions ? formatMeasurementText(item.dimensions) : "—"}</td><td>{item.resolution || "—"}</td><td>{item.status || "—"}</td>
       </tr>)}</tbody></table></div>
     <p className="hint">Only loaded assets appear in this list. Comparison uses existing metadata; additional details may require opening an asset.</p>

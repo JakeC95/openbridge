@@ -18,12 +18,15 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 
 export class SettingsStore {
   private data: AppSettings;
+  private readonly provided: Set<string>;
 
   constructor(
     private readonly filePath: string,
     defaults: AppSettings
   ) {
-    this.data = { ...defaults, ...this.read() };
+    const raw = this.read();
+    this.provided = new Set(Object.keys(raw));
+    this.data = { ...defaults, ...raw };
     this.migrate();
     this.normalise();
   }
@@ -51,6 +54,24 @@ export class SettingsStore {
       }
       old.downloadDefaults = defaults;
     }
+    // Keep existing Megascans libraries where they are, and place Poliigon next to them.
+    // New installs get both providers under the configured root.
+    if (!this.provided.has("poliigonLibraryPath")) {
+      const megascans = String(this.data.libraryPath ?? "").trim();
+      if (megascans) {
+        const parent = dirname(megascans);
+        this.data.poliigonLibraryPath = join(parent, "Poliigon");
+        if (!this.provided.has("libraryRoot")) this.data.libraryRoot = parent;
+      }
+    }
+    if (!this.provided.has("polyhavenLibraryPath")) {
+      const megascans = String(this.data.libraryPath ?? "").trim();
+      if (megascans) {
+        const parent = dirname(megascans);
+        this.data.polyhavenLibraryPath = join(parent, "PolyHaven");
+        if (!this.provided.has("libraryRoot")) this.data.libraryRoot = parent;
+      }
+    }
     delete old.offlineLibraryPath;
     delete old.downloadConcurrency;
     delete old.downloadTimeoutSec;
@@ -63,6 +84,23 @@ export class SettingsStore {
 
   private normalise(): void {
     this.data.libraryPath = String(this.data.libraryPath ?? "").trim();
+    this.data.libraryRoot = String(this.data.libraryRoot ?? "").trim();
+    if (!this.data.libraryRoot && this.data.libraryPath) {
+      this.data.libraryRoot = dirname(this.data.libraryPath);
+    }
+    this.data.poliigonLibraryPath = String(this.data.poliigonLibraryPath ?? "").trim();
+    if (!this.data.poliigonLibraryPath) {
+      this.data.poliigonLibraryPath = this.data.libraryRoot
+        ? join(this.data.libraryRoot, "Poliigon")
+        : "";
+    }
+    this.data.polyhavenLibraryPath = String(this.data.polyhavenLibraryPath ?? "").trim();
+    if (!this.data.polyhavenLibraryPath) {
+      this.data.polyhavenLibraryPath = this.data.libraryRoot
+        ? join(this.data.libraryRoot, "PolyHaven")
+        : "";
+    }
+    this.data.poliigonConfirmPurchases = this.data.poliigonConfirmPurchases !== false;
     this.data.apiPort = clampInt(this.data.apiPort, 1024, 65535, 28241);
     this.data.discoveryPort = clampInt(this.data.discoveryPort, 1024, 65535, 28852);
     this.data.autoSyncEnabled = Boolean(this.data.autoSyncEnabled);

@@ -142,6 +142,22 @@ export function assetTechnicalFacts(
   asset: ExtendedAsset | undefined
 ): AssetTechnicalFacts {
   const maps = mapDescriptors(asset);
+  const formatSet = new Set<string>();
+  for (const entry of maps) {
+    if (typeof entry.mimeType === "string" && entry.mimeType) formatSet.add(formatLabel(entry.mimeType));
+    for (const uri of entry.uris ?? []) {
+      for (const resolutionEntry of uri.resolutions ?? []) {
+        for (const format of resolutionEntry.formats ?? []) {
+          if (format.lodType) continue;
+          if (format.mimeType) formatSet.add(formatLabel(format.mimeType));
+        }
+      }
+    }
+  }
+  const formatOrder = ["JPG", "PNG", "TIF", "TIFF", "EXR", "HDR"];
+  const mapFormats = [...formatSet].sort(
+    (a, b) => (formatOrder.indexOf(a) + 1 || 99) - (formatOrder.indexOf(b) + 1 || 99)
+  );
   const resolutions = maps
     .map(entry => {
       if (typeof entry.resolution === "string" || typeof entry.resolution === "number") {
@@ -159,14 +175,34 @@ export function assetTechnicalFacts(
   const models = allModels(asset);
   const lods = new Set<number>();
   let maxTris = 0;
+  const lodTriangles: Array<{ label: string; tris: number }> = [];
+  const seenLods = new Set<string>();
+  let lodIndex = 0;
   for (const model of models) {
     if (typeof model.lod === "number") lods.add(model.lod);
     if (typeof model.tris === "number") maxTris = Math.max(maxTris, model.tris);
+    if (typeof model.tris !== "number" || model.tris <= 0) continue;
+    if (model.type === "original") {
+      if (!seenLods.has("SOURCE")) {
+        seenLods.add("SOURCE");
+        lodTriangles.push({ label: "SOURCE", tris: model.tris });
+      }
+    } else if (model.type === "lod") {
+      const label = typeof model.lod === "number" ? `LOD${model.lod}` : `LOD${lodIndex}`;
+      if (!seenLods.has(label)) {
+        seenLods.add(label);
+        lodTriangles.push({ label, tris: model.tris });
+      }
+      lodIndex += 1;
+    }
   }
   if (lods.size === 0) {
     const lodMeshes = (asset?.meshes ?? []).filter(mesh => mesh.type === "lod");
     lodMeshes.forEach((_mesh, index) => lods.add(index));
   }
+  const lodRank = (label: string): number =>
+    label === "SOURCE" ? -1 : Number.parseInt(label.replace(/\D/g, ""), 10) || 0;
+  lodTriangles.sort((a, b) => lodRank(a.label) - lodRank(b.label));
 
   const dimensions = metaValue(asset, "dimensions");
   const variationDimensions = Array.isArray(dimensions)
@@ -294,7 +330,9 @@ export function assetTechnicalFacts(
     resolution,
     mapTypes: allMapTypes(asset),
     mapCount: allMapTypes(asset).length,
+    mapFormats,
     lodCount: lods.size,
+    lodTriangles,
     maxTris,
     variationCount,
     billboardCount: asset?.billboards?.length ?? 0,

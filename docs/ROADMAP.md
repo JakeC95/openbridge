@@ -170,6 +170,122 @@ end-to-end benchmark against original Bridge has been performed.
   finished queue entries does not delete history. Earlier completions cannot be recovered retroactively.
 - Version selected locally; no tag or GitHub release published yet.
 
+## Phase 8 - Poliigon provider (implemented, unreleased)
+
+- Provider dimension (`megascans` | `poliigon`) in types, settings, IPC and renderer state.
+- Shared library root with per-provider folders; existing Megascans paths preserved.
+- Public Poliigon catalogue fetch (`/all`, `/category/list`) into a compact SQLite/FTS index.
+  The index is re-checked at launch, on window focus and every two hours while the app runs,
+  and refreshes once it is six hours old (with a fifteen-minute retry cooldown), so newly
+  published assets appear without restarting. Megascans remains live per query.
+- Poliigon category tree, type/free/facet filters, search, sort, paged virtual grid and drawer with
+  renders, watermarked map previews and technical metadata.
+- No third-party search key, no telemetry, no account required for browsing.
+- Poliigon account sign-in (browser flow), DPAPI token storage, plan/credits and owned-asset badges
+  are implemented. Password login is hidden because Poliigon rejects it.
+- Poliigon downloads are implemented: payload builder, manifest requests, parallel resumable
+  transfers, pause/resume/cancel, dynamic MaterialX files and addon-compatible folder layout.
+  Premium purchases remain blocked until Phase 5.
+- The unified library index is provider-aware (schema v8). The Library view can filter All sources,
+  Megascans or Poliigon; Poliigon locals get previews, local resolution/map/LOD facts, health
+  statistics, search and an automatic rescan after download. Library is local disk only and
+  works offline. The topbar **Check library** action audits acquired assets against disk and
+  never downloads anything.
+- Parity polish: ID/URL/description search, relevance sorting, recent searches, local favorites,
+  downloaded badges/filter, related assets, clickable categories/tags, list/compare view, bulk
+  selection/download, Common/All/None map presets, DCC/renderer selection, remembered download
+  defaults, expandable 2000px render previews, Megascans-shaped drawer tabs/footer, tab-aware
+  scrolling, a Relative size panel and technical grid, a Catalogue/Library search scope,
+  single-mesh model handling and catalogue status in Settings.
+- Combined Discover is now the default **All** source scope. It merges Megascans, Poliigon and
+  Poly Haven assets in one grid/list through a curated cross-provider taxonomy: 3D Assets, 3D Plants,
+  Surfaces, HDRIs, Atlases, Decals, Brushes, Imperfections and Displacements, plus shared
+  subtopics such as Architecture, Furniture, Food & Drink, Rocks & Terrain, Wood & Flooring,
+  Ground & Nature and Houseplants. Provider type/category filters are applied behind each node,
+  search and pagination run against all catalogues, and all facet sets, counts, size/state/
+  downloaded filters, saved searches, recent searches and viewed assets, Megascans packs,
+  scroll restoration, selection and download queues are combined. Focused provider views remain
+  available.
+  Both Render and Maps preview modes now have previous/next arrows. Technical panels across
+  Megascans and Poliigon share group headers and field order (Geometry / Maps / Delivery /
+  Metadata), show Max resolution and Map formats whenever available, use LOD counts and
+  per-LOD triangle tables, and use provider-neutral type/Access labels. Megascans also gained
+  Resolutions/Default resolution, Catalogue ID, Texture maps, physical size/Asset ID, a favourite
+  action and the download-destination note. DCC compatibility chips are not shown in the
+  technical panel; the DCC chooser stays in download settings. Provider identity now uses the
+  supplied Megascans mark and the Poliigon favicon instead of coloured dots. HDRI browsing adds
+  a dual-handle 0–24 h time-of-day slider where the handles set the start and end of the
+  falloff window (default 09:00–15:00), crossing midnight automatically, with dawn/noon/dusk/
+  night ticks and an All day reset, fed by a `time_of_day` catalogue column estimated from
+  provider metadata; HDRI views hide size, texture-map and pack filters and show the estimated
+  time on cards, footers and technical rows.
+  Poliigon technical metadata now includes release status, HDRI sun position, named texture maps
+  and vendor compatibility. Map previews for both textures and 3D models now request the
+  smallest (1K) manifest map images, cache them under userData and show them unwatermarked;
+  opening a map in the full-screen viewer upgrades it to the highest available resolution,
+  cached separately under `poliigon-map-highres`, with the shared loading and retry UI.
+  HDRI maps expose both a Tone-mapped JPG entry and an HDR (EXR) entry, open on the Maps view,
+  and expand from the Render tab straight into the genuine HDRI preview. Selecting HDR enables
+  the live view immediately and preserves zoom/pan for comparison. The default full-screen
+  image is the highest-resolution JPG/PNG, and the exposure slider downloads and decodes the
+  highest published HDR/EXR tier, applies live GPU ACES/sRGB exposure in WebGL without per-stop
+  image caches, and maps screen pixels through the same zoom/pan transform as the JPG viewer so
+  the HDR view stays equally sharp, with dithering to keep gradients band-free. HDRI previews
+  additionally open as an interactive equirectangular 360° panorama (both tone-mapped and HDR)
+  with drag-to-look, wheel/button FOV and `P` flat/panorama toggle; it is an independent
+  implementation of Poly Haven's interaction model because `imgvwr` is a native app and the
+  site source is AGPL. Temporary
+  preview transfers use the normal Download activity UI for size, speed, ETA and CDN source,
+  and transient provider 429/5xx responses retry briefly or surface a Retry action. Preview
+  caches larger than a thumbnail are flushed on quit, keeping thumbnail-sized files. Clicking
+  the image closes the viewer. Textures fall back to public watermarked
+  previews only if genuine maps are unavailable. This is limited to free, owned or plan-included
+  assets so previews never spend credits or acquire an asset implicitly.
+- In-app credit purchases are intentionally deferred. OpenBridge assumes the user already has the
+  required subscription or owns the assets.
+- Next: Poliigon queue persistence across restarts and any remaining DCC import/export work.
+
+See [POLIIGON.md](POLIIGON.md).
+
+## Phase 9 - Poly Haven provider (implemented, unreleased)
+
+- Public CC0 catalogue (`/assets?t=hdris|textures|models`) indexed into
+  `polyhaven-catalog.sqlite` with FTS search, type/category/resolution/map/collection facets,
+  sorting and explicit HDRI `time_of_day`.
+- Background `/files/{id}` enrichment (keyed by `files_hash`) supplies resolutions, map codes,
+  image formats and model package formats without repeating requests for unchanged assets.
+- Focused Discover view with category tree, collections, bulk selection/downloads, local
+  favourites and downloaded filters, list/compare view, and a drawer with previews, genuine map
+  previews, live HDR/360 HDRI exposure, technical groups and download settings.
+- Public downloads write self-contained folders with `openbridge-polyhaven.json` and `preview.png`.
+  The local Library scans those records plus folders created by other tools, and exposes Poly Haven
+  in the source filter, health scan and category tree.
+- All source scope and unified taxonomy include Poly Haven alongside Megascans and Poliigon.
+- Next: persist bulk queue state across restarts if it becomes necessary, and consider optional
+  background refresh notifications for newly published assets.
+
+See [POLYHAVEN.md](POLYHAVEN.md).
+
+## Filter workbench audit (1.5.9, unreleased)
+
+- One searchable filter workbench is shared by Discover, All sources, Poliigon, Poly Haven and the
+  local Library, with a group rail and value pane that scroll independently in a viewport-capped
+  panel. Results remain visible while filters are open, and empty filter controls are hidden.
+- Filter and sort sets now vary per provider and asset type: HDRI views hide physical size, maps
+  and triangles; atlases, decals, brushes, imperfections and displacements only expose facets that
+  apply to them; the Library exposes readiness/triangles/colour/condition/setting per type.
+- Physical-size presets (`Up to 50 cm`, `50 cm – 2 m`, `2 – 5 m`, `5 m and larger`) are shared by
+  Discover, All sources, Poliigon and Poly Haven, with matching largest-first sorting. Size filters
+  and sorts are hidden where the provider publishes no dimensions.
+- Poliigon map codes are canonicalised during indexing, merging legacy tokens (`COL`, `NRM`,
+  `METALNESS`) with current PascalCase names (`BaseColor`, `Normal`, `Metalness`). The catalogue
+  schema is v9; existing indexes rebuild automatically. Facet labels and order are friendly and
+  stable, and legacy filter values still resolve.
+- Resolution and texture-map facets sort canonically instead of by count, and Megascans facet values
+  are humanised (`temperate-forest` → `Temperate Forest`).
+- Hidden filters reset when switching type or provider, and focused provider views clear size
+  bounds that do not apply to the newly selected type.
+
 ## Non-goals
 
 - Reproducing the old insecure Electron 10 renderer (`nodeIntegration`, `remote`).

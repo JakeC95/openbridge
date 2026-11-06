@@ -7,6 +7,9 @@ import type {
   ExtendedAsset,
   Profile
 } from "../shared/types";
+import { app } from "electron";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AuthService } from "./auth";
 import { apiUrl, legacyConfig, USER_AGENT } from "./legacy-config";
 import type { Logger } from "./logger";
@@ -387,8 +390,81 @@ export async function fetchCategories(): Promise<CategoryNode[]> {
   }));
 }
 
-function buildAlgoliaParams(
-  params: CatalogQuery,
+const MEGASCANS_ID_INDEX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+let megascansIds: string[] = [];
+let megascansIdsAt = 0;
+let megascansIdsLoading: Promise<void> | null = null;
+
+function megascansIdIndexPath(): string {
+  return join(app.getPath("userData"), "megascans-ids.json");
+}
+
+function readCachedMegascansIds(): void {
+  try {
+    const parsed = JSON.parse(readFileSync(megascansIdIndexPath(), "utf8")) as {
+      updatedAt?: number;
+      ids?: unknown;
+    };
+    if (typeof parsed.updatedAt !== "number" || !Array.isArray(parsed.ids)) return;
+    megascansIds = parsed.ids
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .sort();
+    megascansIdsAt = parsed.updatedAt;
+  } catch {
+    // cache is optional
+  }
+}
+
+/**
+ * Build a compact local list of catalogue object ids so short ID prefixes can
+ * resolve before the user types the whole random suffix. Algolia does not
+ * prefix-match objectID, so this index is created once and refreshed weekly.
+ */
+export async function primeMegascansIdIndex(force = false): Promise<void> {
+  if (megascansIdsLoading) return megascansIdsLoading;
+  if (megascansIds.length === 0) readCachedMegascansIds();
+  if (
+    !force &&
+    megascansIds.length > 0 &&
+    Date.now() - megascansIdsAt < MEGASCANS_ID_INDEX_TTL_MS
+  ) {
+    return;
+  }
+  megascansIdsLoading = (async () => {
+    try {
+      const result = await searchCatalogIds({ query: "", page: 0 });
+      if (result.entries.length === 0) return;
+      megascansIds = [...new Set(result.entries.map(entry => entry.id))].sort();
+      megascansIdsAt = Date.now();
+      mkdirSync(app.getPath("userData"), { recursive: true });
+      writeFileSync(
+        megascansIdIndexPath(),
+        JSON.stringify({ updatedAt: megascansIdsAt, ids: megascansIds }),
+        "utf8"
+      );
+    } catch {
+      // Prefix resolution is an enhancement; normal catalogue search still works.
+    }
+  })().finally(() => {
+    megascansIdsLoading = null;
+  });
+  return megascansIdsLoading;
+}
+
+function megascansIdPrefixMatches(value: string, limit = 6): string[] {
+  const term = value.trim();
+  if (term.length < 4 || !/^[a-z0-9_]+$/i.test(term)) return [];
+  const prefix = term.toLowerCase();
+  const matches: string[] = [];
+  for (const id of megascansIds) {
+    if (!id.toLowerCase().startsWith(prefix)) continue;
+    matches.push(id);
+    if (matches.length >= limit) break;
+  }
+  return matches;
+}
+
+function buildAlgoliaParams(  params: CatalogQuery,
   page: number,
   hitsPerPage: number,
   attributesToRetrieve?: string[]
@@ -413,6 +489,13 @@ function buildAlgoliaParams(
     filters.push(
       `assetCategories:"${params.categoryPath.join(" | ").replace(/"/g, "")}"`
     );
+  }
+  if (params.categoryPaths && params.categoryPaths.length > 0) {
+    const clauses = params.categoryPaths
+      .filter(path => path.length > 0)
+      .map(path => `assetCategories:"${path.join(" | ").replace(/"/g, "")}"`);
+    if (clauses.length === 1) filters.push(clauses[0]);
+    else if (clauses.length > 1) filters.push(`(${clauses.join(" OR ")})`);
   }
   if (params.ids && params.ids.length) {
     filters.push(
@@ -495,6 +578,39 @@ export async function searchCatalog(params: CatalogQuery, signal?: AbortSignal):
   signal?.throwIfAborted();
   if (primary.status === "rejected") throw primary.reason;
   const result = primary.value as CatalogResult;
+
+  // Algolia treats objectID as exact-only, so a partial ID like "xgwkda"
+  // returns nothing. Resolve local ID prefixes and show the real catalogue hits.
+  const prefixIds = params.ids ? [] : megascansIdPrefixMatches(params.query ?? "");
+  if (prefixIds.length > 0 && (prefixIds.length <= 3 || result.nbHits === 0)) {
+    const existingIds = new Set(result.hits.map(hit => hit.id || hit.objectID));
+    const missing = prefixIds.filter(id => !existingIds.has(id));
+    if (missing.length > 0) {
+      try {
+        const exact = await algoliaQuery<CatalogResult>(
+          buildAlgoliaParams(
+            { ...params, query: "", ids: missing, page: 0, hitsPerPage: missing.length, facets: [] },
+            0,
+            missing.length
+          ),
+          signal
+        );
+        const prefixHits = exact.hits;
+        if (prefixHits.length > 0) {
+          const prefixSet = new Set(prefixHits.map(hit => hit.id || hit.objectID));
+          result.hits = [
+            ...prefixHits,
+            ...result.hits.filter(hit => !prefixSet.has(hit.id || hit.objectID))
+          ];
+          result.nbHits = Math.max(result.hits.length, result.nbHits + prefixHits.length);
+          result.nbPages = Math.max(1, result.nbPages);
+        }
+      } catch {
+        // ID prefix lookup must never break normal search.
+      }
+    }
+  }
+
   const facets = { ...result.facets };
   for (const refinement of refinements) {
     if (refinement.status === "fulfilled") {

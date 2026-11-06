@@ -1,4 +1,4 @@
-import type { CatalogQuery, LibraryQuery, LibrarySort, PackRef, RepoKind } from "../shared/types";
+import type { AssetProvider, CatalogQuery, LibraryQuery, LibraryRef, LibrarySort, PackRef, RepoKind } from "../shared/types";
 
 export function readPreference<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(`openbridge.${key}`) ?? "null") ?? fallback; }
@@ -10,6 +10,7 @@ export function writePreference(key: string, value: unknown): void {
 }
 
 export interface LocalFilters {
+  localProvider: AssetProvider | "all";
   localQuery: string;
   localRepo: "all" | RepoKind;
   localType: string;
@@ -27,6 +28,7 @@ export interface LocalFilters {
 
 export function libraryFilterQuery(state: LocalFilters): LibraryQuery {
   return {
+    provider: state.localProvider === "all" ? undefined : state.localProvider,
     query: state.localQuery, repo: state.localRepo, type: state.localType || undefined,
     categoryPath: state.localCategoryPath, sort: state.localSort,
     ids: state.localFavoritesOnly ? state.favorites : undefined,
@@ -41,8 +43,12 @@ export interface CatalogFilters {
   query: string;
   type: string;
   categoryPath: string[];
+  categoryPaths?: string[][];
   favoritesOnly: boolean;
   favorites: string[];
+  downloadedOnly?: boolean;
+  downloadedIds?: string[];
+  localRefs?: LibraryRef[];
   freeOnly: boolean;
   sizeFilter: "any" | "small" | "medium" | "large" | "huge";
   facetFilters: Record<string, string[]>;
@@ -52,9 +58,19 @@ export interface CatalogFilters {
 export function catalogFilterQuery(state: CatalogFilters): CatalogQuery {
   const ranges = { any: {}, small: { maxSize: 0.5 }, medium: { minSize: 0.5, maxSize: 2 },
     large: { minSize: 2, maxSize: 5 }, huge: { minSize: 5 } };
+  let ids: string[] | undefined = state.favoritesOnly ? state.favorites : undefined;
+  if (state.downloadedOnly) {
+    const downloaded = state.downloadedIds
+      ?? state.localRefs?.filter(ref => !ref.id.startsWith("poliigon:") && !ref.id.startsWith("polyhaven:")).map(ref => ref.id)
+      ?? [];
+    ids = ids
+      ? ids.filter(id => downloaded.includes(id))
+      : downloaded;
+  }
   return {
     query: state.query, type: state.type || undefined, categoryPath: state.categoryPath,
-    ids: state.favoritesOnly ? state.favorites : undefined, points: state.freeOnly ? 0 : undefined,
+    categoryPaths: state.categoryPaths && state.categoryPaths.length > 0 ? state.categoryPaths : undefined,
+    ids, points: state.freeOnly ? 0 : undefined,
     ...ranges[state.sizeFilter], facetFilters: state.facetFilters, pack: state.catalogPack ?? undefined,
     facets: ["biome", "region", "resolution", "color", "environment", "theme"], page: 0
   };

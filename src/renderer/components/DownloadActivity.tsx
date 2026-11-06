@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { DownloadIcon } from "../icons";
-import { formatTransferBytes, summarizeDownloads } from "../download-summary";
+import { formatDuration, formatTransferBytes, summarizeDownloads, transferStatistics } from "../download-summary";
 
 export function DownloadActivity() {
   const downloads = useStore(state => state.downloads);
@@ -33,10 +33,13 @@ export function DownloadActivity() {
     </button>
     {open && <div className="activity-popover" id="mini-download-queue" role="region" aria-label="Download activity">
       <div className="activity-heading"><strong>Download queue</strong><span>{summary.eta ? `${summary.eta} for active transfers` : "Time remaining unavailable"}</span></div>
-      {[...summary.active, ...summary.queued, ...summary.paused].slice(0, 4).map(item => <div className="mini-download" key={item.assetId}>
-        <div><strong>{item.name || item.assetId}</strong><span>{item.status} {item.total > 0 ? `· ${Math.round(item.ratio * 100)}%` : ""}</span></div>
-        <div className="progress"><div className="progress-fill" style={{ width: `${Math.max(0, Math.min(100, item.ratio * 100))}%` }} /></div>
-      </div>)}
+      {[...summary.active, ...summary.queued, ...summary.paused].slice(0, 4).map(item => {
+        const stats = transferStatistics(item);
+        return <div className="mini-download" key={item.assetId}>
+          <div><strong>{item.name || item.assetId}</strong><span>{item.provider === "poliigon" ? "Poliigon · " : item.provider === "polyhaven" ? "Poly Haven · " : ""}{item.message ?? item.status}{item.total > 0 ? ` · ${Math.round(item.ratio * 100)}%` : ""}{stats && stats.rate > 0 ? ` · ${formatTransferBytes(stats.rate)}/s` : ""}{typeof stats?.eta === "number" ? ` · ${formatDuration(stats.eta)} left` : ""}</span></div>
+          <div className="progress"><div className="progress-fill" style={{ width: `${Math.max(0, Math.min(100, item.ratio * 100))}%` }} /></div>
+        </div>;
+      })}
       {count + summary.paused.length > 4 && <p className="hint">{count + summary.paused.length - 4} more in the full queue</p>}
       <div className="button-row horizontal">
         {count > 0 && <button type="button" className="btn btn-ghost" onClick={() => void act(() => window.openbridge.downloads.pauseAll())}>Pause all</button>}

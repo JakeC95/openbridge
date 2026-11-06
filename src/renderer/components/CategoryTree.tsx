@@ -7,13 +7,14 @@ interface Props {
   nodes: CategoryNode[];
   selectedPath: string[];
   onSelect: (path: string[]) => void;
+  allLabel?: string;
 }
 
 function pathKey(path: string[]): string {
   return path.join("\u0001");
 }
 
-export function CategoryTree({ nodes, selectedPath, onSelect }: Props) {
+export function CategoryTree({ nodes, selectedPath, onSelect, allLabel = "All categories" }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -92,7 +93,7 @@ export function CategoryTree({ nodes, selectedPath, onSelect }: Props) {
         onClick={() => onSelect([])}
       >
         <span className="category-chevron-spacer" />
-        <span className="category-label">All categories</span>
+        <span className="category-label">{allLabel}</span>
       </button>
       {renderNodes(nodes, [])}
     </div>

@@ -3,7 +3,9 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   AssetJson,
+  AssetProvider,
   AssetRecord,
+  AssetTechnicalSummary,
   LibraryHealthProgress,
   LibraryHealthReport,
   LibraryIssue,
@@ -11,6 +13,8 @@ import type {
   LibraryQueryResult,
   LibrarySnapshot,
   MapPreview,
+  PoliigonAssetSummary,
+  PolyHavenAssetSummary,
   RepoKind,
   ScanResult
 } from "../shared/types";
@@ -20,6 +24,7 @@ import type { Logger } from "./logger";
 
 const DOWNLOADED_TYPES = ["3d", "atlas", "surface", "3dplant", "brush"];
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg"]);
+const TEXTURE_EXT = new Set([".png", ".jpg", ".jpeg", ".exr", ".hdr", ".tif", ".tiff", ".webp", ".psd"]);
 const MESH_EXT = new Set([".fbx", ".obj", ".abc", ".usd", ".usdz", ".gltf", ".glb"]);
 
 interface AssetFolder {
@@ -99,6 +104,7 @@ async function readAssetFolder(folder: string, repo: RepoKind): Promise<AssetRec
 
     return {
       id: json.id,
+      provider: "megascans",
       name,
       type,
       categories,
@@ -192,7 +198,7 @@ async function walkAssetFolder(folder: string): Promise<{
       const ext = extname(entry.name).toLowerCase();
       if (MESH_EXT.has(ext)) meshes += 1;
       if (
-        IMAGE_EXT.has(ext) &&
+        TEXTURE_EXT.has(ext) &&
         !entry.name.toLowerCase().includes("preview") &&
         !entry.name.toLowerCase().includes("thumb")
       ) {
@@ -203,6 +209,550 @@ async function walkAssetFolder(folder: string): Promise<{
   await visit(folder);
   return { files, bytes, zeroBytes, meshes, textures };
 }
+
+interface PoliigonFileInfo {
+  name: string;
+  path: string;
+  size: number;
+  mtime: number;
+}
+
+interface PoliigonInspection {
+  asset: AssetRecord;
+  stats: { files: number; bytes: number; zeroBytes: number; meshes: number; textures: number };
+}
+
+const MAP_TOKENS = [
+  "BaseColorOpacity",
+  "ScatteringColor",
+  "AmbientOcclusion",
+  "Displacement",
+  "Translucency",
+  "Transmission",
+  "BaseColor",
+  "Emission",
+  "Roughness",
+  "Metallic",
+  "Opacity",
+  "Normal",
+  "SheenColor",
+  "ALPHAMASKED",
+  "METALNESS",
+  "ROUGHNESS",
+  "DISP16",
+  "EMISSIVE",
+  "BUMP16",
+  "OVERLAY16",
+  "TRANSMISSION",
+  "TRANSLUCENCY",
+  "DIRECTION",
+  "ALPHA",
+  "IDMAP",
+  "ORM",
+  "NRM16",
+  "GLOSS",
+  "REFL",
+  "DISP",
+  "NRM",
+  "SSS",
+  "BUMP",
+  "MASK",
+  "FUZZ",
+  "AO",
+  "COL",
+  "DIFF",
+  "ENV",
+  "JPG",
+  "HDR",
+  "LIGHT",
+  "nor_gl",
+  "nor_dx",
+  "rough_ao",
+  "Diffuse",
+  "Metal",
+  "Rough",
+  "arm"
+];
+
+function resolutionPixels(value: string): number | null {
+  const match = /^(\d+)(K)?$/i.exec(value.trim());
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return null;
+  return match[2] ? amount * 1024 : amount;
+}
+
+function inferMapTypes(files: PoliigonFileInfo[]): string[] {
+  const types = new Set<string>();
+  for (const file of files) {
+    if (!TEXTURE_EXT.has(extname(file.name).toLowerCase())) continue;
+    const base = file.name.replace(/\.[^.]+$/, "").toLowerCase();
+    if (/preview|thumb|grid/.test(base)) continue;
+    const parts = base.split(/[_\s.]+/).filter(Boolean);
+    for (const token of MAP_TOKENS) {
+      const wanted = token.toLowerCase();
+      const separated = new RegExp(`(?:^|[^a-z0-9])${wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|[^a-z0-9])`);
+      if (parts.includes(wanted) || separated.test(base)) {
+        types.add(token);
+        break;
+      }
+    }
+  }
+  return [...types];
+}
+
+function previewScore(file: PoliigonFileInfo, depth: number): number {
+  const base = file.name.replace(/\.[^.]+$/, "").toLowerCase();
+  let score = 0;
+  if (base.endsWith("_preview1") || base.endsWith("_preview01") || base.endsWith("_preview")) score = 100;
+  else if (base.includes("preview")) score = 80;
+  else if (base.includes("thumb")) score = 70;
+  else if (base.includes("grid")) score = 60;
+  return score > 0 ? score + (depth === 0 ? 5 : 0) : 0;
+}
+
+function buildPoliigonTechnical(
+  summary: PoliigonAssetSummary | null,
+  files: PoliigonFileInfo[],
+  sizes: Set<string>,
+  lods: Set<string>,
+  mapTypes: string[]
+): AssetTechnicalSummary {
+  let resolution: number | null = null;
+  for (const size of sizes) {
+    const pixels = resolutionPixels(size);
+    if (pixels !== null && (resolution === null || pixels > resolution)) resolution = pixels;
+  }
+  if (resolution === null) resolution = summary?.maxResolution ?? null;
+  const mesh = files.find(file => MESH_EXT.has(extname(file.name).toLowerCase()));
+  const hasAlpha = mapTypes.some(type =>
+    ["ALPHA", "ALPHAMASKED", "OPACITY", "Opacity", "BaseColorOpacity"].includes(type)
+  );
+  const workflow: AssetTechnicalSummary["materialWorkflow"] =
+    summary?.convention === 1
+      ? "metal-rough"
+      : mapTypes.some(type => ["GLOSS", "REFL", "SPECULAR"].includes(type))
+        ? "spec-gloss"
+        : mapTypes.some(type => ["METALNESS", "Metallic"].includes(type))
+          ? "metal-rough"
+          : null;
+  const localFormats = new Set<string>();
+  for (const file of files) {
+    const ext = extname(file.name).toLowerCase();
+    if (ext === ".jpg" || ext === ".jpeg") localFormats.add("JPG");
+    else if (ext === ".png") localFormats.add("PNG");
+    else if (ext === ".tif" || ext === ".tiff") localFormats.add("TIFF");
+    else if (ext === ".exr") localFormats.add("EXR");
+    else if (ext === ".hdr") localFormats.add("HDR");
+  }
+  return {
+    resolution,
+    mapTypes,
+    mapCount: mapTypes.length,
+    mapFormats: [...localFormats],
+    lodCount: lods.size > 0 ? lods.size : summary?.lodCount ?? 0,
+    lodTriangles: [],
+    maxTris: summary?.maxTris ?? 0,
+    variationCount: 0,
+    billboardCount: 0,
+    tileable: null,
+    tilingDirections: [],
+    scanArea: null,
+    texelDensity: null,
+    physicalSize: summary?.physicalSize ?? null,
+    dimensions: summary?.physicalSize ?? null,
+    height: null,
+    variationDimensions: [],
+    meshType: mesh ? extname(mesh.name).replace(".", "").toLowerCase() : null,
+    hasHighpoly: false,
+    hasZtool: false,
+    hasBrushes: summary?.type === "Brushes",
+    closedMesh: null,
+    scaleFixed: null,
+    assembly: null,
+    smallAsset: null,
+    splitSubmeshes: null,
+    modular: false,
+    hasAlpha,
+    materialWorkflow: workflow,
+    averageColor: null,
+    packId: null,
+    packName: null,
+    revision: null,
+    revised: null,
+    semantic: {
+      subjectMatter: null,
+      color: [],
+      state: [],
+      interiorExterior: [],
+      industry: [],
+      theme: [],
+      descriptive: [],
+      contains: [],
+      orientation: []
+    }
+  };
+}
+
+async function readPoliigonFolder(
+  folder: string,
+  lookup: (assetName: string) => PoliigonAssetSummary | null
+): Promise<PoliigonInspection | null> {
+  const files: PoliigonFileInfo[] = [];
+  const sizes = new Set<string>();
+  const lods = new Set<string>();
+  let latest = 0;
+  let totalBytes = 0;
+  let zeroBytes = 0;
+  let meshes = 0;
+  let textures = 0;
+  let preview: string | null = null;
+  let bestPreview = 0;
+
+  const visit = async (directory: string, depth: number): Promise<void> => {
+    if (depth > 6 || files.length > 20_000) return;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const target = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(target, depth + 1);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const info = await stat(target).catch(() => null);
+      if (!info) continue;
+      const file: PoliigonFileInfo = {
+        name: entry.name,
+        path: target,
+        size: info.size,
+        mtime: info.mtimeMs
+      };
+      files.push(file);
+      totalBytes += info.size;
+      if (info.size === 0) zeroBytes += 1;
+      latest = Math.max(latest, info.mtimeMs);
+      const ext = extname(entry.name).toLowerCase();
+      if (MESH_EXT.has(ext)) meshes += 1;
+      if (TEXTURE_EXT.has(ext) && !/preview|thumb|grid/i.test(entry.name)) textures += 1;
+      const score = previewScore(file, depth);
+      if (score > bestPreview) {
+        bestPreview = score;
+        preview = target;
+      }
+      for (const part of target.slice(folder.length + 1).split(/[\\/]/)) {
+        if (/^(256|512|\d+K)$/i.test(part)) sizes.add(part.toUpperCase());
+      }
+      const sizeToken = entry.name.match(/_(256|512|\d+K)(?:_|\.)/i);
+      if (sizeToken) sizes.add(sizeToken[1].toUpperCase());
+      const lod = entry.name.match(/lod(\d+)/i);
+      if (lod) lods.add(`LOD${lod[1]}`);
+      if (/_SOURCE/i.test(entry.name)) lods.add("SOURCE");
+      if (/_PROXY/i.test(entry.name)) lods.add("PROXY");
+    }
+  };
+  await visit(folder, 0);
+  if (files.length === 0) return null;
+
+  const folderName = basename(folder);
+  const summary = lookup(folderName);
+  const localMapTypes = inferMapTypes(files);
+  const mapTypes = localMapTypes.length > 0 ? localMapTypes : summary?.mapCodes ?? [];
+  const type = summary?.typeLabel || (meshes > 0 ? "Model" : files.some(file => /\.(hdr|exr)$/i.test(file.name)) ? "HDRI" : "Texture");
+  const asset: AssetRecord = {
+    id: summary ? `poliigon:${summary.id}` : `poliigon:local:${folderName}`,
+    provider: "poliigon",
+    name: summary?.name || folderName,
+    type,
+    categories: summary?.categories?.length ? [summary.categories[0]] : ["Poliigon / Unmatched"],
+    tags: summary?.tags ?? [],
+    repo: "downloaded",
+    path: folder,
+    jsonPath: "",
+    preview,
+    thumb: preview,
+    mtime: latest,
+    previewRelativeSize: "1x1",
+    searchStr: [
+      summary ? `poliigon:${summary.id}` : `poliigon:local:${folderName}`,
+      summary?.name ?? folderName,
+      folderName,
+      type,
+      ...(summary?.categories ?? []),
+      ...(summary?.tags ?? []),
+      ...mapTypes,
+      ...sizes,
+      ...lods
+    ]
+      .join(" ")
+      .replace(/[_|-]+/g, " ")
+      .toLowerCase(),
+    technical: buildPoliigonTechnical(summary, files, sizes, lods, mapTypes)
+  };
+
+  return {
+    asset,
+    stats: { files: files.length, bytes: totalBytes, zeroBytes, meshes, textures }
+  };
+}
+
+async function resolvePoliigonRoot(path: string): Promise<string> {
+  if (!path) return "";
+  const nested = join(path, "Library");
+  const info = await stat(nested).catch(() => null);
+  if (!info?.isDirectory()) return path;
+  const entries = await readdir(nested, { withFileTypes: true }).catch(() => []);
+  return entries.some(entry => entry.isDirectory()) ? nested : path;
+}
+
+async function collectPoliigonFolders(path: string): Promise<Array<{ folder: string; folderMtime: number }>> {
+  if (!path) return [];
+  const root = await resolvePoliigonRoot(path);
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const skip = new Set(["support", "cache", "assetindex", "onlinepreviews", "logs", "plugins", "utils"]);
+  const output: Array<{ folder: string; folderMtime: number }> = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    if (skip.has(entry.name.toLowerCase())) continue;
+    const folder = join(root, entry.name);
+    const info = await stat(folder).catch(() => null);
+    if (!info) continue;
+    output.push({ folder, folderMtime: info.mtimeMs });
+  }
+  return output;
+}
+
+async function collectPolyHavenFolders(path: string): Promise<Array<{ folder: string; folderMtime: number }>> {
+  if (!path) return [];
+  const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+  const skip = new Set(["support", "cache", "logs", "plugins", "utils", "temp"]);
+  const output: Array<{ folder: string; folderMtime: number }> = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    if (skip.has(entry.name.toLowerCase())) continue;
+    const folder = join(path, entry.name);
+    const info = await stat(folder).catch(() => null);
+    if (!info) continue;
+    output.push({ folder, folderMtime: info.mtimeMs });
+  }
+  return output;
+}
+
+interface PolyHavenMetadata {
+  id?: string;
+  name?: string;
+  type?: string;
+  typeLabel?: string;
+  category?: string;
+  categories?: string[];
+  tags?: string[];
+  collections?: string[];
+  publishedAt?: number | null;
+  authors?: Record<string, string>;
+}
+
+function buildPolyHavenTechnical(
+  summary: PolyHavenAssetSummary | null,
+  metadata: PolyHavenMetadata | null,
+  files: PoliigonFileInfo[],
+  sizes: Set<string>,
+  lods: Set<string>,
+  mapTypes: string[]
+): AssetTechnicalSummary {
+  let resolution: number | null = null;
+  for (const size of sizes) {
+    const pixels = resolutionPixels(size);
+    if (pixels !== null && (resolution === null || pixels > resolution)) resolution = pixels;
+  }
+  if (resolution === null) resolution = summary?.maxResolution ?? null;
+  const mesh = files.find(file => MESH_EXT.has(extname(file.name).toLowerCase()));
+  const localFormats = new Set<string>();
+  for (const file of files) {
+    const ext = extname(file.name).toLowerCase();
+    if (ext === ".jpg" || ext === ".jpeg") localFormats.add("JPG");
+    else if (ext === ".png") localFormats.add("PNG");
+    else if (ext === ".tif" || ext === ".tiff") localFormats.add("TIFF");
+    else if (ext === ".exr") localFormats.add("EXR");
+    else if (ext === ".hdr") localFormats.add("HDR");
+  }
+  return {
+    resolution,
+    mapTypes,
+    mapCount: mapTypes.length,
+    mapFormats: localFormats.size > 0 ? [...localFormats] : summary?.mapFormats.map(value => value.toUpperCase()) ?? [],
+    lodCount: lods.size > 0 ? lods.size : summary?.lodCount ?? 0,
+    lodTriangles: [],
+    maxTris: summary?.polycount ?? 0,
+    variationCount: 0,
+    billboardCount: 0,
+    tileable: null,
+    tilingDirections: [],
+    scanArea: null,
+    texelDensity: summary?.texelDensity ?? null,
+    physicalSize: summary?.dimensions ?? null,
+    dimensions: summary?.dimensions ?? null,
+    height: null,
+    variationDimensions: [],
+    meshType: mesh ? extname(mesh.name).replace(".", "").toLowerCase() : null,
+    hasHighpoly: false,
+    hasZtool: false,
+    hasBrushes: false,
+    closedMesh: null,
+    scaleFixed: null,
+    assembly: null,
+    smallAsset: null,
+    splitSubmeshes: null,
+    modular: false,
+    hasAlpha: mapTypes.some(type => /alpha|opacity|mask/i.test(type)),
+    materialWorkflow: mapTypes.some(type => /metal|arm|rough/i.test(type))
+      ? "metal-rough"
+      : null,
+    averageColor: null,
+    packId: null,
+    packName: metadata?.collections?.[0] ?? null,
+    revision: null,
+    revised: null,
+    semantic: {
+      subjectMatter: null,
+      color: [],
+      state: [],
+      interiorExterior: [],
+      industry: [],
+      theme: [],
+      descriptive: [],
+      contains: [],
+      orientation: []
+    }
+  };
+}
+
+async function readPolyHavenFolder(
+  folder: string,
+  lookup: (id: string) => PolyHavenAssetSummary | null
+): Promise<PoliigonInspection | null> {
+  const folderName = basename(folder);
+  let metadata: PolyHavenMetadata | null = null;
+  try {
+    metadata = JSON.parse(
+      (await readFile(join(folder, "openbridge-polyhaven.json"), "utf8")).replace(/^\uFEFF/, "")
+    ) as PolyHavenMetadata;
+  } catch {
+    // folders created by other tools still match by id/name below
+  }
+  const lookupId = metadata?.id || folderName;
+  const summary = lookup(lookupId) ?? lookup(folderName);
+  const id = summary?.id || metadata?.id || folderName;
+  const files: PoliigonFileInfo[] = [];
+  const sizes = new Set<string>();
+  const lods = new Set<string>();
+  let latest = 0;
+  let totalBytes = 0;
+  let zeroBytes = 0;
+  let meshes = 0;
+  let textures = 0;
+  let preview: string | null = null;
+  let bestPreview = 0;
+
+  const visit = async (directory: string, depth: number): Promise<void> => {
+    if (depth > 6 || files.length > 20_000) return;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const target = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(target, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || entry.name === "openbridge-polyhaven.json") continue;
+      const info = await stat(target).catch(() => null);
+      if (!info) continue;
+      const file: PoliigonFileInfo = {
+        name: entry.name,
+        path: target,
+        size: info.size,
+        mtime: info.mtimeMs
+      };
+      files.push(file);
+      totalBytes += info.size;
+      if (info.size === 0) zeroBytes += 1;
+      latest = Math.max(latest, info.mtimeMs);
+      const ext = extname(entry.name).toLowerCase();
+      if (MESH_EXT.has(ext)) meshes += 1;
+      if (TEXTURE_EXT.has(ext) && !/preview|thumb|grid/i.test(entry.name)) textures += 1;
+      const score = previewScore(file, depth);
+      if (score > bestPreview) {
+        bestPreview = score;
+        preview = target;
+      }
+      for (const part of target.slice(folder.length + 1).split(/[\\/]/)) {
+        if (/^(256|512|\d+K)$/i.test(part)) sizes.add(part.toUpperCase());
+      }
+      const sizeToken = entry.name.match(/_(256|512|\d+K)(?:_|\.)/i);
+      if (sizeToken) sizes.add(sizeToken[1].toUpperCase());
+      if (/lod\d+/i.test(entry.name)) lods.add(entry.name.match(/lod\d+/i)?.[0]?.toUpperCase() ?? "LOD");
+    }
+  };
+  await visit(folder, 0);
+  if (files.length === 0) return null;
+  if (!preview) {
+    preview = files.find(file => /\.(png|jpe?g|webp)$/i.test(file.name))?.path ?? null;
+  }
+
+  const localMapTypes = inferMapTypes(files);
+  const mapTypes = localMapTypes.length > 0 ? localMapTypes : summary?.mapCodes ?? [];
+  const type = summary?.typeLabel
+    || metadata?.typeLabel
+    || (meshes > 0 ? "Model" : files.some(file => /\.(hdr|exr)$/i.test(file.name)) ? "HDRI" : "Texture");
+  const metadataCategories = metadata?.categories ?? [];
+  const categories = summary?.category
+    ? [summary.category]
+    : metadata?.category
+      ? [metadata.category]
+      : ["Poly Haven / Unmatched"];
+  const tags = [
+    ...new Set([
+      ...(summary?.tags ?? metadata?.tags ?? []),
+      ...(summary?.categories ?? metadataCategories)
+    ])
+  ];
+  const asset: AssetRecord = {
+    id: `polyhaven:${id}`,
+    provider: "polyhaven",
+    name: summary?.name || metadata?.name || folderName,
+    type,
+    categories,
+    tags,
+    repo: "downloaded",
+    path: folder,
+    jsonPath: join(folder, "openbridge-polyhaven.json"),
+    preview,
+    thumb: preview,
+    mtime: latest,
+    previewRelativeSize: "1x1",
+    searchStr: [
+      `polyhaven:${id}`,
+      id,
+      summary?.name ?? metadata?.name ?? folderName,
+      summary?.category ?? metadata?.category ?? "",
+      type,
+      ...categories,
+      ...tags,
+      ...mapTypes,
+      ...sizes,
+      ...lods
+    ]
+      .join(" ")
+      .replace(/[_|-]+/g, " ")
+      .toLowerCase(),
+    technical: buildPolyHavenTechnical(summary, metadata, files, sizes, lods, mapTypes)
+  };
+
+  return {
+    asset,
+    stats: { files: files.length, bytes: totalBytes, zeroBytes, meshes, textures }
+  };
+}
+
 
 function issuesForAsset(
   row: { path: string; id: string; name: string; type: string; preview: string | null },
@@ -240,7 +790,7 @@ function issuesForAsset(
       message: "Asset folder is empty"
     });
   }
-  if ((type.startsWith("3d") || type === "3dplant") && walked.meshes === 0) {
+  if ((type.startsWith("3d") || type === "3dplant" || type === "model") && walked.meshes === 0) {
     issues.push({
       kind: "missing-mesh",
       severity: "warning",
@@ -250,7 +800,7 @@ function issuesForAsset(
       message: "No mesh file found"
     });
   }
-  if (["surface", "atlas", "decal"].includes(type) && walked.textures === 0) {
+  if (["surface", "atlas", "decal", "texture", "model", "hdri"].includes(type) && walked.textures === 0) {
     issues.push({
       kind: "missing-texture",
       severity: "warning",
@@ -270,6 +820,10 @@ export class LibraryService {
 
   constructor(
     private readonly getLibraryPath: () => string,
+    private readonly getPoliigonLibraryPath: () => string,
+    private readonly getPolyHavenLibraryPath: () => string,
+    private readonly lookupPoliigonAsset: (assetName: string) => PoliigonAssetSummary | null,
+    private readonly lookupPolyHavenAsset: (id: string) => PolyHavenAssetSummary | null,
     indexPath: string,
     private readonly logger: Logger
   ) {
@@ -278,22 +832,91 @@ export class LibraryService {
 
   async scan(force = false, includeAssets = true): Promise<ScanResult> {
     const libraryPath = this.getLibraryPath();
+    const poliigonLibraryPath = this.getPoliigonLibraryPath();
+    const polyhavenLibraryPath = this.getPolyHavenLibraryPath();
     const started = Date.now();
-    this.index.ensureLibraryPath(libraryPath);
-    const folders = await collectAssetFolders(libraryPath);
+    this.index.ensureLibraryPaths(libraryPath, poliigonLibraryPath, polyhavenLibraryPath);
+    const megaFolders = await collectAssetFolders(libraryPath);
+    const poliigonFolders = await collectPoliigonFolders(poliigonLibraryPath);
+    const polyhavenFolders = await collectPolyHavenFolders(polyhavenLibraryPath);
+    const folders: Array<{
+      folder: string;
+      repo: RepoKind;
+      provider: AssetProvider;
+      folderMtime: number;
+    }> = [
+      ...megaFolders.map(folder => ({ ...folder, provider: "megascans" as const })),
+      ...poliigonFolders.map(folder => ({
+        ...folder,
+        repo: "downloaded" as RepoKind,
+        provider: "poliigon" as const
+      })),
+      ...polyhavenFolders.map(folder => ({
+        ...folder,
+        repo: "downloaded" as RepoKind,
+        provider: "polyhaven" as const
+      }))
+    ];
     const seen = new Set<string>();
     const changes: Array<{ asset: AssetRecord; folderMtime: number; jsonMtime: number }> = [];
+    const healthChanges: Array<{
+      path: string;
+      stats: { files: number; bytes: number; zeroBytes: number; meshes: number; textures: number };
+      issues: LibraryIssue[];
+    }> = [];
     let skipped = 0;
 
     for (const folder of folders) {
       seen.add(folder.folder);
       const cached = this.index.getCachedRow(folder.folder);
       if (!force && cached && Math.trunc(cached.folder_mtime) === Math.trunc(folder.folderMtime)) {
+        if (folder.provider === "poliigon" || folder.provider === "polyhaven") {
+          skipped += 1;
+          continue;
+        }
         const jsonInfo = await stat(cached.json_path).catch(() => null);
         if (jsonInfo && Math.trunc(jsonInfo.mtimeMs) === Math.trunc(cached.json_mtime)) {
           skipped += 1;
           continue;
         }
+      }
+
+      if (folder.provider === "poliigon") {
+        const inspected = await readPoliigonFolder(folder.folder, this.lookupPoliigonAsset);
+        if (!inspected) {
+          seen.delete(folder.folder);
+          continue;
+        }
+        changes.push({
+          asset: inspected.asset,
+          folderMtime: folder.folderMtime,
+          jsonMtime: 0
+        });
+        healthChanges.push({
+          path: inspected.asset.path,
+          stats: inspected.stats,
+          issues: issuesForAsset(inspected.asset, inspected.stats)
+        });
+        continue;
+      }
+
+      if (folder.provider === "polyhaven") {
+        const inspected = await readPolyHavenFolder(folder.folder, this.lookupPolyHavenAsset);
+        if (!inspected) {
+          seen.delete(folder.folder);
+          continue;
+        }
+        changes.push({
+          asset: inspected.asset,
+          folderMtime: folder.folderMtime,
+          jsonMtime: 0
+        });
+        healthChanges.push({
+          path: inspected.asset.path,
+          stats: inspected.stats,
+          issues: issuesForAsset(inspected.asset, inspected.stats)
+        });
+        continue;
       }
 
       const asset = await readAssetFolder(folder.folder, folder.repo);
@@ -310,6 +933,7 @@ export class LibraryService {
     }
 
     this.index.upsertMany(changes);
+    if (healthChanges.length > 0) this.index.setHealthMany(healthChanges);
     const deleted = this.index.deleteMissing(seen);
     const scannedAt = Date.now();
     this.index.setScannedAt(scannedAt);
@@ -318,6 +942,8 @@ export class LibraryService {
     const assets = includeAssets ? this.index.allAssets() : [];
     this.logger.info("Library scan complete", {
       libraryPath,
+      poliigonLibraryPath,
+      polyhavenLibraryPath,
       assets: includeAssets ? assets.length : this.index.counts().all,
       changed: changes.length,
       skipped,
@@ -325,13 +951,17 @@ export class LibraryService {
       milliseconds: scannedAt - started,
       indexed: true
     });
-    return { assets, scannedAt, libraryPath };
+    return { assets, scannedAt, libraryPath, poliigonLibraryPath, polyhavenLibraryPath };
   }
 
   async snapshot(force = false): Promise<LibrarySnapshot> {
     if (!force && this.snapshotCache) return this.snapshotCache;
     await this.scan(force, false);
-    const snapshot = this.index.getSnapshot(this.getLibraryPath());
+    const snapshot = this.index.getSnapshot(
+      this.getLibraryPath(),
+      this.getPoliigonLibraryPath(),
+      this.getPolyHavenLibraryPath()
+    );
     this.snapshotCache = snapshot;
     return snapshot;
   }
@@ -393,10 +1023,12 @@ export class LibraryService {
     signal?: AbortSignal
   ): Promise<LibraryHealthReport> {
     const libraryPath = this.getLibraryPath();
+    const poliigonLibraryPath = this.getPoliigonLibraryPath();
+    const polyhavenLibraryPath = this.getPolyHavenLibraryPath();
     const started = Date.now();
     await this.scan(false, false);
     signal?.throwIfAborted();
-    this.snapshotCache = this.index.getSnapshot(libraryPath);
+    this.snapshotCache = this.index.getSnapshot(libraryPath, poliigonLibraryPath, polyhavenLibraryPath);
     const rows = this.index.healthRows(force);
     const total = rows.length;
     let checked = 0;
@@ -436,9 +1068,11 @@ export class LibraryService {
       }
     }
     if (batch.length > 0) this.index.setHealthMany(batch);
-    const report = this.index.healthReport(libraryPath);
+    const report = this.index.healthReport(libraryPath, poliigonLibraryPath, polyhavenLibraryPath);
     this.logger.info("Library health complete", {
       libraryPath,
+      poliigonLibraryPath,
+      polyhavenLibraryPath,
       checked,
       assets: report.assets,
       issues: report.issues.length,
@@ -449,11 +1083,17 @@ export class LibraryService {
 
   async removeAssets(assetIds: string[], scope?: LibraryQuery): Promise<{ removed: number }> {
     const records = this.index.matchingAssets(assetIds, scope);
-    const libraryRoot = resolve(this.getLibraryPath());
+    const roots = [
+      this.getLibraryPath(),
+      this.getPoliigonLibraryPath(),
+      this.getPolyHavenLibraryPath()
+    ]
+      .filter(Boolean)
+      .map(path => resolve(path));
     let removed = 0;
     for (const asset of records) {
       const target = resolve(asset.path);
-      if (!target.startsWith(libraryRoot + sep)) continue;
+      if (!roots.some(root => target === root || target.startsWith(root + sep))) continue;
       await rm(target, { recursive: true, force: true });
       removed += 1;
     }

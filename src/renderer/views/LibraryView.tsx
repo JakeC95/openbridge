@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { readinessBadges, typeLabel } from "../catalog-utils";
+import { assetTypeClass } from "../asset-visuals";
 import { CheckIcon, CloseIcon, FolderIcon, UploadIcon } from "../icons";
-import type { AssetRecord, LibraryHealthReport, RepoKind } from "../../shared/types";
+import type { AssetProvider, AssetRecord, LibraryHealthReport, LibrarySort, RepoKind } from "../../shared/types";
 import { VirtualGrid } from "../components/VirtualGrid";
 import { Dropdown } from "../components/Dropdown";
 import { formatMeasurementText } from "../../shared/measurements";
@@ -12,6 +13,8 @@ import { categoryLabel } from "../../shared/browsing";
 import { useBrowseScroll } from "../use-browse-scroll";
 import { LoadMore } from "../components/LoadMore";
 import { AssetList } from "../components/AssetList";
+import { SmartThumbImage } from "../components/SmartThumbImage";
+import { ProviderLogo } from "../components/ProviderLogo";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
   { value: "all", label: "All" },
@@ -48,6 +51,8 @@ function localFacts(asset: AssetRecord): string {
 export function LibraryView() {
   const density = useStore(state => state.density);
   const localType = useStore(state => state.localType);
+  const localProvider = useStore(state => state.localProvider);
+  const setLocalProvider = useStore(state => state.setLocalProvider);
   const localCategoryPath = useStore(state => state.localCategoryPath);
   const localSort = useStore(state => state.localSort);
   const localFavoritesOnly = useStore(state => state.localFavoritesOnly);
@@ -117,6 +122,7 @@ export function LibraryView() {
   }, [
     query,
     repo,
+    localProvider,
     localType,
     localCategoryPath,
     localSort,
@@ -229,17 +235,148 @@ export function LibraryView() {
   const readyLabels: Record<string, string> = { tileable: "Tileable", closed: "Closed mesh", "scale-fixed": "Scale fixed",
     billboards: "Billboards", highpoly: "Highpoly", ztool: "ZTool", modular: "Modular" };
   const singleGroup = (key: string, label: string, values: string[], selected: string, change: (value: string) => void,
-    labels?: Record<string, string>): FilterGroup => ({ key, label, values: Object.fromEntries(values.map(value => [value, 0])),
-    selected: selected ? [selected] : [], toggle: value => change(value === selected ? "" : value), labels });
-  const filterGroups: FilterGroup[] = [
-    { key: "ready", label: "Readiness", values: Object.fromEntries(Object.keys(readyLabels).map(value => [value, 0])),
-      selected: localReady, toggle: toggleLocalReady, labels: readyLabels },
-    singleGroup("tris", "Triangles", ["10000", "25000", "50000", "100000"], localMaxTris ? String(localMaxTris) : "",
-      value => setLocalMaxTris(value ? Number(value) : null), { "10000": "Up to 10k tris", "25000": "Up to 25k tris", "50000": "Up to 50k tris", "100000": "Up to 100k tris" }),
-    singleGroup("colour", "Colour", ["Brown", "Gray", "Green", "Red", "Orange", "Yellow", "Blue", "White", "Black"], localColor, setLocalColor),
-    singleGroup("condition", "Condition", ["new", "old"], localState, setLocalState, { new: "New", old: "Old" }),
-    singleGroup("setting", "Setting", ["interior", "exterior"], localInterior, setLocalInterior, { interior: "Interior", exterior: "Exterior" })
-  ];
+    labels?: Record<string, string>, compare?: (a: string, b: string) => number): FilterGroup => ({
+    key, label, values: Object.fromEntries(values.map(value => [value, 0])),
+    selected: selected ? [selected] : [], toggle: value => change(value === selected ? "" : value), labels,
+    compare: compare ?? ((a, b) => values.indexOf(a) - values.indexOf(b))
+  });
+  const showTriangles = localType === "" || ["3d", "3dplant", "model"].includes(localType);
+  const showMaps = !["hdri", "brush", "imperfection", "displacement"].includes(localType);
+  const showReadiness =
+    (localProvider === "megascans" || localProvider === "all") &&
+    !["hdri", "texture", "model", "decal", "brush", "imperfection", "displacement"].includes(localType);
+  const readinessKeys = localType === ""
+    ? Object.keys(readyLabels)
+    : ["3d", "3dplant"].includes(localType)
+      ? ["closed", "scale-fixed", "modular", "highpoly", "ztool", "billboards"]
+      : ["tileable"];
+  const showSemanticSource =
+    (localProvider === "megascans" || localProvider === "all") &&
+    !["hdri", "texture", "model"].includes(localType);
+  const showColour = showSemanticSource && localType !== "displacement";
+  const showCondition = showSemanticSource && !["brush", "decal", "imperfection", "displacement"].includes(localType);
+  const showSetting = showCondition;
+  const filterGroups = useMemo<FilterGroup[]>(() => {
+    const groups: FilterGroup[] = [];
+    if (showReadiness) {
+      groups.push({
+        key: "ready",
+        label: localProvider === "all" ? "Readiness (Megascans)" : "Readiness",
+        values: Object.fromEntries(readinessKeys.map(value => [value, 0])),
+        selected: localReady,
+        toggle: toggleLocalReady,
+        labels: readyLabels,
+        compare: (a, b) => readinessKeys.indexOf(a) - readinessKeys.indexOf(b)
+      });
+    }
+    if (showTriangles) {
+      groups.push(singleGroup("tris", "Triangles", ["10000", "25000", "50000", "100000"], localMaxTris ? String(localMaxTris) : "",
+        value => setLocalMaxTris(value ? Number(value) : null),
+        { "10000": "Up to 10k tris", "25000": "Up to 25k tris", "50000": "Up to 50k tris", "100000": "Up to 100k tris" },
+        (a, b) => Number(a) - Number(b)));
+    }
+    if (showColour) {
+      groups.push(singleGroup("colour", "Colour", ["Brown", "Gray", "Green", "Red", "Orange", "Yellow", "Blue", "White", "Black"], localColor, setLocalColor));
+    }
+    if (showCondition) {
+      groups.push(singleGroup("condition", "Condition", ["new", "old"], localState, setLocalState, { new: "New", old: "Old" }));
+    }
+    if (showSetting) {
+      groups.push(singleGroup("setting", "Setting", ["interior", "exterior"], localInterior, setLocalInterior, { interior: "Interior", exterior: "Exterior" }));
+    }
+    return groups;
+  }, [
+    showReadiness,
+    showTriangles,
+    showColour,
+    showCondition,
+    showSetting,
+    readinessKeys,
+    localReady,
+    localMaxTris,
+    localColor,
+    localState,
+    localInterior,
+    toggleLocalReady,
+    setLocalMaxTris,
+    setLocalColor,
+    setLocalState,
+    setLocalInterior,
+    readyLabels
+  ]);
+
+  useEffect(() => {
+    if (filterGroups.length === 0 && filtersOpen) setFiltersOpen(false);
+  }, [filterGroups.length, filtersOpen]);
+
+  const sortOptions = useMemo(() => {
+    const options: Array<{ value: LibrarySort; label: string }> = [
+      { value: "recent", label: "Recently modified" },
+      { value: "name", label: "Name A–Z" },
+      { value: "name-desc", label: "Name Z–A" },
+      { value: "type", label: "Asset type" },
+      { value: "size", label: "Library size · largest first" },
+      { value: "issues", label: "Health issues · most first" }
+    ];
+    if (localType !== "hdri") {
+      options.splice(4, 0,
+        { value: "resolution", label: "Resolution · highest first" },
+        ...(showMaps ? [{ value: "maps" as LibrarySort, label: "Texture maps · most first" }] : [])
+      );
+    }
+    if (showTriangles) {
+      options.splice(options.length - 1, 0,
+        { value: "triangles", label: "Triangles · most first" },
+        { value: "lods", label: "LODs · most first" },
+        ...(localProvider === "poliigon" || localProvider === "polyhaven"
+          ? []
+          : [{ value: "variations" as LibrarySort, label: "Variations · most first" }])
+      );
+    }
+    return options;
+  }, [localProvider, localType, showMaps, showTriangles]);
+  useEffect(() => {
+    if (!sortOptions.some(option => option.value === localSort)) {
+      useStore.getState().setLocalSort("recent");
+    }
+  }, [localSort, sortOptions]);
+  useEffect(() => {
+    if (!showReadiness && localReady.length > 0) useStore.setState({ localReady: [] });
+  }, [localReady.length, showReadiness]);
+  useEffect(() => {
+    if (!showReadiness) return;
+    const allowed = new Set(readinessKeys);
+    const next = localReady.filter(value => allowed.has(value));
+    if (next.length !== localReady.length) useStore.setState({ localReady: next });
+  }, [localReady, readinessKeys, showReadiness]);
+  useEffect(() => {
+    if (!showTriangles && localMaxTris !== null) setLocalMaxTris(null);
+  }, [localMaxTris, setLocalMaxTris, showTriangles]);
+  useEffect(() => {
+    if (!showColour && localColor) setLocalColor("");
+  }, [localColor, setLocalColor, showColour]);
+  useEffect(() => {
+    if (!showCondition && localState) setLocalState("");
+  }, [localState, setLocalState, showCondition]);
+  useEffect(() => {
+    if (!showSetting && localInterior) setLocalInterior("");
+  }, [localInterior, setLocalInterior, showSetting]);
+
+  const megascansTypes = ["3d", "3dplant", "surface", "atlas", "brush", "decal", "imperfection", "displacement"];
+  const poliigonTypes = ["texture", "model", "hdri"];
+  const typeOptions = localProvider === "poliigon" || localProvider === "polyhaven"
+    ? poliigonTypes
+    : localProvider === "megascans"
+      ? megascansTypes
+      : [...megascansTypes, ...poliigonTypes];
+
+  const libraryPath = localProvider === "poliigon"
+    ? settings?.poliigonLibraryPath
+    : localProvider === "polyhaven"
+      ? settings?.polyhavenLibraryPath
+      : localProvider === "megascans"
+        ? settings?.libraryPath
+        : settings?.libraryRoot || settings?.libraryPath;
 
   return (
     <div className="view library">
@@ -256,53 +393,61 @@ export function LibraryView() {
             >
               {selectMode ? "Done" : "Select"}
             </button>
-            <button type="button" className="btn btn-ghost" onClick={() => void importFolder()}>
-              <UploadIcon /> Import folder
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => void importZip()}>
-              <UploadIcon /> Import zip
-            </button>
+            {localProvider !== "poliigon" && localProvider !== "polyhaven" && (
+              <>
+                <button type="button" className="btn btn-ghost" onClick={() => void importFolder()}>
+                  <UploadIcon /> Import folder
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => void importZip()}>
+                  <UploadIcon /> Import zip
+                </button>
+              </>
+            )}
             <button type="button" className="btn btn-ghost" onClick={() => void refreshLibrary(true)}>
               Rescan
             </button>
           </div>
         </div>
+        <p className="hint library-scope-note">
+          Local files only. Everything here is already on this computer, available offline, and
+          independent of catalogue subscriptions.
+        </p>
 
         <div className="filter-row">
+          <Dropdown className="filter-select" value={localProvider} ariaLabel="Local asset source"
+            onChange={value => setLocalProvider(value as AssetProvider | "all")}
+            options={[
+              { value: "all", label: "All sources" },
+              { value: "megascans", label: "Megascans" },
+              { value: "poliigon", label: "Poliigon" },
+              { value: "polyhaven", label: "Poly Haven" }
+            ]} />
           <Dropdown className="filter-select" value={localType || "all"} ariaLabel="Local asset type"
             onChange={value => useStore.getState().setLocalType(value === "all" ? "" : value)}
-            options={[{ value: "all", label: "All types" }, ...["3d", "3dplant", "surface", "atlas", "brush", "decal", "imperfection", "displacement"]
+            options={[{ value: "all", label: "All types" }, ...typeOptions
               .map(value => ({ value, label: categoryLabel(value) }))]} />
           <Dropdown className="filter-select" value={localSort} ariaLabel="Sort local library"
-            onChange={value => useStore.getState().setLocalSort(value as typeof localSort)} options={[
-              { value: "recent", label: "Recently modified" }, { value: "name", label: "Name A–Z" },
-              { value: "name-desc", label: "Name Z–A" }, { value: "type", label: "Asset type" },
-              { value: "resolution", label: "Resolution · highest first" },
-              { value: "triangles", label: "Triangles · most first" },
-              { value: "maps", label: "Texture maps · most first" },
-              { value: "lods", label: "LODs · most first" },
-              { value: "variations", label: "Variations · most first" },
-              { value: "size", label: "Library size · largest first" },
-              { value: "issues", label: "Health issues · most first" }
-            ]} />
-          <button
-            type="button"
-            className={filtersOpen ? "filter-action active" : "filter-action"}
-            aria-expanded={filtersOpen}
-            aria-controls="library-refine-filters"
-            onClick={() => setFiltersOpen(value => !value)}
-          >
-            Filters
-            {refineFilterCount > 0 && <span className="filter-count">{refineFilterCount}</span>}
-          </button>
-          <button type="button" className={localFavoritesOnly ? "chip active" : "chip"}
+            onChange={value => useStore.getState().setLocalSort(value as typeof localSort)} options={sortOptions} />
+          {filterGroups.length > 0 && (
+            <button
+              type="button"
+              className={filtersOpen ? "filter-action active" : "filter-action"}
+              aria-expanded={filtersOpen}
+              aria-controls="library-refine-filters"
+              onClick={() => setFiltersOpen(value => !value)}
+            >
+              Filters
+              {refineFilterCount > 0 && <span className="filter-count">{refineFilterCount}</span>}
+            </button>
+          )}
+          {localProvider !== "poliigon" && localProvider !== "polyhaven" && <button type="button" className={localFavoritesOnly ? "chip active" : "chip"}
             disabled={!auth.loggedIn} aria-pressed={localFavoritesOnly}
-            onClick={() => useStore.getState().setLocalFavoritesOnly(!localFavoritesOnly)}>Favorites</button>
+            onClick={() => useStore.getState().setLocalFavoritesOnly(!localFavoritesOnly)}>Favorites</button>}
           <DensityControl />
-          <PackBrowser packs={localPacks} local />
+          {localProvider !== "poliigon" && localProvider !== "polyhaven" && <PackBrowser packs={localPacks} local />}
           <RecentBrowsing />
           <div className="chips">
-            {REPOS.map(item => (
+            {localProvider !== "poliigon" && localProvider !== "polyhaven" && REPOS.map(item => (
               <button
                 type="button"
                 key={item.value}
@@ -345,7 +490,11 @@ export function LibraryView() {
                 <button type="button" className="icon-btn" onClick={() => setFiltersOpen(false)} aria-label="Close filters"><CloseIcon /></button>
               </div>
             </div>
-            <FilterWorkbench groups={filterGroups} showCounts={false} />
+            {filterGroups.length === 0 ? (
+              <p className="hint">No additional filters apply to this asset type.</p>
+            ) : (
+              <FilterWorkbench groups={filterGroups} showCounts={false} />
+            )}
           </section>
         )}
 
@@ -399,11 +548,11 @@ export function LibraryView() {
 
         <div className="path-line">
           <FolderIcon />
-          <span title={settings?.libraryPath}>{settings?.libraryPath}</span>
+          <span title={libraryPath}>{libraryPath}</span>
           <button
             type="button"
             className="text-btn"
-            onClick={() => settings && void window.openbridge.openPath(settings.libraryPath)}
+            onClick={() => libraryPath && void window.openbridge.openPath(libraryPath)}
           >
             Open
           </button>
@@ -451,6 +600,7 @@ export function LibraryView() {
                   }}
                   onContextMenu={event => {
                     event.preventDefault();
+                    if (asset.provider === "poliigon" || asset.provider === "polyhaven") return;
                     void window.openbridge.contextMenu.asset({
                       assetId: asset.id,
                       localPath: asset.path
@@ -460,17 +610,24 @@ export function LibraryView() {
                 >
                   <div className="asset-thumb">
                     {asset.preview ? (
-                      <img
-                        src={window.openbridge.toFileUrl(asset.preview)}
+                      <SmartThumbImage
+                        source={window.openbridge.toFileUrl(asset.preview)}
+                        direct={typeLabel(asset.type) === "HDRI"}
                         alt=""
-                        loading="lazy"
+                        className={typeLabel(asset.type) === "HDRI" ? "asset-thumb-img hdri-panorama" : "asset-thumb-img"}
                       />
                     ) : (
                       <span className="asset-placeholder">{typeLabel(asset.type)}</span>
                     )}
-                    <span className="asset-type">{typeLabel(asset.type)}</span>
+                    <span className={`asset-type ${assetTypeClass(typeLabel(asset.type))}`}>{typeLabel(asset.type)}</span>
+                    {!selectMode && (
+                      <ProviderLogo
+                        provider={asset.provider ?? "megascans"}
+                        className="asset-provider-mark"
+                      />
+                    )}
                     <span className="asset-flag owned">LOCAL</span>
-                    {!selectMode && auth.loggedIn && <button type="button" className={favorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
+                    {!selectMode && auth.loggedIn && asset.provider !== "poliigon" && asset.provider !== "polyhaven" && <button type="button" className={favorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
                       aria-label={favorites.includes(asset.id) ? "Remove favorite" : "Add favorite"}
                       onClick={event => { event.stopPropagation(); void useStore.getState().toggleFavorite(asset.id); }}>
                       {favorites.includes(asset.id) ? "♥" : "♡"}
@@ -495,7 +652,7 @@ export function LibraryView() {
                   <div className="asset-meta">
                     <strong>{asset.name}</strong>
                     <span>{asset.id}</span>
-                    <em>{asset.repo}</em>
+                    <em>{asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>
                     {facts && <span className="asset-facts">{facts}</span>}
                   </div>
                 </div>
@@ -513,13 +670,23 @@ export function LibraryView() {
             <h2>{allTotal === 0 ? "No local assets" : "No matching assets"}</h2>
             <p>
               {allTotal === 0
-                ? "Point OpenBridge at an existing Megascans library or import a custom asset folder/zip."
-                : "Try a different search or repository filter."}
+                ? localProvider === "poliigon"
+                  ? "No Poliigon assets are indexed yet. Download an asset or check the Poliigon library path in Settings."
+                  : localProvider === "polyhaven"
+                    ? "No Poly Haven assets are indexed yet. Download an asset or check the Poly Haven library path in Settings."
+                    : "Point OpenBridge at an existing Megascans, Poliigon or Poly Haven library, or import a custom asset folder/zip."
+                : "Try a different search or source filter."}
             </p>
             {allTotal === 0 ? (
-              <button type="button" className="btn btn-primary" onClick={() => void importFolder()}>
-                Import a folder
-              </button>
+              localProvider === "poliigon" || localProvider === "polyhaven" ? (
+                <button type="button" className="btn btn-primary" onClick={() => useStore.getState().setView("settings")}>
+                  Check {localProvider === "poliigon" ? "Poliigon" : "Poly Haven"} library path
+                </button>
+              ) : (
+                <button type="button" className="btn btn-primary" onClick={() => void importFolder()}>
+                  Import a folder
+                </button>
+              )
             ) : (
               <button type="button" className="btn btn-ghost" onClick={resetLocalFilters}>
                 Clear search and filters
@@ -540,7 +707,11 @@ export function LibraryView() {
             <div className="health-head">
               <div>
                 <h2>Library health</h2>
-                <p>{health?.libraryPath ?? settings?.libraryPath}</p>
+                <p>
+                  {health?.libraryPath ?? settings?.libraryPath}
+                  {health?.poliigonLibraryPath ? ` + ${health.poliigonLibraryPath}` : ""}
+                  {health?.polyhavenLibraryPath ? ` + ${health.polyhavenLibraryPath}` : ""}
+                </p>
               </div>
               <button
                 type="button"

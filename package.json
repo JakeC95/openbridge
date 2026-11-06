@@ -2,7 +2,7 @@
   "name": "openbridge",
   "version": "1.5.9",
   "private": true,
-  "description": "Open-source, portable library manager for Quixel Megascans assets on Windows",
+  "description": "Open-source, portable content bridge for Megascans and Poliigon assets on Windows",
   "productName": "OpenBridge",
   "desktopName": "openbridge",
   "main": "out/main/index.js",
@@ -27,6 +27,7 @@
     "catalog:import": "electron . --import-catalog-pack=dist/catalog-metadata-sample.json.gz"
   },
   "dependencies": {
+    "@bb-studio/exr": "^0.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "yauzl": "^3.4.0",

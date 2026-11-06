@@ -12,6 +12,7 @@ import { buildExportAsset, sendToSocket, writeMegascansJson } from "./exporter";
 import {
   fetchCategories,
   LegacyApi,
+  primeMegascansIdIndex,
   searchCatalog,
   searchCatalogIds
 } from "./legacy-api";
@@ -20,6 +21,13 @@ import { highResolutionPreview } from "./high-resolution-preview";
 import { recommendedDownloadDefaults } from "../shared/download-defaults";
 import { LibraryService } from "./library";
 import { Logger } from "./logger";
+import { PoliigonCatalog } from "./poliigon/catalog";
+import { PoliigonAuthService } from "./poliigon/auth";
+import { PoliigonDownloadManager } from "./poliigon/download";
+import { PolyHavenCatalog } from "./polyhaven/catalog";
+import { PolyHavenDownloadManager } from "./polyhaven/download";
+import { smartThumbnail } from "./smart-thumbnails";
+import { flushLargePreviewCache } from "./preview-cache";
 import { SettingsStore } from "./settings";
 import { SyncService } from "./sync";
 import { UpdateService } from "./updater";
@@ -49,6 +57,12 @@ let downloads: DownloadManager | null = null;
 let syncService: SyncService | null = null;
 let updateService: UpdateService | null = null;
 let catalogMetadata: CatalogMetadataProvider | null = null;
+let poliigonCatalog: PoliigonCatalog | null = null;
+let poliigonAuth: PoliigonAuthService | null = null;
+let poliigonDownloads: PoliigonDownloadManager | null = null;
+let polyhavenCatalog: PolyHavenCatalog | null = null;
+let polyhavenDownloads: PolyHavenDownloadManager | null = null;
+let catalogueRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 function exportPath(): string {
   if (process.platform === "win32") {
@@ -98,6 +112,31 @@ function requireUpdates(): UpdateService {
 function requireCatalogMetadata(): CatalogMetadataProvider {
   if (!catalogMetadata) throw new Error("catalogue metadata provider not ready");
   return catalogMetadata;
+}
+
+function requirePoliigon(): PoliigonCatalog {
+  if (!poliigonCatalog) throw new Error("Poliigon catalogue is not ready");
+  return poliigonCatalog;
+}
+
+function requirePoliigonAuth(): PoliigonAuthService {
+  if (!poliigonAuth) throw new Error("Poliigon account service is not ready");
+  return poliigonAuth;
+}
+
+function requirePoliigonDownloads(): PoliigonDownloadManager {
+  if (!poliigonDownloads) throw new Error("Poliigon download service is not ready");
+  return poliigonDownloads;
+}
+
+function requirePolyHaven(): PolyHavenCatalog {
+  if (!polyhavenCatalog) throw new Error("Poly Haven catalogue is not ready");
+  return polyhavenCatalog;
+}
+
+function requirePolyHavenDownloads(): PolyHavenDownloadManager {
+  if (!polyhavenDownloads) throw new Error("Poly Haven download service is not ready");
+  return polyhavenDownloads;
 }
 
 async function validateAssetJson(assetId: string): Promise<JsonValidationReport> {
@@ -492,9 +531,18 @@ function registerIpc(): void {
     const error = await shell.openPath(target);
     if (error) throw new Error(error);
   });
+  ipcMain.handle("app:openExternal", async (_event, url: string) => {
+    if (!/^https?:\/\//i.test(url)) throw new Error("Only web links can be opened externally");
+    await shell.openExternal(url);
+  });
 
   ipcMain.handle("app:openLogs", () => {
     if (logger) shell.showItemInFolder(logger.path);
+  });
+
+  ipcMain.handle("thumb:smart", (_event, source: string) => {
+    if (typeof source !== "string" || !/^(?:https?|file):/i.test(source)) return source;
+    return smartThumbnail(source);
   });
 
   ipcMain.handle("export:send", async (_event, port: number, data: ExportAsset[]) => {
@@ -692,42 +740,134 @@ function registerIpc(): void {
 
   ipcMain.handle(
     "downloads:start",
-    (_event, assetId: string, options?: Partial<DownloadOptions>) =>
-      requireDownloads().start(assetId, options)
+    (_event, assetId: string, options?: unknown, provider?: string) => {
+      if (provider === "polyhaven" || assetId.startsWith("polyhaven:")) {
+        return requirePolyHavenDownloads().start(assetId, options as never);
+      }
+      if (provider === "poliigon" || assetId.startsWith("poliigon:")) {
+        return requirePoliigonDownloads().start(assetId, options as never);
+      }
+      return requireDownloads().start(assetId, options as never);
+    }
   );
   ipcMain.handle(
     "downloads:startMany",
-    (_event, assetIds: string[], options?: Partial<DownloadOptions>) =>
-      requireDownloads().startMany(assetIds, options)
+    (_event, assetIds: string[], options?: unknown, provider?: string) => {
+      if (provider === "polyhaven" || (assetIds.length > 0 && assetIds.every(id => id.startsWith("polyhaven:")))) {
+        return requirePolyHavenDownloads().startMany(assetIds, options as never);
+      }
+      if (provider === "poliigon" || (assetIds.length > 0 && assetIds.every(id => id.startsWith("poliigon:")))) {
+        return requirePoliigonDownloads().startMany(assetIds, options as never);
+      }
+      return requireDownloads().startMany(assetIds, options as never);
+    }
   );
   ipcMain.handle("downloads:acquire", (_event, assetId: string) =>
     requireDownloads().acquire(assetId)
   );
-  ipcMain.handle("downloads:cancel", (_event, assetId: string) =>
-    requireDownloads().cancel(assetId)
-  );
-  ipcMain.handle("downloads:retry", (_event, assetId: string) => requireDownloads().retry(assetId));
-  ipcMain.handle("downloads:pause", (_event, assetId: string) =>
-    requireDownloads().pause(assetId)
-  );
-  ipcMain.handle("downloads:resume", (_event, assetId: string) =>
-    requireDownloads().resume(assetId)
-  );
-  ipcMain.handle("downloads:cancelAll", () => requireDownloads().cancelAll());
-  ipcMain.handle("downloads:pauseAll", () => requireDownloads().pauseAll());
-  ipcMain.handle("downloads:resumeAll", () => requireDownloads().resumeAll());
-  ipcMain.handle("downloads:clearFinished", () => requireDownloads().clearFinished());
-  ipcMain.handle("downloads:list", () => requireDownloads().list());
+  ipcMain.handle("downloads:cancel", (_event, assetId: string) => {
+    if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
+      requirePolyHavenDownloads().cancel(assetId);
+      return;
+    }
+    if (assetId.startsWith("poliigon:") || poliigonDownloads?.has(assetId)) {
+      requirePoliigonDownloads().cancel(assetId);
+      return;
+    }
+    requireDownloads().cancel(assetId);
+  });
+  ipcMain.handle("downloads:retry", (_event, assetId: string) => {
+    if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
+      return requirePolyHavenDownloads().retry(assetId);
+    }
+    if (assetId.startsWith("poliigon:") || poliigonDownloads?.has(assetId)) {
+      return requirePoliigonDownloads().retry(assetId);
+    }
+    return requireDownloads().retry(assetId);
+  });
+  ipcMain.handle("downloads:pause", (_event, assetId: string) => {
+    if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
+      return requirePolyHavenDownloads().pause(assetId);
+    }
+    if (assetId.startsWith("poliigon:") || poliigonDownloads?.has(assetId)) {
+      return requirePoliigonDownloads().pause(assetId);
+    }
+    return requireDownloads().pause(assetId);
+  });
+  ipcMain.handle("downloads:resume", (_event, assetId: string) => {
+    if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
+      return requirePolyHavenDownloads().resume(assetId);
+    }
+    if (assetId.startsWith("poliigon:") || poliigonDownloads?.has(assetId)) {
+      return requirePoliigonDownloads().resume(assetId);
+    }
+    return requireDownloads().resume(assetId);
+  });
+  ipcMain.handle("downloads:cancelAll", async () => {
+    requireDownloads().cancelAll();
+    await requirePoliigonDownloads().cancelAll();
+    await requirePolyHavenDownloads().cancelAll();
+  });
+  ipcMain.handle("downloads:pauseAll", async () => {
+    await Promise.all([
+      requireDownloads().pauseAll(),
+      requirePoliigonDownloads().pauseAll(),
+      requirePolyHavenDownloads().pauseAll()
+    ]);
+  });
+  ipcMain.handle("downloads:resumeAll", async () => {
+    await Promise.all([
+      requireDownloads().resumeAll(),
+      requirePoliigonDownloads().resumeAll(),
+      requirePolyHavenDownloads().resumeAll()
+    ]);
+  });
+  ipcMain.handle("downloads:clearFinished", () => {
+    requireDownloads().clearFinished();
+    requirePoliigonDownloads().clearFinished();
+    requirePolyHavenDownloads().clearFinished();
+  });
+  ipcMain.handle("downloads:list", () => [
+    ...requireDownloads().list(),
+    ...requirePoliigonDownloads().list(),
+    ...requirePolyHavenDownloads().list()
+  ]);
   ipcMain.handle("downloads:overview", async () => {
-    const libraryPath = settings().libraryPath;
-    const measured = library?.storageSummary() ?? { measuredLibraryBytes: 0, measuredAssets: 0, totalAssets: 0 };
+    const mega = requireDownloads().overview();
+    const poliigon = requirePoliigonDownloads().overview();
+    const polyhaven = requirePolyHavenDownloads().overview();
+    const poliigonJobs = requirePoliigonDownloads().list();
+    const polyhavenJobs = requirePolyHavenDownloads().list();
+    const libraryPath = polyhavenJobs.length > 0
+      ? settings().polyhavenLibraryPath
+      : poliigonJobs.length > 0
+        ? settings().poliigonLibraryPath
+        : settings().libraryPath;
+    const measured = poliigonJobs.length > 0 || polyhavenJobs.length > 0
+      ? { measuredLibraryBytes: 0, measuredAssets: 0, totalAssets: 0 }
+      : library?.storageSummary() ?? { measuredLibraryBytes: 0, measuredAssets: 0, totalAssets: 0 };
     let totalBytes: number | null = null;
     let freeBytes: number | null = null;
     let error: string | undefined;
-    try { const volume = await statfs(libraryPath); totalBytes = Number(volume.blocks) * Number(volume.bsize);
-      freeBytes = Number(volume.bavail) * Number(volume.bsize); }
-    catch { error = "Disk space unavailable. Check that the library folder is accessible."; }
-    return { ...requireDownloads().overview(), disk: { libraryPath, ...measured, totalBytes, freeBytes, error } };
+    try {
+      const volume = await statfs(libraryPath);
+      totalBytes = Number(volume.blocks) * Number(volume.bsize);
+      freeBytes = Number(volume.bavail) * Number(volume.bsize);
+    } catch {
+      error = "Disk space unavailable. Check that the library folder is accessible.";
+    }
+    const histories = [mega.history, poliigon.history, polyhaven.history];
+    return {
+      history: histories.sort((a, b) => b.length - a.length)[0],
+      historyError: mega.historyError || poliigon.historyError || polyhaven.historyError,
+      session: {
+        receivedBytes: mega.session.receivedBytes + poliigon.session.receivedBytes + polyhaven.session.receivedBytes,
+        completed: mega.session.completed + poliigon.session.completed + polyhaven.session.completed,
+        averageBytesPerSecond: mega.session.averageBytesPerSecond + poliigon.session.averageBytesPerSecond + polyhaven.session.averageBytesPerSecond,
+        peakBytesPerSecond: Math.max(mega.session.peakBytesPerSecond, poliigon.session.peakBytesPerSecond, polyhaven.session.peakBytesPerSecond)
+      },
+      disk: { libraryPath, ...measured, totalBytes, freeBytes, error }
+    };
   });
 
   ipcMain.handle("catalog:metadata:status", () => requireCatalogMetadata().status());
@@ -749,6 +889,61 @@ function registerIpc(): void {
     requireCatalogMetadata().installFromUrl()
   );
   ipcMain.handle("catalog:metadata:remove", () => requireCatalogMetadata().remove());
+
+  ipcMain.handle("poliigon:status", () => requirePoliigon().status());
+  ipcMain.handle("poliigon:refresh", () => requirePoliigon().refresh());
+  ipcMain.handle("poliigon:categories", () => requirePoliigon().categories());
+  ipcMain.handle("poliigon:search", (_event, query) => requirePoliigon().query(query));
+  ipcMain.handle("poliigon:ids", (_event, query) => requirePoliigon().ids(query));
+  ipcMain.handle("poliigon:extended", (_event, assetId: number) => {
+    if (!Number.isFinite(assetId)) throw new Error("Invalid Poliigon asset id");
+    return requirePoliigon().extended(assetId);
+  });
+  ipcMain.handle("poliigon:mapPreviews", (_event, assetId: number) => {
+    if (!Number.isFinite(assetId)) throw new Error("Invalid Poliigon asset id");
+    return requirePoliigonDownloads().previewMaps(assetId);
+  });
+  ipcMain.handle("poliigon:highResolutionMapPreview", (_event, assetId: number, mapType: string) => {
+    if (!Number.isFinite(assetId)) throw new Error("Invalid Poliigon asset id");
+    return requirePoliigonDownloads().highResolutionMapPreview(assetId, mapType);
+  });
+  ipcMain.handle("poliigon:hdrPreview", (_event, assetId: number) => {
+    if (!Number.isFinite(assetId)) throw new Error("Invalid Poliigon asset id");
+    return requirePoliigonDownloads().hdrPreview(assetId);
+  });
+  ipcMain.handle("poliigon:auth:state", () => requirePoliigonAuth().state());
+  ipcMain.handle("poliigon:auth:login", (_event, email: string, password: string) =>
+    requirePoliigonAuth().login(email, password)
+  );
+  ipcMain.handle("poliigon:auth:loginBrowser", () => requirePoliigonAuth().loginWithBrowser());
+  ipcMain.handle("poliigon:auth:cancelBrowser", () => requirePoliigonAuth().cancelBrowserLogin());
+  ipcMain.handle("poliigon:auth:logout", () => requirePoliigonAuth().logout());
+  ipcMain.handle("poliigon:auth:refresh", () => requirePoliigonAuth().refreshAccount(true));
+  ipcMain.handle("poliigon:auth:owned", () => requirePoliigonAuth().ownedIds());
+  ipcMain.handle("poliigon:auth:recentDownloads", () => requirePoliigonAuth().recentDownloads());
+  ipcMain.handle("poliigon:auth:syncOwned", () => requirePoliigonAuth().syncOwned());
+
+  ipcMain.handle("polyhaven:status", () => requirePolyHaven().status());
+  ipcMain.handle("polyhaven:refresh", () => requirePolyHaven().refresh());
+  ipcMain.handle("polyhaven:categories", () => requirePolyHaven().categories());
+  ipcMain.handle("polyhaven:search", (_event, query) => requirePolyHaven().query(query));
+  ipcMain.handle("polyhaven:ids", (_event, query) => requirePolyHaven().ids(query));
+  ipcMain.handle("polyhaven:extended", (_event, assetId: string) => {
+    if (typeof assetId !== "string" || !assetId) throw new Error("Invalid Poly Haven asset id");
+    return requirePolyHaven().extended(assetId);
+  });
+  ipcMain.handle("polyhaven:mapPreviews", (_event, assetId: string) => {
+    if (typeof assetId !== "string" || !assetId) throw new Error("Invalid Poly Haven asset id");
+    return requirePolyHavenDownloads().previewMaps(assetId);
+  });
+  ipcMain.handle("polyhaven:highResolutionMapPreview", (_event, assetId: string, mapType: string) => {
+    if (typeof assetId !== "string" || !assetId) throw new Error("Invalid Poly Haven asset id");
+    return requirePolyHavenDownloads().highResolutionMapPreview(assetId, mapType);
+  });
+  ipcMain.handle("polyhaven:hdrPreview", (_event, assetId: string) => {
+    if (typeof assetId !== "string" || !assetId) throw new Error("Invalid Poly Haven asset id");
+    return requirePolyHavenDownloads().hdrPreview(assetId);
+  });
 
   ipcMain.handle("sync:status", () => requireSync().current());
   ipcMain.handle("sync:run", () => requireSync().run());
@@ -772,7 +967,11 @@ async function init(): Promise<void> {
   logger = new Logger(logFilePath());
 
   const defaults: AppSettings = {
-    libraryPath: join(app.getPath("documents"), "Megascans Library"),
+    libraryRoot: join(app.getPath("documents"), "OpenBridge"),
+    libraryPath: join(app.getPath("documents"), "OpenBridge", "Megascans"),
+    poliigonLibraryPath: join(app.getPath("documents"), "OpenBridge", "Poliigon"),
+    polyhavenLibraryPath: join(app.getPath("documents"), "OpenBridge", "PolyHaven"),
+    poliigonConfirmPurchases: true,
     apiPort: 28241,
     discoveryPort: 28852,
     autoSyncEnabled: true,
@@ -783,12 +982,27 @@ async function init(): Promise<void> {
   settingsStore = new SettingsStore(join(userData, "settings.json"), defaults);
   library = new LibraryService(
     () => settings().libraryPath,
+    () => settings().poliigonLibraryPath,
+    () => settings().polyhavenLibraryPath,
+    assetName => poliigonCatalog?.findByAssetName(assetName) ?? null,
+    id => polyhavenCatalog?.findById(id) ?? polyhavenCatalog?.findByName(id) ?? null,
     join(userData, "library-index.sqlite"),
     logger
   );
 
   authService = new AuthService(logger, notify);
   await authService.load();
+  poliigonAuth = new PoliigonAuthService(
+    logger,
+    url => {
+      if (/^https:\/\//i.test(url)) void shell.openExternal(url).catch(() => undefined);
+    },
+    notify
+  );
+  await poliigonAuth.load();
+  poliigonAuth.onChanged(state => {
+    mainWindow?.webContents.send("poliigon:auth:changed", state);
+  });
   legacyApi = new LegacyApi(authService, logger);
   const packArg = process.argv.find(arg => arg.startsWith("--build-catalog-pack="));
   if (packArg) {
@@ -837,6 +1051,66 @@ async function init(): Promise<void> {
     join(userData, "catalog-metadata.sqlite"),
     logger
   );
+  poliigonCatalog = new PoliigonCatalog(
+    join(userData, "poliigon-catalog.sqlite"),
+    logger
+  );
+  poliigonCatalog.onStatus(status => {
+    mainWindow?.webContents.send("poliigon:status", status);
+    if (status.state === "ready") {
+      library?.invalidate();
+      void broadcastLibrary(true);
+    }
+  });
+  poliigonDownloads = new PoliigonDownloadManager(
+    poliigonAuth,
+    poliigonCatalog,
+    logger,
+    () => settings().poliigonLibraryPath,
+    notify,
+    undefined,
+    () => {
+      library?.invalidate();
+      void broadcastLibrary(true);
+    }
+  );
+  poliigonDownloads.onProgress(progress => {
+    mainWindow?.webContents.send("downloads:progress", progress);
+  });
+  polyhavenCatalog = new PolyHavenCatalog(
+    join(userData, "polyhaven-catalog.sqlite"),
+    logger
+  );
+  let lastPolyHavenLibraryCount = 0;
+  polyhavenCatalog.onStatus(status => {
+    mainWindow?.webContents.send("polyhaven:status", status);
+    // Only rescan the disk after the catalogue (and its file metadata) is fully
+    // ready, not on every background enrichment progress tick.
+    if (
+      status.state === "ready" &&
+      status.count > 0 &&
+      status.enriched >= status.count &&
+      lastPolyHavenLibraryCount !== status.count
+    ) {
+      lastPolyHavenLibraryCount = status.count;
+      library?.invalidate();
+      void broadcastLibrary(true);
+    }
+  });
+  polyhavenDownloads = new PolyHavenDownloadManager(
+    polyhavenCatalog,
+    logger,
+    () => settings().polyhavenLibraryPath,
+    notify,
+    undefined,
+    () => {
+      library?.invalidate();
+      void broadcastLibrary(true);
+    }
+  );
+  polyhavenDownloads.onProgress(progress => {
+    mainWindow?.webContents.send("downloads:progress", progress);
+  });
   const importPackArg = process.argv.find(arg =>
     arg.startsWith("--import-catalog-pack=")
   );
@@ -883,6 +1157,19 @@ async function init(): Promise<void> {
   await startServices();
   createWindow();
   await broadcastLibrary();
+  void poliigonCatalog.ensureReady();
+  void polyhavenCatalog.ensureReady();
+  void primeMegascansIdIndex();
+  // Keep checking for newly published assets while the app stays open. The
+  // catalogue's own TTL decides whether this performs a network refresh.
+  catalogueRefreshTimer = setInterval(() => {
+    void poliigonCatalog?.ensureReady();
+    void polyhavenCatalog?.ensureReady();
+  }, 2 * 60 * 60 * 1000);
+  app.on("browser-window-focus", () => {
+    void poliigonCatalog?.ensureReady();
+    void polyhavenCatalog?.ensureReady();
+  });
 
   if (authService.state().loggedIn) {
     syncService.start();
@@ -924,7 +1211,24 @@ if (!gotLock) {
     void apiServer?.stop();
     void bridgeLink?.stop();
   });
-  app.on("will-quit", () => downloads?.closeHistory());
+  app.on("will-quit", () => {
+    if (catalogueRefreshTimer) {
+      clearInterval(catalogueRefreshTimer);
+      catalogueRefreshTimer = null;
+    }
+    downloads?.closeHistory();
+    poliigonDownloads?.closeHistory();
+    polyhavenDownloads?.closeHistory();
+    poliigonAuth?.cancelBrowserLogin();
+    poliigonCatalog?.close();
+    polyhavenCatalog?.close();
+    const flushed = flushLargePreviewCache();
+    if (flushed.removed > 0) {
+      console.log(
+        `Flushed ${flushed.removed} large preview cache file${flushed.removed === 1 ? "" : "s"} (${Math.round(flushed.bytes / (1024 * 1024))} MB)`
+      );
+    }
+  });
 }
 
 

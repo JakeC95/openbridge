@@ -1,5 +1,8 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { CatalogHit, DownloadProgress } from "../../shared/types";
+import { assetTypeClass } from "../asset-visuals";
+import { ProviderLogo } from "./ProviderLogo";
+import { SmartThumbImage } from "./SmartThumbImage";
 import {
   hitId,
   galleryFacts,
@@ -93,12 +96,13 @@ export function AssetCard({
     >
       <div className="asset-thumb">
         {thumb ? (
-          <img src={thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />
+          <SmartThumbImage source={thumb} alt="" className="asset-thumb-img" />
         ) : (
           <span className="asset-placeholder">{typeLabel(hit.type)}</span>
         )}
 
-        <span className="asset-type">{typeLabel(hit.type)}</span>
+        {!selectionMode && <ProviderLogo provider="megascans" className="asset-provider-mark" />}
+        <span className={`asset-type ${assetTypeClass(typeLabel(hit.type))}`}>{typeLabel(hit.type)}</span>
 
         {selectionMode && (
           <button

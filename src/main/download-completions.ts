@@ -10,6 +10,7 @@ export class DownloadCompletions {
     mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL;
+      PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS download_completions (
         id INTEGER PRIMARY KEY, asset_id TEXT NOT NULL, name TEXT NOT NULL,
         path TEXT NOT NULL, bytes INTEGER NOT NULL, completed_at INTEGER NOT NULL

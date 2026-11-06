@@ -48,7 +48,7 @@ export function DownloadsView() {
     catch (error) { toast(`Could not retry ${item.name || item.assetId}: ${String(error)}`, true); }
   };
 
-  const items = Object.values(downloads).sort((a, b) => {
+  const items = Object.values(downloads).filter(item => !item.preview).sort((a, b) => {
     const order: Record<string, number> = {
       error: 0,
       downloading: 1,
@@ -136,7 +136,7 @@ export function DownloadsView() {
             (item.status === "extracting" && item.diagnostics.activeTransfers > 0)) &&
             <DownloadStats stats={item.diagnostics} assetId={item.assetId} />}
           <div className="download-meta">
-            <span>{item.assetId}</span>
+            <span>{item.provider === "poliigon" ? "Poliigon" : "Megascans"} · {item.assetId}</span>
             {item.message && <span className="download-message">{item.message}</span>}
             {item.path && (
               <button

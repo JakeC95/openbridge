@@ -4,6 +4,7 @@ dist/
 tools/
 analysis/
 third_party/
+poliigon-addon-*.zip
 *.log
 .DS_Store
 Thumbs.db

@@ -64,6 +64,12 @@ export function typeLabel(type: string | undefined): string {
       return "Brush";
     case "decal":
       return "Decal";
+    case "texture":
+      return "Texture";
+    case "model":
+      return "Model";
+    case "hdri":
+      return "HDRI";
     default:
       return type ? type.toUpperCase() : "ASSET";
   }
@@ -143,5 +149,30 @@ export function mapTypes(asset: ExtendedAsset | undefined): string[] {
     if (typeof map.type === "string") types.add(map.type);
   }
   return [...types].sort();
+}
+
+/** Numeric rank for resolution facet values such as "4K", "4096" or "2048px". */
+export function resolutionFacetValue(value: string): number {
+  const normal = value.trim().toLowerCase();
+  const match = /^(\d+(?:\.\d+)?)\s*k$/.exec(normal);
+  if (match) return Math.round(Number(match[1]) * 1024);
+  const pixels = /^(\d+(?:\.\d+)?)\s*(?:px)?$/.exec(normal);
+  if (pixels) return Number(pixels[1]);
+  return Number.MAX_SAFE_INTEGER;
+}
+
+export function sortResolutionBuckets<T extends { value: string }>(buckets: T[]): T[] {
+  return [...buckets].sort((a, b) => resolutionFacetValue(a.value) - resolutionFacetValue(b.value));
+}
+
+export function sortResolutionRecord(record: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    sortResolutionBuckets(Object.entries(record).map(([value, count]) => ({ value, count })))
+      .map(bucket => [bucket.value, bucket.count])
+  );
+}
+
+export function sortBucketsBy<T extends { value: string }>(buckets: T[], rank: (value: string) => number): T[] {
+  return [...buckets].sort((a, b) => rank(a.value) - rank(b.value) || a.value.localeCompare(b.value));
 }
 

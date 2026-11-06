@@ -6,6 +6,10 @@ export function formatMeasurementText(value: string | null | undefined): string 
   if (!value) return "";
   const text = value.trim();
   if (!text || /px\s*\/|\bpx\b|%/.test(text)) return text;
+  // Values that already carry a unit are authoritative; do not re-scale them.
+  if (/(?:^|[\s\d])(?:mm|cm|km|m|millimet(?:er|re)s?|centimet(?:er|re)s?|met(?:er|re)s?)(?:\b|$)/i.test(text)) {
+    return text;
+  }
 
   const numbers = [...text.matchAll(/(\d+(?:\.\d+)?)/g)].map(match =>
     Number.parseFloat(match[1])

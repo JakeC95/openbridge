@@ -22,6 +22,18 @@ import type {
   LibrarySnapshot,
   MapPreview,
   OpenBridgeApi,
+  PoliigonAssetDetail,
+  PoliigonAuthState,
+  PoliigonCatalogQuery,
+  PoliigonCatalogStatus,
+  PoliigonHdrData,
+  PoliigonMapPreview,
+  PoliigonQueryResult,
+  PolyHavenAssetDetail,
+  PolyHavenCatalogQuery,
+  PolyHavenCatalogStatus,
+  PolyHavenMapPreview,
+  PolyHavenQueryResult,
   Profile,
   ScanResult,
   SyncStatus,
@@ -54,7 +66,9 @@ const api: OpenBridgeApi = {
   exportLibraryAssets: (assetIds, folder, scope) =>
     ipcRenderer.invoke("library:exportAssets", assetIds, folder, scope) as Promise<string>,
   openPath: target => ipcRenderer.invoke("app:openPath", target) as Promise<void>,
+  openExternal: url => ipcRenderer.invoke("app:openExternal", url) as Promise<void>,
   openLogs: () => ipcRenderer.invoke("app:openLogs") as Promise<void>,
+  smartThumbnail: source => ipcRenderer.invoke("thumb:smart", source) as Promise<string>,
   sendExport: (port, data: ExportAsset[]) =>
     ipcRenderer.invoke("export:send", port, data) as Promise<void>,
   writeExport: (folder, data: ExportAsset[]) =>
@@ -143,11 +157,76 @@ const api: OpenBridgeApi = {
     removeFavorite: (assetId: string) =>
       ipcRenderer.invoke("catalog:removeFavorite", assetId) as Promise<void>
   },
+  poliigon: {
+    status: () => ipcRenderer.invoke("poliigon:status") as Promise<PoliigonCatalogStatus>,
+    refresh: () => ipcRenderer.invoke("poliigon:refresh") as Promise<PoliigonCatalogStatus>,
+    categories: () => ipcRenderer.invoke("poliigon:categories") as Promise<CategoryNode[]>,
+    search: (query: PoliigonCatalogQuery) =>
+      ipcRenderer.invoke("poliigon:search", query) as Promise<PoliigonQueryResult>,
+    ids: (query: PoliigonCatalogQuery) =>
+      ipcRenderer.invoke("poliigon:ids", query) as Promise<number[]>,
+    extended: (assetId: number) =>
+      ipcRenderer.invoke("poliigon:extended", assetId) as Promise<PoliigonAssetDetail>,
+    mapPreviews: (assetId: number) =>
+      ipcRenderer.invoke("poliigon:mapPreviews", assetId) as Promise<PoliigonMapPreview[]>,
+    highResolutionMapPreview: (assetId: number, mapType: string) =>
+      ipcRenderer.invoke("poliigon:highResolutionMapPreview", assetId, mapType) as Promise<PoliigonMapPreview>,
+    hdrPreview: (assetId: number) =>
+      ipcRenderer.invoke("poliigon:hdrPreview", assetId) as Promise<PoliigonHdrData>,
+    onStatus: callback => {
+      const listener = (_event: unknown, status: PoliigonCatalogStatus): void => callback(status);
+      ipcRenderer.on("poliigon:status", listener);
+      return () => ipcRenderer.removeListener("poliigon:status", listener);
+    },
+    auth: {
+      state: () => ipcRenderer.invoke("poliigon:auth:state") as Promise<PoliigonAuthState>,
+      login: (email: string, password: string) =>
+        ipcRenderer.invoke("poliigon:auth:login", email, password) as Promise<PoliigonAuthState>,
+      loginBrowser: () =>
+        ipcRenderer.invoke("poliigon:auth:loginBrowser") as Promise<PoliigonAuthState>,
+      cancelBrowserLogin: () =>
+        ipcRenderer.invoke("poliigon:auth:cancelBrowser") as Promise<void>,
+      logout: () => ipcRenderer.invoke("poliigon:auth:logout") as Promise<void>,
+      refresh: () =>
+        ipcRenderer.invoke("poliigon:auth:refresh") as Promise<PoliigonAuthState | null>,
+      owned: () => ipcRenderer.invoke("poliigon:auth:owned") as Promise<number[]>,
+      recentDownloads: () =>
+        ipcRenderer.invoke("poliigon:auth:recentDownloads") as Promise<number[]>,
+      syncOwned: () => ipcRenderer.invoke("poliigon:auth:syncOwned") as Promise<number[]>,
+      onChanged: callback => {
+        const listener = (_event: unknown, state: PoliigonAuthState): void => callback(state);
+        ipcRenderer.on("poliigon:auth:changed", listener);
+        return () => ipcRenderer.removeListener("poliigon:auth:changed", listener);
+      }
+    }
+  },
+  polyhaven: {
+    status: () => ipcRenderer.invoke("polyhaven:status") as Promise<PolyHavenCatalogStatus>,
+    refresh: () => ipcRenderer.invoke("polyhaven:refresh") as Promise<PolyHavenCatalogStatus>,
+    categories: () => ipcRenderer.invoke("polyhaven:categories") as Promise<CategoryNode[]>,
+    search: (query: PolyHavenCatalogQuery) =>
+      ipcRenderer.invoke("polyhaven:search", query) as Promise<PolyHavenQueryResult>,
+    ids: (query: PolyHavenCatalogQuery) =>
+      ipcRenderer.invoke("polyhaven:ids", query) as Promise<string[]>,
+    extended: (assetId: string) =>
+      ipcRenderer.invoke("polyhaven:extended", assetId) as Promise<PolyHavenAssetDetail>,
+    mapPreviews: (assetId: string) =>
+      ipcRenderer.invoke("polyhaven:mapPreviews", assetId) as Promise<PolyHavenMapPreview[]>,
+    highResolutionMapPreview: (assetId: string, mapType: string) =>
+      ipcRenderer.invoke("polyhaven:highResolutionMapPreview", assetId, mapType) as Promise<PolyHavenMapPreview>,
+    hdrPreview: (assetId: string) =>
+      ipcRenderer.invoke("polyhaven:hdrPreview", assetId) as Promise<PoliigonHdrData>,
+    onStatus: callback => {
+      const listener = (_event: unknown, status: PolyHavenCatalogStatus): void => callback(status);
+      ipcRenderer.on("polyhaven:status", listener);
+      return () => ipcRenderer.removeListener("polyhaven:status", listener);
+    }
+  },
   downloads: {
-    start: (assetId: string, options?: Partial<DownloadOptions>) =>
-      ipcRenderer.invoke("downloads:start", assetId, options) as Promise<void>,
-    startMany: (assetIds: string[], options?: Partial<DownloadOptions>) =>
-      ipcRenderer.invoke("downloads:startMany", assetIds, options) as Promise<BatchStartResult>,
+    start: (assetId: string, options?: import("../shared/types").AnyDownloadOptions, provider?: import("../shared/types").AssetProvider) =>
+      ipcRenderer.invoke("downloads:start", assetId, options, provider) as Promise<void>,
+    startMany: (assetIds: string[], options?: import("../shared/types").AnyDownloadOptions, provider?: import("../shared/types").AssetProvider) =>
+      ipcRenderer.invoke("downloads:startMany", assetIds, options, provider) as Promise<BatchStartResult>,
     acquire: (assetId: string) =>
       ipcRenderer.invoke("downloads:acquire", assetId) as Promise<void>,
     cancel: (assetId: string) =>

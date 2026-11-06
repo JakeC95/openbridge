@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useStore } from "../store";
+import { usePoliigonStore } from "../poliigon-store";
+import { usePolyHavenStore } from "../polyhaven-store";
 import { Dropdown } from "./Dropdown";
 import type { PackSummary } from "../../shared/types";
 import { CheckIcon, ChevronDownIcon, CloseIcon, SearchIcon } from "../icons";
@@ -53,42 +55,72 @@ export function DensityControl() {
 export function RecentBrowsing() {
   const searches = useStore(state => state.recentSearches);
   const assets = useStore(state => state.recentlyViewed);
+  const poliigonAssets = usePoliigonStore(state => state.recentlyViewed);
+  const polyhavenAssets = usePolyHavenStore(state => state.recentlyViewed);
   const toast = useStore(state => state.toast);
   return <BrowsingMenu label="Recent">
       <div className="browse-menu-heading"><strong>Recent searches</strong>
-        <button type="button" className="text-btn" onClick={() => useStore.getState().clearRecent()}>Clear history</button></div>
+        <button type="button" className="text-btn" onClick={() => {
+          useStore.getState().clearRecent();
+          usePoliigonStore.getState().clearRecentlyViewed();
+          usePolyHavenStore.getState().clearRecentlyViewed();
+        }}>Clear history</button></div>
       {searches.length === 0 && <p className="hint">Searches you submit appear here.</p>}
       {searches.map(query => <button type="button" className="browse-list-item" key={query}
         onClick={event => {
-          useStore.getState().setView("discover");
-          useStore.getState().setQuery(query);
-          void useStore.getState().search(true);
+          const state = useStore.getState();
+          state.setView("discover");
+          state.setQuery(query);
+          if (state.provider === "all") {
+            usePoliigonStore.getState().setQuery(query);
+            usePolyHavenStore.getState().setQuery(query);
+          }
+          void state.search(true);
           event.currentTarget.closest("details")?.removeAttribute("open");
         }}>{query}</button>)}
       <strong>Recently viewed</strong>
-      {assets.length === 0 && <p className="hint">Open an asset to start your history.</p>}
+      {assets.length === 0 && poliigonAssets.length === 0 && polyhavenAssets.length === 0 && <p className="hint">Open an asset to start your history.</p>}
       {assets.map(asset => <button type="button" className="browse-list-item" key={`${asset.source}:${asset.id}`}
         onClick={event => {
+          usePoliigonStore.getState().closeAsset();
           void useStore.getState().openRecent(asset).catch(error => toast(String(error), true));
           event.currentTarget.closest("details")?.removeAttribute("open");
         }}>{asset.name}<small>{asset.source === "local" ? "Local" : "Catalogue"}</small></button>)}
+      {poliigonAssets.map(asset => <button type="button" className="browse-list-item" key={`poliigon:${asset.id}`}
+        onClick={event => {
+          useStore.getState().closeSelection();
+          usePolyHavenStore.getState().closeAsset();
+          void usePoliigonStore.getState().openRecent(asset.id).catch(error => toast(String(error), true));
+          event.currentTarget.closest("details")?.removeAttribute("open");
+        }}>{asset.name}<small>Poliigon</small></button>)}
+      {polyhavenAssets.map(asset => <button type="button" className="browse-list-item" key={`polyhaven:${asset.id}`}
+        onClick={event => {
+          useStore.getState().closeSelection();
+          usePoliigonStore.getState().closeAsset();
+          void usePolyHavenStore.getState().openRecent(asset.id).catch(error => toast(String(error), true));
+          event.currentTarget.closest("details")?.removeAttribute("open");
+        }}>{asset.name}<small>Poly Haven</small></button>)}
   </BrowsingMenu>;
 }
 
 export function PackBrowser({ packs, local = false }: { packs: PackSummary[]; local?: boolean }) {
   const [query, setQuery] = useState("");
   const metadata = useStore(state => state.catalogMetadata);
+  const provider = useStore(state => state.provider);
   const browsePack = useStore(state => state.browsePack);
   const matches = packs.filter(pack => pack.name.toLowerCase().includes(query.toLowerCase()));
+  const allSources = !local && provider === "all";
   return <BrowsingMenu label={`Packs${packs.length > 0 ? ` (${packs.length})` : ""}`}>
       <strong>{local ? "Local packs" : "Catalogue packs"}</strong>
       <p className="hint">Based on recorded pack membership, not curated Bridge collections.
-        {!local && metadata?.generatedAt ? ` Metadata: ${new Date(metadata.generatedAt).toLocaleDateString()}.` : ""}</p>
+        {!local && metadata?.generatedAt ? ` Metadata: ${new Date(metadata.generatedAt).toLocaleDateString()}.` : ""}
+        {allSources ? " Megascans packs open the focused Megascans view." : ""}</p>
       <input aria-label="Search packs" placeholder="Find a pack..." value={query}
         onChange={event => setQuery(event.target.value)} />
       {matches.map(pack =>
         <button type="button" className="browse-list-item" key={pack.id || pack.name}
           onClick={event => {
+            if (allSources) useStore.getState().setProvider("megascans");
             browsePack(pack, local);
             event.currentTarget.closest("details")?.removeAttribute("open");
           }}>{pack.name}<small>{pack.count.toLocaleString()} assets</small></button>)}
@@ -99,18 +131,22 @@ export function PackBrowser({ packs, local = false }: { packs: PackSummary[]; lo
   </BrowsingMenu>;
 }
 
-export function FacetGroup({ group, label, values, selected, toggle, hidden = false, showCounts = true, labels = {} }: {
+export function FacetGroup({ group, label, values, selected, toggle, hidden = false, showCounts = true, labels = {}, compare }: {
   group: string; label: string; values: Record<string, number>; selected: string[]; toggle(value: string): void;
   hidden?: boolean;
   showCounts?: boolean;
   labels?: Record<string, string>;
+  compare?: (a: string, b: string) => number;
 }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
   const entries = [...new Set([...selected, ...Object.keys(values)])]
     .filter(value => value && value !== "undefined")
     .filter(value => (labels[value] ?? value).toLowerCase().includes(query.toLowerCase()))
-    .sort((a, b) => Number(selected.includes(b)) - Number(selected.includes(a)) || (values[b] ?? 0) - (values[a] ?? 0) || a.localeCompare(b));
+    .sort((a, b) => Number(selected.includes(b)) - Number(selected.includes(a))
+      || (compare ? compare(a, b) : 0)
+      || (values[b] ?? 0) - (values[a] ?? 0)
+      || a.localeCompare(b));
   const visible = query || expanded ? entries : entries.slice(0, Math.max(12, selected.length));
   return (
     <section className="facet-group" hidden={hidden} aria-label={`${label} filters`}>
@@ -194,6 +230,8 @@ export interface FilterGroup {
   selected: string[];
   toggle(value: string): void;
   labels?: Record<string, string>;
+  /** Canonical value order; equal or unknown values fall back to count. */
+  compare?(a: string, b: string): number;
 }
 
 export function FilterWorkbench({ groups, showCounts = true, activeGroup, onActiveGroup }: {

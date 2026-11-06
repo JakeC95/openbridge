@@ -2,6 +2,8 @@ export type TextureFormat = "jpg" | "exr";
 export type MeshFormat = "fbx" | "abc";
 export type DownloadMapFormat = "image/jpeg" | "image/x-exr" | "jpeg+exr";
 export type AssetDefaultsKind = "3d" | "3dplant" | "surface" | "other";
+export type AssetProvider = "megascans" | "poliigon" | "polyhaven";
+export type ProviderScope = AssetProvider | "all";
 
 export interface DownloadPreset {
   resolution: number;
@@ -18,7 +20,11 @@ export interface DownloadPreset {
 }
 
 export interface AppSettings {
+  libraryRoot: string;
   libraryPath: string;
+  poliigonLibraryPath: string;
+  polyhavenLibraryPath: string;
+  poliigonConfirmPurchases: boolean;
   apiPort: number;
   discoveryPort: number;
   autoSyncEnabled: boolean;
@@ -38,7 +44,9 @@ export interface AssetTechnicalSummary {
   resolution: number | null;
   mapTypes: string[];
   mapCount: number;
+  mapFormats: string[];
   lodCount: number;
+  lodTriangles: Array<{ label: string; tris: number }>;
   maxTris: number;
   variationCount: number;
   billboardCount: number;
@@ -105,6 +113,7 @@ export interface CatalogMetadataRecord {
 
 export interface AssetRecord {
   id: string;
+  provider?: AssetProvider;
   name: string;
   type: string;
   categories: string[];
@@ -160,6 +169,7 @@ export interface Profile {
 export interface CatalogHit {
   objectID: string;
   id: string;
+  provider?: AssetProvider;
   name: string;
   type: string;
   category?: string;
@@ -186,6 +196,7 @@ export interface CatalogHit {
     relativeSize?: string;
   };
   points?: number;
+  credit?: number;
   resolution?: number;
   biome?: string;
   region?: string;
@@ -217,6 +228,7 @@ export interface CatalogQuery {
   type?: string;
   category?: string;
   categoryPath?: string[];
+  categoryPaths?: string[][];
   ids?: string[];
   points?: number;
   minSize?: number;
@@ -336,7 +348,10 @@ export interface MapPreview {
   label: string;
   url: string;
   resolution?: string;
+  /** Provider asset id, used to match live transfer progress for this preview. */
+  assetId?: number | string;
   map?: MapPreviewRequest;
+  exposure?: { assetId: number | string; mapType?: string };
 }
 
 export interface MapPreviewRequest {
@@ -373,8 +388,20 @@ export type DownloadStatus =
   | "error"
   | "cancelled";
 
+export interface PoliigonDownloadOptions {
+  resolution: string;
+  maps?: Array<{ type: string; format: string }>;
+  lods?: string[];
+  nativeMesh?: boolean;
+  renderer?: string;
+  software?: string;
+}
+
+export type AnyDownloadOptions = Partial<DownloadOptions> | Partial<PoliigonDownloadOptions> | Partial<PolyHavenDownloadOptions>;
+
 export interface DownloadProgress {
   assetId: string;
+  provider?: AssetProvider;
   name?: string;
   status: DownloadStatus;
   received: number;
@@ -382,6 +409,8 @@ export interface DownloadProgress {
   ratio: number;
   message?: string;
   path?: string;
+  /** Transient preview fetch (map previews, HDR source) rather than a library download. */
+  preview?: boolean;
   diagnostics?: DownloadDiagnostics;
 }
 
@@ -517,6 +546,8 @@ export interface ScanResult {
   assets: AssetRecord[];
   scannedAt: number;
   libraryPath: string;
+  poliigonLibraryPath?: string;
+  polyhavenLibraryPath?: string;
 }
 
 export interface LibraryRef {
@@ -526,6 +557,9 @@ export interface LibraryRef {
 
 export interface LibraryCounts {
   all: number;
+  megascans: number;
+  poliigon: number;
+  polyhaven: number;
   downloaded: number;
   custom: number;
   dhi: number;
@@ -544,6 +578,7 @@ export interface PackSummary extends PackRef {
 
 export interface LibraryQuery {
   query?: string;
+  provider?: AssetProvider | "all";
   repo?: RepoKind | "all";
   sort?: LibrarySort;
   type?: string;
@@ -578,6 +613,8 @@ export interface LibrarySnapshot {
   counts: LibraryCounts;
   scannedAt: number;
   libraryPath: string;
+  poliigonLibraryPath?: string;
+  polyhavenLibraryPath?: string;
 }
 
 export type LibraryIssueKind =
@@ -612,6 +649,8 @@ export interface LibraryHealthProgress {
 
 export interface LibraryHealthReport {
   libraryPath: string;
+  poliigonLibraryPath?: string;
+  polyhavenLibraryPath?: string;
   scannedAt: number;
   assets: number;
   files: number;
@@ -619,6 +658,293 @@ export interface LibraryHealthReport {
   byType: Record<string, LibraryTypeStats>;
   issues: LibraryIssue[];
   duplicates: Array<{ assetId: string; paths: string[] }>;
+}
+
+export interface PoliigonPreview {
+  fileName: string;
+  baseUrl: string;
+  url: string;
+  type?: string;
+  position?: number | null;
+  role?: string | null;
+  mapCode?: string;
+}
+
+export interface PoliigonPhysicalSize {
+  width?: number;
+  height?: number;
+  depth?: number;
+}
+
+export interface PoliigonAssetSummary {
+  id: number;
+  name: string;
+  assetName: string;
+  type: string;
+  typeLabel: string;
+  slug: string;
+  websiteUrl: string;
+  description: string;
+  tags: string[];
+  categoryIds: number[];
+  categories: string[];
+  credit: number;
+  free: boolean;
+  convention: number;
+  publishedAt: string | null;
+  updatedAt: string | null;
+  releaseStatus?: string | null;
+  resolutions: string[];
+  maxResolution: number | null;
+  defaultResolution: string | null;
+  thumbnail: string | null;
+  previews: PoliigonPreview[];
+  toolboxPreviews: PoliigonPreview[];
+  videoPreviews: PoliigonPreview[];
+  physicalSize: string | null;
+  physicalSizeCm: PoliigonPhysicalSize | null;
+  creationMethod: string | null;
+  mapCodes: string[];
+  mapFormats: string[];
+  lodCount: number;
+  maxTris: number | null;
+  hasModel: boolean;
+  software: string[];
+  /** Estimated hour of day (0..24) for HDRIs, if known. */
+  timeOfDay?: number | null;
+}
+
+export interface PoliigonAssetDetail extends PoliigonAssetSummary {
+  maps: Array<{
+    type?: string;
+    workflow?: string;
+    maps?: string[];
+    file_formats?: string[];
+  }>;
+  lods: string[];
+  softwares: Array<{ software: string; render_engines: string[] }>;
+  specifications: Record<string, unknown>;
+  raw: Record<string, unknown>;
+}
+
+export interface PoliigonMapPreview {
+  type: string;
+  label: string;
+  url: string;
+  bytes?: number;
+}
+
+export interface PoliigonHdrData {
+  width: number;
+  height: number;
+  /** Half-float RGBA pixels, ready for an RGBA16F WebGL texture. */
+  data: Uint16Array;
+  resolution: string;
+}
+
+export type PoliigonSort =
+  | "relevance"
+  | "newest"
+  | "oldest"
+  | "name"
+  | "name-desc"
+  | "resolution"
+  | "triangles"
+  | "maps"
+  | "lods"
+  | "size"
+  | "credit";
+
+export interface PoliigonCatalogQuery {
+  query?: string;
+  type?: string;
+  ids?: number[];
+  categoryIds?: number[];
+  freeOnly?: boolean;
+  minSize?: number;
+  maxSize?: number;
+  resolutions?: string[];
+  creationMethods?: string[];
+  mapTypes?: string[];
+  /** Start of the HDRI time-of-day falloff window, in hours (0..24). */
+  timeStart?: number;
+  /** End of the HDRI time-of-day falloff window; may be lower than start to cross midnight. */
+  timeEnd?: number;
+  sort?: PoliigonSort;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PoliigonFacetBucket {
+  value: string;
+  count: number;
+}
+
+export interface PoliigonFacets {
+  types: PoliigonFacetBucket[];
+  resolutions: PoliigonFacetBucket[];
+  creationMethods: PoliigonFacetBucket[];
+  mapTypes: PoliigonFacetBucket[];
+  free: number;
+}
+
+export interface PoliigonQueryResult {
+  hits: PoliigonAssetSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  tookMs: number;
+  facets: PoliigonFacets;
+}
+
+export type PolyHavenAssetType = "hdris" | "textures" | "models";
+
+export type PolyHavenSort =
+  | "relevance"
+  | "newest"
+  | "oldest"
+  | "name"
+  | "name-desc"
+  | "resolution"
+  | "triangles"
+  | "maps"
+  | "size"
+  | "downloads";
+
+export interface PolyHavenFileEntry {
+  url: string;
+  size?: number;
+  md5?: string;
+}
+
+export interface PolyHavenAssetSummary {
+  id: string;
+  name: string;
+  type: PolyHavenAssetType;
+  typeLabel: string;
+  categories: string[];
+  category: string;
+  tags: string[];
+  description: string;
+  authors: Record<string, string>;
+  attributes: Record<string, unknown>;
+  maxResolution: number | null;
+  resolutions: string[];
+  dimensions: string | null;
+  dimensionsMm: number[] | null;
+  polycount: number | null;
+  texelDensity: string | null;
+  publishedAt: number | null;
+  downloadCount: number;
+  thumbnail: string | null;
+  timeOfDay: number | null;
+  mapCodes: string[];
+  mapFormats: string[];
+  modelFormats: string[];
+  lodCount: number;
+  collections: string[];
+  filesHash: string;
+  enriched: boolean;
+}
+
+export interface PolyHavenAssetDetail extends PolyHavenAssetSummary {
+  /** Raw `/files/{id}` response, keyed by map name and resolution. */
+  files: Record<string, unknown>;
+  /** Raw `/assets?t=...` summary, including provider-specific fields. */
+  raw: Record<string, unknown>;
+}
+
+export interface PolyHavenDownloadOptions {
+  /** Resolution key such as `1k`, `2k`, `4k`, `8k` or `16k`. */
+  resolution?: string;
+  /** HDRI/image format such as `hdr`, `exr`, `jpg` or `png`. */
+  format?: string;
+  maps?: Array<{ type: string; format?: string }>;
+  /** Model package format such as `blend`, `fbx`, `gltf` or `usd`. */
+  modelFormat?: string;
+}
+
+export interface PolyHavenCatalogQuery {
+  query?: string;
+  type?: PolyHavenAssetType | string;
+  ids?: string[];
+  /** Category tree paths such as `Furniture/Seating/Chairs`. */
+  categoryPaths?: string[];
+  /** Flat Poly Haven category tags such as `furniture` or `sunrise-sunset`. */
+  categories?: string[];
+  collections?: string[];
+  resolutions?: string[];
+  mapTypes?: string[];
+  /** Provider attribute filters keyed by attributes field (weather, condition, ...). */
+  attributes?: Record<string, string[]>;
+  minSize?: number;
+  maxSize?: number;
+  timeStart?: number;
+  timeEnd?: number;
+  sort?: PolyHavenSort;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PolyHavenFacetBucket {
+  value: string;
+  count: number;
+}
+
+export interface PolyHavenFacets {
+  types: PolyHavenFacetBucket[];
+  resolutions: PolyHavenFacetBucket[];
+  mapTypes: PolyHavenFacetBucket[];
+  categories: PolyHavenFacetBucket[];
+  collections: PolyHavenFacetBucket[];
+  attributes: Record<string, PolyHavenFacetBucket[]>;
+}
+
+export interface PolyHavenQueryResult {
+  hits: PolyHavenAssetSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  tookMs: number;
+  facets: PolyHavenFacets;
+}
+
+export interface PolyHavenCatalogStatus {
+  state: "empty" | "refreshing" | "ready" | "error";
+  count: number;
+  enriched: number;
+  refreshedAt: number | null;
+  error?: string;
+}
+
+export interface PolyHavenMapPreview {
+  type: string;
+  label: string;
+  url: string;
+  bytes?: number;
+}
+
+export interface PoliigonAuthState {
+  loggedIn: boolean;
+  userName: string;
+  userId: number | null;
+  planName: string;
+  planPaused: boolean;
+  isUnlimited: boolean;
+  credits: number | null;
+  onDemandCredits: number | null;
+  ownedCount: number;
+  expiresAt: number | null;
+}
+
+export interface PoliigonCatalogStatus {
+  state: "empty" | "refreshing" | "ready" | "error";
+  count: number;
+  published: number;
+  refreshedAt: number | null;
+  error?: string;
 }
 
 export interface OpenBridgeApi {
@@ -636,7 +962,9 @@ export interface OpenBridgeApi {
   removeLibraryAssets(assetIds: string[], scope?: LibraryQuery): Promise<{ removed: number }>;
   exportLibraryAssets(assetIds: string[], folder: string, scope?: LibraryQuery): Promise<string>;
   openPath(target: string): Promise<void>;
+  openExternal(url: string): Promise<void>;
   openLogs(): Promise<void>;
+  smartThumbnail(source: string): Promise<string>;
   sendExport(port: number, data: ExportAsset[]): Promise<void>;
   writeExport(folder: string, data: ExportAsset[]): Promise<string>;
   exportAssetToFolder(assetId: string, folder: string): Promise<string>;
@@ -684,11 +1012,52 @@ export interface OpenBridgeApi {
     addFavorite(assetId: string): Promise<void>;
     removeFavorite(assetId: string): Promise<void>;
   };
+  poliigon: {
+    status(): Promise<PoliigonCatalogStatus>;
+    refresh(): Promise<PoliigonCatalogStatus>;
+    categories(): Promise<CategoryNode[]>;
+    search(query: PoliigonCatalogQuery): Promise<PoliigonQueryResult>;
+    ids(query: PoliigonCatalogQuery): Promise<number[]>;
+    extended(assetId: number): Promise<PoliigonAssetDetail>;
+    mapPreviews(assetId: number): Promise<PoliigonMapPreview[]>;
+    highResolutionMapPreview(assetId: number, mapType: string): Promise<PoliigonMapPreview>;
+    hdrPreview(assetId: number): Promise<PoliigonHdrData>;
+    onStatus(callback: (status: PoliigonCatalogStatus) => void): () => void;
+    auth: {
+      state(): Promise<PoliigonAuthState>;
+      login(email: string, password: string): Promise<PoliigonAuthState>;
+      loginBrowser(): Promise<PoliigonAuthState>;
+      cancelBrowserLogin(): Promise<void>;
+      logout(): Promise<void>;
+      refresh(): Promise<PoliigonAuthState | null>;
+      owned(): Promise<number[]>;
+      recentDownloads(): Promise<number[]>;
+      syncOwned(): Promise<number[]>;
+      onChanged(callback: (state: PoliigonAuthState) => void): () => void;
+    };
+  };
+  polyhaven: {
+    status(): Promise<PolyHavenCatalogStatus>;
+    refresh(): Promise<PolyHavenCatalogStatus>;
+    categories(): Promise<CategoryNode[]>;
+    search(query: PolyHavenCatalogQuery): Promise<PolyHavenQueryResult>;
+    ids(query: PolyHavenCatalogQuery): Promise<string[]>;
+    extended(assetId: string): Promise<PolyHavenAssetDetail>;
+    mapPreviews(assetId: string): Promise<PolyHavenMapPreview[]>;
+    highResolutionMapPreview(assetId: string, mapType: string): Promise<PolyHavenMapPreview>;
+    hdrPreview(assetId: string): Promise<PoliigonHdrData>;
+    onStatus(callback: (status: PolyHavenCatalogStatus) => void): () => void;
+  };
   downloads: {
-    start(assetId: string, options?: Partial<DownloadOptions>): Promise<void>;
+    start(
+      assetId: string,
+      options?: AnyDownloadOptions,
+      provider?: AssetProvider
+    ): Promise<void>;
     startMany(
       assetIds: string[],
-      options?: Partial<DownloadOptions>
+      options?: AnyDownloadOptions,
+      provider?: AssetProvider
     ): Promise<BatchStartResult>;
     acquire(assetId: string): Promise<void>;
     cancel(assetId: string): Promise<void>;

@@ -13,6 +13,8 @@ import {
 import { CheckIcon, FolderIcon, SyncIcon, UserIcon } from "../icons";
 import { Dropdown } from "../components/Dropdown";
 import { mapTypeLabel } from "../download-options";
+import { usePoliigonStore } from "../poliigon-store";
+import { usePolyHavenStore } from "../polyhaven-store";
 
 const PRESET_SECTIONS: Array<{
   kind: AssetDefaultsKind;
@@ -86,6 +88,15 @@ export function SettingsView() {
   const downloadCatalogMetadata = useStore(state => state.downloadCatalogMetadata);
   const importCatalogMetadata = useStore(state => state.importCatalogMetadata);
   const removeCatalogMetadata = useStore(state => state.removeCatalogMetadata);
+  const poliigonAuth = usePoliigonStore(state => state.auth);
+  const poliigonStatus = usePoliigonStore(state => state.status);
+  const refreshPoliigonCatalogue = usePoliigonStore(state => state.refresh);
+  const openPoliigonLogin = usePoliigonStore(state => state.openLogin);
+  const logoutPoliigon = usePoliigonStore(state => state.logout);
+  const refreshPoliigonAccount = usePoliigonStore(state => state.refreshAccount);
+  const syncPoliigonOwned = usePoliigonStore(state => state.syncOwned);
+  const polyhavenStatus = usePolyHavenStore(state => state.status);
+  const refreshPolyHavenCatalogue = usePolyHavenStore(state => state.refresh);
 
   const [draft, setDraft] = useState<AppSettings | null>(settings);
   const [saving, setSaving] = useState(false);
@@ -97,6 +108,10 @@ export function SettingsView() {
   useEffect(() => {
     setDraft(settings);
   }, [settings]);
+
+  useEffect(() => {
+    void usePoliigonStore.getState().init();
+  }, []);
 
   if (!draft) {
     return (
@@ -115,6 +130,28 @@ export function SettingsView() {
   async function chooseLibrary() {
     const folder = await window.openbridge.chooseDirectory();
     if (folder) patch({ libraryPath: folder });
+  }
+
+  async function chooseLibraryRoot() {
+    const folder = await window.openbridge.chooseDirectory();
+    if (!folder) return;
+    const base = folder.replace(/[\\/]+$/, "");
+    patch({
+      libraryRoot: folder,
+      libraryPath: `${base}\\Megascans`,
+      poliigonLibraryPath: `${base}\\Poliigon`,
+      polyhavenLibraryPath: `${base}\\PolyHaven`
+    });
+  }
+
+  async function choosePoliigonLibrary() {
+    const folder = await window.openbridge.chooseDirectory();
+    if (folder) patch({ poliigonLibraryPath: folder });
+  }
+
+  async function choosePolyHavenLibrary() {
+    const folder = await window.openbridge.chooseDirectory();
+    if (folder) patch({ polyhavenLibraryPath: folder });
   }
 
   async function save() {
@@ -163,6 +200,19 @@ export function SettingsView() {
         <section className="settings-section">
           <h2>Library</h2>
           <div className="form-row">
+            <label>Library root</label>
+            <div className="path-input">
+              <input value={draft.libraryRoot} readOnly />
+              <button type="button" className="btn btn-ghost" onClick={() => void chooseLibraryRoot()}>
+                <FolderIcon /> Change...
+              </button>
+            </div>
+          </div>
+          <p className="hint">
+            Provider folders live under this root. Choosing a new root updates the suggested
+            Megascans, Poliigon and Poly Haven paths below; existing files are not moved.
+          </p>
+          <div className="form-row">
             <label>Megascans library</label>
             <div className="path-input">
               <input value={draft.libraryPath} readOnly />
@@ -174,6 +224,165 @@ export function SettingsView() {
           <p className="hint">
             This is the same library Bridge uses for downloaded Megascans assets. OpenBridge
             indexes it in place.
+          </p>
+          <div className="form-row">
+            <label>Poliigon library</label>
+            <div className="path-input">
+              <input value={draft.poliigonLibraryPath} readOnly />
+              <button type="button" className="btn btn-ghost" onClick={() => void choosePoliigonLibrary()}>
+                <FolderIcon /> Change...
+              </button>
+            </div>
+          </div>
+          <p className="hint">
+            Point this at the Poliigon Blender addon library to share downloads with Blender. The
+            default is the provider folder under the library root.
+          </p>
+          <div className="form-row">
+            <label>Poly Haven library</label>
+            <div className="path-input">
+              <input value={draft.polyhavenLibraryPath} readOnly />
+              <button type="button" className="btn btn-ghost" onClick={() => void choosePolyHavenLibrary()}>
+                <FolderIcon /> Change...
+              </button>
+            </div>
+          </div>
+          <p className="hint">
+            Poly Haven assets are public CC0 files. OpenBridge writes a self-contained folder plus an
+            OpenBridge metadata record so the local Library keeps working offline.
+          </p>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={draft.poliigonConfirmPurchases}
+              onChange={event => patch({ poliigonConfirmPurchases: event.target.checked })}
+            />
+            <span>Always confirm before spending Poliigon credits</span>
+          </label>
+        </section>
+
+        <section className="settings-section">
+          <h2>Poliigon account</h2>
+          {poliigonAuth.loggedIn ? (
+            <>
+              <div className="poliigon-account-card">
+                <div className="avatar small">
+                  {(poliigonAuth.userName || "P").slice(0, 1).toUpperCase()}
+                </div>
+                <div className="poliigon-account-identity">
+                  <strong>{poliigonAuth.userName || "Poliigon user"}</strong>
+                  <span>
+                    {poliigonAuth.planName || "Poliigon"}
+                    {poliigonAuth.planPaused ? " · Paused" : ""}
+                    {poliigonAuth.isUnlimited ? " · Unlimited" : ""}
+                  </span>
+                </div>
+                <div className="poliigon-account-stats">
+                  <span>Credits <strong>{poliigonAuth.credits ?? "—"}</strong></span>
+                  <span>On-demand <strong>{poliigonAuth.onDemandCredits ?? "—"}</strong></span>
+                  <span>Owned <strong>{poliigonAuth.ownedCount.toLocaleString()}</strong></span>
+                </div>
+              </div>
+              <div className="button-row horizontal">
+                <button type="button" className="btn btn-ghost" onClick={() => void refreshPoliigonAccount()}>
+                  Refresh account
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => void syncPoliigonOwned()}>
+                  Sync owned assets
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => void logoutPoliigon()}>
+                  Sign out
+                </button>
+              </div>
+              <p className="hint">
+                OpenBridge stores only the Poliigon access token, encrypted with Windows DPAPI. Your
+                password is never stored. Owned assets are used only for badges and download checks.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="hint">
+                Browsing the Poliigon catalogue does not require an account. Sign in to download free
+                and owned assets and to see your plan and credits.
+              </p>
+              <button type="button" className="btn btn-primary" onClick={openPoliigonLogin}>
+                <UserIcon /> Sign in to Poliigon
+              </button>
+            </>
+          )}
+        </section>
+
+        <section className="settings-section">
+          <h2>Poliigon catalogue</h2>
+          <div className="meta-grid">
+            <span>Status</span>
+            <strong>
+              {poliigonStatus?.state === "refreshing"
+                ? "Refreshing…"
+                : poliigonStatus?.state === "ready"
+                  ? "Indexed"
+                  : poliigonStatus?.state === "error"
+                    ? "Error"
+                    : "Not indexed"}
+            </strong>
+            <span>Published assets</span>
+            <strong>{poliigonStatus?.published ? poliigonStatus.published.toLocaleString() : "—"}</strong>
+            <span>Last refreshed</span>
+            <strong>{poliigonStatus?.refreshedAt ? new Date(poliigonStatus.refreshedAt).toLocaleString() : "Never"}</strong>
+          </div>
+          {poliigonStatus?.error && <p className="hint">{poliigonStatus.error}</p>}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={poliigonStatus?.state === "refreshing"}
+            onClick={() => void refreshPoliigonCatalogue()}
+          >
+            Refresh catalogue
+          </button>
+          <p className="hint">
+            The public catalogue is cached locally and needs no Poliigon account. It is checked
+            at launch, when the window regains focus and every two hours, refreshing once the
+            local index is six hours old. You can also refresh it on demand.
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h2>Poly Haven catalogue</h2>
+          <div className="meta-grid">
+            <span>Status</span>
+            <strong>
+              {polyhavenStatus?.state === "refreshing"
+                ? "Refreshing…"
+                : polyhavenStatus?.state === "ready"
+                  ? "Indexed"
+                  : polyhavenStatus?.state === "error"
+                    ? "Error"
+                    : "Not indexed"}
+            </strong>
+            <span>Public assets</span>
+            <strong>{polyhavenStatus?.count ? polyhavenStatus.count.toLocaleString() : "—"}</strong>
+            <span>File metadata</span>
+            <strong>
+              {polyhavenStatus?.count
+                ? `${polyhavenStatus.enriched.toLocaleString()} / ${polyhavenStatus.count.toLocaleString()}`
+                : "—"}
+            </strong>
+            <span>Last refreshed</span>
+            <strong>{polyhavenStatus?.refreshedAt ? new Date(polyhavenStatus.refreshedAt).toLocaleString() : "Never"}</strong>
+          </div>
+          {polyhavenStatus?.error && <p className="hint">{polyhavenStatus.error}</p>}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={polyhavenStatus?.state === "refreshing"}
+            onClick={() => void refreshPolyHavenCatalogue()}
+          >
+            Refresh catalogue
+          </button>
+          <p className="hint">
+            Poly Haven is a public CC0 catalogue. No account, API key or credits are used. The
+            asset list is cached locally and the per-asset file metadata is filled in and
+            refreshed in the background.
           </p>
         </section>
 
@@ -467,17 +676,18 @@ export function SettingsView() {
         </section>
 
         <section className="settings-section">
-          <h2>Sync</h2>
+          <h2>Library check</h2>
           <label className="toggle">
             <input
               type="checkbox"
               checked={draft.autoSyncEnabled}
               onChange={event => patch({ autoSyncEnabled: event.target.checked })}
             />
-            <span>Check for acquired assets missing from the library</span>
+            <span>Automatically check acquired assets against the local library</span>
           </label>
           <p className="hint">
-            This only reports differences. Downloads are always started by you.
+            This only checks which acquired files are already on disk. It never downloads anything.
+            Library always means local files available offline.
           </p>
           <div className="form-row">
             <label>Check every</label>
@@ -485,7 +695,7 @@ export function SettingsView() {
               className="select-dropdown"
               value={String(draft.syncIntervalMinutes)}
               onChange={value => patch({ syncIntervalMinutes: Number(value) })}
-              ariaLabel="Sync interval"
+              ariaLabel="Library check interval"
               options={[
                 { value: "15", label: "15 minutes" },
                 { value: "30", label: "30 minutes" },
@@ -508,6 +718,19 @@ export function SettingsView() {
               Check now
             </button>
           </div>
+          {sync.missing > 0 && (
+            <p className="hint">
+              {sync.missing.toLocaleString()} acquired asset{sync.missing === 1 ? " is" : "s are"} not
+              on disk. Nothing was downloaded.{" "}
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => useStore.getState().setView("library")}
+              >
+                Open local library
+              </button>
+            </p>
+          )}
         </section>
 
         <section className="settings-section">

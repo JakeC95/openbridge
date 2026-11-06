@@ -106,7 +106,7 @@ await build({
   target: "chrome120",
   jsx: "automatic",
   minify: true,
-  loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl" },
+  loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl", ".png": "dataurl" },
   define
 });
 

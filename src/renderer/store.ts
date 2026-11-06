@@ -1,6 +1,8 @@
 import { create } from "zustand";
+import { sizeBounds, type SizeFilter } from "./size-filter";
 import type {
   AppSettings,
+  AssetProvider,
   AssetRecord,
   AuthState,
   BatchStartResult,
@@ -16,6 +18,7 @@ import type {
   PackSummary,
   LibraryRef,
   Profile,
+  ProviderScope,
   RepoKind,
   SyncStatus,
   UpdateInfo
@@ -24,10 +27,20 @@ import { buildDownloadOptions } from "./download-options";
 import { parseSearchQuery } from "./search-utils";
 import { catalogFilterQuery, libraryFilterQuery, readPreference, writePreference } from "./browsing-state";
 import { recordDownloadProgress } from "./download-history";
+import { usePoliigonStore } from "./poliigon-store";
+import { usePolyHavenStore } from "./polyhaven-store";
+import {
+  allSourceCategory,
+  isAllSort,
+  isAllStateFilter,
+  poliigonCategoryIds,
+  NONE_TYPE,
+  type AllSort,
+  type AllStateFilter
+} from "./all-sources";
 
 type View = "discover" | "library" | "downloads" | "settings";
 type LocalRepo = "all" | RepoKind;
-type SizeFilter = "any" | "small" | "medium" | "large" | "huge";
 
 let catalogRequest = 0;
 let libraryRequest = 0;
@@ -62,6 +75,16 @@ interface Toast {
 }
 
 interface State {
+  provider: ProviderScope;
+  setProvider(value: ProviderScope): void;
+  allType: string;
+  allStateFilter: AllStateFilter;
+  allSort: AllSort;
+  setAllType(value: string): void;
+  setAllStateFilter(value: AllStateFilter): void;
+  setAllSort(value: AllSort): void;
+  syncAllSources(): void;
+  clearAllFilters(): void;
   density: "compact" | "comfortable" | "large";
   setDensity(value: State["density"]): void;
   catalogPack: PackRef | null;
@@ -70,10 +93,12 @@ interface State {
   localPacks: PackSummary[];
   localCategories: CategoryNode[];
   localType: string;
+  localProvider: AssetProvider | "all";
   localCategoryPath: string[];
   localSort: LibrarySort;
   localFavoritesOnly: boolean;
   setLocalType(value: string): void;
+  setLocalProvider(value: AssetProvider | "all"): void;
   setLocalCategoryPath(value: string[]): void;
   setLocalSort(value: LibrarySort): void;
   setLocalFavoritesOnly(value: boolean): void;
@@ -99,12 +124,14 @@ interface State {
   favorites: string[];
   favoritesOnly: boolean;
   freeOnly: boolean;
+  downloadedOnly: boolean;
   sizeFilter: SizeFilter;
   facets: Record<string, Record<string, number>>;
   facetFilters: Record<string, string[]>;
   query: string;
   type: string;
   categoryPath: string[];
+  categoryPaths: string[][];
   hits: CatalogHit[];
   page: number;
   nextCursor: string | null;
@@ -144,6 +171,7 @@ interface State {
   setCategoryPath(path: string[]): void;
   setFavoritesOnly(value: boolean): void;
   setFreeOnly(value: boolean): void;
+  setDownloadedOnly(value: boolean): void;
   setSizeFilter(value: SizeFilter): void;
   setStateFilter(value: "all" | "free" | "favorites"): void;
   toggleFacet(group: string, value: string): void;
@@ -232,12 +260,22 @@ function readBrowsingRestore(authenticated: boolean): Partial<State> {
     for (const [key, value] of Object.entries(data.facetFilters)) if (["biome", "region", "resolution", "color", "environment", "theme"].includes(key) && Array.isArray(value))
       facets[key] = value.filter((v): v is string => typeof v === "string").slice(0, 30);
   }
+  const localProvider = ["megascans", "poliigon", "polyhaven"].includes(text("localProvider"))
+    ? text("localProvider") as AssetProvider
+    : "all";
+  let localType = text("localType");
+  const megascansTypes = ["3d", "3dplant", "surface", "atlas", "brush", "decal", "imperfection", "displacement"];
+  const poliigonTypes = ["texture", "model", "hdri"];
+  if (localProvider === "poliigon" && !poliigonTypes.includes(localType)) localType = "";
+  if (localProvider === "polyhaven" && !poliigonTypes.includes(localType)) localType = "";
+  if (localProvider === "megascans" && !megascansTypes.includes(localType)) localType = "";
   return {
     view: data.view === "library" || data.view === "downloads" || data.view === "settings" ? data.view : "discover",
     query: text("query"), type: text("type"), categoryPath: list("categoryPath"), facetFilters: facets, catalogPack: pack("catalogPack"), localPack: pack("localPack"),
     freeOnly: data.freeOnly === true, favoritesOnly: authenticated && data.favoritesOnly === true,
     sizeFilter: ["small", "medium", "large", "huge"].includes(text("sizeFilter")) ? text("sizeFilter") as SizeFilter : "any",
-    localQuery: text("localQuery"), localType: text("localType"), localCategoryPath: list("localCategoryPath"),
+    localQuery: text("localQuery"), localType, localCategoryPath: list("localCategoryPath"),
+    localProvider,
     localRepo: ["downloaded", "custom", "dhi"].includes(text("localRepo")) ? text("localRepo") as LocalRepo : "all",
     localFavoritesOnly: authenticated && data.localFavoritesOnly === true,
     localReady: list("localReady"), localMaxTris: typeof data.localMaxTris === "number" && data.localMaxTris > 0 ? data.localMaxTris : null,
@@ -247,14 +285,225 @@ function readBrowsingRestore(authenticated: boolean): Partial<State> {
 
 function browsingSnapshot(state: State) {
   const { view, query, type, categoryPath, facetFilters, freeOnly, favoritesOnly, sizeFilter, catalogPack, localPack,
-    localQuery, localType, localCategoryPath, localRepo, localFavoritesOnly, localReady,
+    localQuery, localType, localProvider, localCategoryPath, localRepo, localFavoritesOnly, localReady,
     localMaxTris, localColor, localState, localInterior } = state;
   return { view, query, type, categoryPath, facetFilters, freeOnly, favoritesOnly, sizeFilter, catalogPack, localPack,
-    localQuery, localType, localCategoryPath, localRepo, localFavoritesOnly, localReady,
+    localQuery, localType, localProvider, localCategoryPath, localRepo, localFavoritesOnly, localReady,
     localMaxTris, localColor, localState, localInterior };
 }
 
 export const useStore = create<State>((set, get) => ({
+  provider: (() => {
+    try {
+      // Introduce combined Discover once; afterwards the user's choice is kept.
+      if (!localStorage.getItem("openbridge.allSourcesDefault")) {
+        localStorage.setItem("openbridge.allSourcesDefault", "1");
+        localStorage.setItem("openbridge.provider", "all");
+        localStorage.removeItem("openbridge.browsingSession");
+        return "all";
+      }
+      const stored = localStorage.getItem("openbridge.provider");
+      return stored === "megascans" || stored === "poliigon" || stored === "polyhaven" ? stored : "all";
+    } catch {
+      return "all";
+    }
+  })(),
+  setProvider(value) {
+    const previous = get().provider;
+    const focusedQuery = previous === "poliigon"
+      ? usePoliigonStore.getState().query
+      : previous === "polyhaven"
+        ? usePolyHavenStore.getState().query
+        : get().query;
+    const query = value === "all" && previous !== "megascans" ? focusedQuery : get().query;
+    set({ provider: value, query, categoryPaths: [], downloadedOnly: false });
+    if (value === "all") set({ catalogPack: null });
+    if (value !== "all") {
+      usePoliigonStore.setState({ minSize: null, maxSize: null, downloadedOnly: false });
+      usePolyHavenStore.setState({ downloadedOnly: false });
+    }
+    if (value === "megascans") {
+      const type = get().type;
+      if (type === NONE_TYPE) set({ type: "", categoryPath: [], categoryPaths: [] });
+      void get().search(true);
+    }
+    if (value === "poliigon") {
+      const poliigon = usePoliigonStore.getState();
+      if (poliigon.type === NONE_TYPE) usePoliigonStore.setState({ type: "", categoryIds: [] });
+      usePolyHavenStore.getState().closeAsset();
+    }
+    if (value === "polyhaven") {
+      const polyhaven = usePolyHavenStore.getState();
+      if (polyhaven.type === NONE_TYPE) {
+        usePolyHavenStore.setState({ type: "", categoryPaths: [], categoriesFilter: [] });
+      }
+      usePoliigonStore.getState().closeAsset();
+      get().closeSelection();
+    }
+    try {
+      localStorage.setItem("openbridge.provider", value);
+    } catch {
+      // ignore
+    }
+    if (value === "all") {
+      const poliigon = usePoliigonStore.getState();
+      if (poliigon.query !== query) poliigon.setQuery(query);
+      const polyhaven = usePolyHavenStore.getState();
+      if (polyhaven.query !== query) polyhaven.setQuery(query);
+      get().syncAllSources();
+    }
+  },
+  allType: (() => {
+    const saved = readPreference<string>("allType", "");
+    return allSourceCategory(saved).value;
+  })(),
+  allStateFilter: (() => {
+    const saved = readPreference<unknown>("allStateFilter", "all");
+    return isAllStateFilter(saved) ? saved : "all";
+  })(),
+  allSort: (() => {
+    const saved = readPreference<unknown>("allSort", "relevance");
+    return isAllSort(saved) ? saved : "relevance";
+  })(),
+  setAllType(value) {
+    const option = allSourceCategory(value);
+    const previousRoot = get().allType.split(":")[0];
+    const nextRoot = option.value.split(":")[0];
+    set({ allType: option.value });
+    writePreference("allType", option.value);
+    if (previousRoot !== nextRoot) {
+      usePolyHavenStore.setState({ attributeFilters: {} });
+    }
+    const root = option.value.split(":")[0];
+    if (["atlas", "brush", "decal", "imperfection", "displacement"].includes(root)) {
+      const allowed = new Set(["resolution", "color", "theme"]);
+      const current = get().facetFilters;
+      const next = Object.fromEntries(Object.entries(current).filter(([key]) => allowed.has(key)));
+      if (Object.keys(next).length !== Object.keys(current).length) set({ facetFilters: next });
+    }
+    if (!option.value.startsWith("hdri")) {
+      usePoliigonStore.setState({ timeStart: null, timeEnd: null });
+      usePolyHavenStore.setState({ timeStart: null, timeEnd: null });
+    }
+    get().syncAllSources();
+  },
+  setAllStateFilter(value) {
+    set({ allStateFilter: value });
+    writePreference("allStateFilter", value);
+    get().syncAllSources();
+  },
+  setAllSort(value) {
+    set({ allSort: value });
+    writePreference("allSort", value);
+    const poliigon = usePoliigonStore.getState();
+    const polyhaven = usePolyHavenStore.getState();
+    const target = value === "name" ? "name" : "relevance";
+    if (poliigon.sort !== target) poliigon.setSort(target);
+    if (polyhaven.sort !== target) polyhaven.setSort(target);
+  },
+  syncAllSources() {
+    const option = allSourceCategory(get().allType);
+    const stateFilter = get().allStateFilter;
+    const bounds = sizeBounds(get().sizeFilter);
+    set({
+      type: option.megascansType ?? "",
+      categoryPath: [],
+      categoryPaths: option.megascansPaths ?? [],
+      freeOnly: stateFilter === "free",
+      favoritesOnly: stateFilter === "favorites",
+      downloadedOnly: stateFilter === "downloaded"
+    });
+    const poliigon = usePoliigonStore.getState();
+    let poliigonType = option.poliigonType ?? "";
+    let poliigonIds = option.poliigonPaths?.length
+      ? poliigonCategoryIds(poliigon.categories, option.poliigonPaths)
+      : [];
+    // If a mapped Poliigon path has not loaded yet, return no Poliigon results
+    // rather than accidentally falling back to the whole provider.
+    if ((option.poliigonPaths?.length ?? 0) > 0 && poliigonIds.length === 0) {
+      poliigonType = NONE_TYPE;
+      poliigonIds = [];
+    }
+    usePoliigonStore.setState({
+      query: get().query,
+      type: poliigonType,
+      categoryIds: poliigonIds,
+      freeOnly: stateFilter === "free",
+      favoritesOnly: stateFilter === "favorites",
+      downloadedOnly: stateFilter === "downloaded",
+      minSize: bounds.minSize,
+      maxSize: bounds.maxSize,
+      ...(poliigonType === "HDRS" ? { creationMethods: [], mapTypes: [] } : {})
+    });
+    const polyMapped = option.polyhavenType !== undefined || (option.polyhavenCategories?.length ?? 0) > 0;
+    const polyType = option.value === ""
+      ? ""
+      : option.polyhavenType === NONE_TYPE
+        ? NONE_TYPE
+        : option.polyhavenType ?? (polyMapped ? "" : NONE_TYPE);
+    usePolyHavenStore.setState({
+      query: get().query,
+      type: polyType,
+      categoryPaths: [],
+      categoriesFilter: option.polyhavenCategories ?? [],
+      collections: [],
+      favoritesOnly: stateFilter === "favorites",
+      downloadedOnly: stateFilter === "downloaded",
+      minSize: bounds.minSize,
+      maxSize: bounds.maxSize,
+      ...(polyType === "hdris" ? { mapTypes: [] } : {})
+    });
+    void get().search(true);
+    void usePoliigonStore.getState().search(true);
+    void usePolyHavenStore.getState().search(true);
+  },
+  clearAllFilters() {
+    set({
+      allType: "",
+      allStateFilter: "all",
+      type: "",
+      categoryPath: [],
+      categoryPaths: [],
+      freeOnly: false,
+      favoritesOnly: false,
+      downloadedOnly: false,
+      sizeFilter: "any",
+      facetFilters: {},
+      catalogPack: null
+    });
+    writePreference("allType", "");
+    writePreference("allStateFilter", "all");
+    usePoliigonStore.setState({
+      type: "",
+      categoryIds: [],
+      minSize: null,
+      maxSize: null,
+      freeOnly: false,
+      favoritesOnly: false,
+      downloadedOnly: false,
+      resolutions: [],
+      creationMethods: [],
+      mapTypes: [],
+      timeStart: null,
+      timeEnd: null
+    });
+    usePolyHavenStore.setState({
+      type: "",
+      categoryPaths: [],
+      categoriesFilter: [],
+      collections: [],
+      resolutions: [],
+      mapTypes: [],
+      attributeFilters: {},
+      favoritesOnly: false,
+      downloadedOnly: false,
+      timeStart: null,
+      timeEnd: null
+    });
+    void get().search(true);
+    void usePoliigonStore.getState().search(true);
+    void usePolyHavenStore.getState().search(true);
+  },
   density: (() => {
     const saved = readPreference<string>("density", "comfortable");
     return saved === "compact" || saved === "large" ? saved : "comfortable";
@@ -266,6 +515,7 @@ export const useStore = create<State>((set, get) => ({
   localPacks: [],
   localCategories: [],
   localType: "",
+  localProvider: "all",
   localCategoryPath: [],
   localSort: (() => {
     const sort = readPreference<string>("localSort", "recent");
@@ -273,17 +523,18 @@ export const useStore = create<State>((set, get) => ({
   })(),
   localFavoritesOnly: false,
   setLocalType(localType) { set({ localType, localCategoryPath: [] }); },
+  setLocalProvider(localProvider) { set({ localProvider, localType: "", localCategoryPath: [] }); },
   setLocalCategoryPath(localCategoryPath) { set({ localCategoryPath, localType: "" }); },
   setLocalSort(localSort) { set({ localSort }); writePreference("localSort", localSort); },
   setLocalFavoritesOnly(localFavoritesOnly) { set({ localFavoritesOnly }); },
   browsePack(pack, local = false) {
     get().closeSelection();
     if (local) {
-      set({ view: "library", localPack: pack, localQuery: "", localType: "", localCategoryPath: [],
+      set({ view: "library", localPack: pack, localProvider: "all", localQuery: "", localType: "", localCategoryPath: [],
         localRepo: "all", localFavoritesOnly: false, localReady: [], localMaxTris: null,
         localColor: "", localState: "", localInterior: "" });
     } else {
-      set({ view: "discover", catalogPack: pack, query: "", type: "", categoryPath: [],
+      set({ view: "discover", catalogPack: pack, query: "", type: "", categoryPath: [], categoryPaths: [],
         favoritesOnly: false, freeOnly: false, sizeFilter: "any", facetFilters: {} });
       void get().search(true);
     }
@@ -358,12 +609,14 @@ export const useStore = create<State>((set, get) => ({
   favorites: [],
   favoritesOnly: false,
   freeOnly: false,
+  downloadedOnly: false,
   sizeFilter: "any",
   facets: {},
   facetFilters: {},
   query: "",
   type: "",
   categoryPath: [],
+  categoryPaths: [],
   hits: [],
   page: -1,
   nextCursor: null,
@@ -375,7 +628,7 @@ export const useStore = create<State>((set, get) => ({
   catalogFacetWarning: false,
   localRefs: [],
   libraryAssets: [],
-  libraryCounts: { all: 0, downloaded: 0, custom: 0, dhi: 0 },
+  libraryCounts: { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, downloaded: 0, custom: 0, dhi: 0 },
   libraryTotal: 0,
   libraryFilteredTotal: 0,
   libraryLoading: false,
@@ -484,6 +737,19 @@ export const useStore = create<State>((set, get) => ({
           const current = get().downloads;
           set({ downloads: { ...current, [progress.assetId]: progress } });
           recordDownloadProgress(progress);
+          if (progress.preview) {
+            if (["complete", "error", "cancelled"].includes(progress.status)) {
+              const key = progress.assetId;
+              window.setTimeout(() => {
+                const latest = get().downloads;
+                if (latest[key] !== progress) return;
+                const next = { ...latest };
+                delete next[key];
+                set({ downloads: next });
+              }, 3000);
+            }
+            return;
+          }
           if (progress.status === "complete") {
             get().toast(`${progress.name ?? progress.assetId} downloaded`);
             void get().refreshLibrary(true);
@@ -528,12 +794,12 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setType(type) {
-    set({ type, categoryPath: [], favoritesOnly: false });
+    set({ type, categoryPath: [], categoryPaths: [], favoritesOnly: false });
     void get().search(true);
   },
 
   setCategoryPath(categoryPath) {
-    set({ categoryPath, type: "", favoritesOnly: false });
+    set({ categoryPath, categoryPaths: [], type: "", favoritesOnly: false });
     void get().search(true);
   },
 
@@ -541,8 +807,10 @@ export const useStore = create<State>((set, get) => ({
     set({
       favoritesOnly,
       freeOnly: false,
+      downloadedOnly: false,
       type: "",
       categoryPath: [],
+      categoryPaths: [],
       query: favoritesOnly ? "" : get().query
     });
     void get().search(true);
@@ -552,10 +820,17 @@ export const useStore = create<State>((set, get) => ({
     set({
       freeOnly,
       favoritesOnly: false,
+      downloadedOnly: false,
       type: "",
       categoryPath: [],
+      categoryPaths: [],
       query: freeOnly ? "" : get().query
     });
+    void get().search(true);
+  },
+
+  setDownloadedOnly(downloadedOnly) {
+    set({ downloadedOnly, favoritesOnly: false, freeOnly: false });
     void get().search(true);
   },
 
@@ -567,7 +842,8 @@ export const useStore = create<State>((set, get) => ({
   setStateFilter(value) {
     set({
       freeOnly: value === "free",
-      favoritesOnly: value === "favorites"
+      favoritesOnly: value === "favorites",
+      downloadedOnly: false
     });
     void get().search(true);
   },
@@ -591,8 +867,10 @@ export const useStore = create<State>((set, get) => ({
     set({
       type: "",
       categoryPath: [],
+      categoryPaths: [],
       favoritesOnly: false,
       freeOnly: false,
+      downloadedOnly: false,
       sizeFilter: "any",
       facetFilters: {},
       catalogPack: null
@@ -736,6 +1014,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async openHit(hit) {
+    usePoliigonStore.getState().closeAsset();
+    usePolyHavenStore.getState().closeAsset();
     get().rememberSearch(get().query);
     const previous = get().selection;
     const id = hit.id || hit.objectID;
@@ -774,6 +1054,20 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async openLocal(asset) {
+    if (asset.provider === "poliigon") {
+      set({ selection: null, selectionHistory: [] });
+      usePolyHavenStore.getState().closeAsset();
+      await usePoliigonStore.getState().openLocal(asset);
+      return;
+    }
+    if (asset.provider === "polyhaven") {
+      set({ selection: null, selectionHistory: [] });
+      usePoliigonStore.getState().closeAsset();
+      await usePolyHavenStore.getState().openLocal(asset);
+      return;
+    }
+    usePoliigonStore.getState().closeAsset();
+    usePolyHavenStore.getState().closeAsset();
     void window.openbridge.catalog.cancel("drawer").catch(() => undefined);
     void window.openbridge.catalog.cancel("related").catch(() => undefined);
     const recent: RecentAsset = { id: asset.id, name: asset.name, type: asset.type, source: "local" };
@@ -787,6 +1081,8 @@ export const useStore = create<State>((set, get) => ({
     set({ selection: null, selectionHistory: [] });
     void window.openbridge.catalog.cancel("drawer").catch(() => undefined);
     void window.openbridge.catalog.cancel("related").catch(() => undefined);
+    usePoliigonStore.getState().closeAsset();
+    usePolyHavenStore.getState().closeAsset();
   },
 
   async login() {
@@ -896,7 +1192,7 @@ export const useStore = create<State>((set, get) => ({
       const settings = await window.openbridge.updateSettings(patch);
       set({ settings });
       get().toast("Settings saved");
-      if (patch.libraryPath !== undefined) {
+      if (patch.libraryPath !== undefined || patch.poliigonLibraryPath !== undefined || patch.polyhavenLibraryPath !== undefined) {
         await get().refreshLibrary(true);
       }
     } catch (error) {
@@ -907,6 +1203,17 @@ export const useStore = create<State>((set, get) => ({
   async runSync() {
     const status = await window.openbridge.sync.run();
     set({ sync: status });
+    if (!status.running) {
+      if (status.missing > 0) {
+        get().toast(
+          `Library check: ${status.missing.toLocaleString()} acquired asset${
+            status.missing === 1 ? " is" : "s are"
+          } not on disk. Nothing was downloaded.`
+        );
+      } else {
+        get().toast("Library check complete: all acquired assets are already on disk.");
+      }
+    }
   },
 
   async installUpdate() {

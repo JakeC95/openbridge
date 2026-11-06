@@ -79,7 +79,8 @@ export function CommandPalette() {
       },
       {
         id: "sync",
-        label: "Sync acquired assets",
+        label: "Check local library",
+        hint: "Does not download",
         run: () => void syncNow()
       },
       {

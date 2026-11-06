@@ -121,6 +121,36 @@ For manual browsing verification:
 - Local sort order applies before paging. Catalogue order remains service-defined; no unsupported
   catalogue sort is offered.
 
+## Filter audit checks
+
+Verify the filter workbench across providers and asset types:
+
+- Discover: switch between All Types, 3D, Surfaces, Atlases, Decals, Brushes, Imperfections and
+  Displacements. Facets and sorts must change with the type; size and triangle sorts disappear for
+  2D types, and size/map filters disappear where they do not apply. Resolution lists must ascend
+  numerically and selected chips must show the same humanised label as the facet option.
+- Poliigon: the Texture maps facet must not contain duplicate labels. Base Color, Normal, Roughness,
+  Metalness, Gloss, Reflection, ORM, Ambient Occlusion and Displacement must each appear once and
+  return the same count as the facet. Base Color + Normal should cover most textures. Legacy values
+  entered through older saved searches must still resolve.
+- Poly Haven: HDRIs show resolution/category/collection plus weather, lighting, contrast,
+  environment, sky visibility, season and backplates; textures show surface use, origin, condition,
+  setting and aerial scan; models show condition, material, rigged, LODs and geometry nodes.
+  Models also show the physical-size filter and sort; HDRIs and textures do not.
+- All sources: facets are provider-labelled, empty provider groups are omitted, and only one
+  resolution group per provider is present. HDRI views hide size/map filters and keep the time
+  slider. Selecting a size preset and switching to an incompatible type must clear it.
+- Library: readiness appears only for Megascans surfaces/atlases/3D and never for HDRIs, textures
+  or models; triangles only for 3D/plants/models; brushes show colour but not condition/setting;
+  displacements show neither colour nor condition/setting. The Filters button must be hidden when
+  no group applies.
+- Layout: at 1024x768 and at a wide desktop, open a long All-source filter panel. The group rail and
+  value pane must scroll independently, the header must stay fixed, and catalogue results must stay
+  visible below the panel. Verify the panel does not clip values and the filters remain usable in a
+  short window.
+- Apply several filters, switch provider and back, and confirm only applicable filters survive and
+  result counts match the facet counts.
+
 ## Metadata pack checks
 
 ```powershell

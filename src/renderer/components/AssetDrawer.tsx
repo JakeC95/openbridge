@@ -19,6 +19,9 @@ import {
   mapTechnicalDetails
 } from "../../shared/asset-metadata";
 import { formatMeasurementText } from "../../shared/measurements";
+import { assetTypeLabel } from "../asset-visuals";
+import { ProviderLogo } from "./ProviderLogo";
+import { groupTechnicalFacts, type TechnicalFact } from "../technical-order";
 import {
   aclResolution,
   hitId,
@@ -85,6 +88,8 @@ export function AssetDrawer() {
   const settings = useStore(state => state.settings);
   const acquired = useStore(state => state.acquired);
   const downloads = useStore(state => state.downloads);
+  const favorites = useStore(state => state.favorites);
+  const toggleFavorite = useStore(state => state.toggleFavorite);
   const close = useStore(state => state.closeSelection);
   const login = useStore(state => state.login);
   const openHit = useStore(state => state.openHit);
@@ -103,6 +108,7 @@ export function AssetDrawer() {
   const extended = selection?.extended;
   const assetId = hit ? hitId(hit) : local?.id ?? "";
   const owned = acquired.includes(assetId);
+  const favorited = favorites.includes(assetId);
   const progress = downloads[assetId];
 
   const [options, setOptions] = useState<DownloadOptions | null>(null);
@@ -397,15 +403,48 @@ export function AssetDrawer() {
       ? `${technical.texelDensity} px/m`
       : technical.texelDensity
     : null;
-  const techRows: Array<[string, string]> = [];
-  if (technical.dimensions) techRows.push(["Dimensions", formatMeasurementText(technical.dimensions)]);
-  if (technical.scanArea) techRows.push(["Scan area", formatMeasurementText(technical.scanArea)]);
-  if (technical.height && !technical.dimensions) techRows.push(["Height", formatMeasurementText(technical.height)]);
+  const facts: TechnicalFact[] = [];
+  if (technical.dimensions) facts.push(["dimensions", "Dimensions", formatMeasurementText(technical.dimensions)]);
+  if (technical.scanArea) facts.push(["scanArea", "Scan area", formatMeasurementText(technical.scanArea)]);
+  if (technical.height && !technical.dimensions) facts.push(["height", "Height", formatMeasurementText(technical.height)]);
   if (texelDensity && Number.parseFloat(texelDensity) > 0) {
-    techRows.push(["Texel density", texelDensity]);
+    facts.push(["texelDensity", "Texel density", texelDensity]);
   }
+  if (resolutionOptions.length > 0) {
+    facts.push([
+      "resolutions",
+      "Resolutions",
+      resolutionOptions.map(value => `${value / 1024}K`).join(", ")
+    ]);
+  }
+  if (technical.resolution) {
+    facts.push(["maxResolution", "Max resolution", `${technical.resolution / 1024}K`]);
+  }
+  if (options?.resolution) {
+    facts.push(["defaultResolution", "Default resolution", `${options.resolution / 1024}K`]);
+  }
+  if (technical.mapCount > 0) facts.push(["mapTypes", "Map types", String(technical.mapCount)]);
+  if (technical.mapFormats && technical.mapFormats.length > 0) {
+    facts.push(["mapFormats", "Map formats", technical.mapFormats.join(", ")]);
+  }
+  if (technical.lodCount > 0) facts.push(["lods", "LODs", String(technical.lodCount)]);
+  if (technical.maxTris > 0) {
+    facts.push(["maxTriangles", "Max triangles", technical.maxTris.toLocaleString()]);
+  }
+  if (technical.meshType) facts.push(["meshType", "Mesh type", technical.meshType]);
+  if (technical.closedMesh !== null) {
+    facts.push(["meshClosed", "Mesh", technical.closedMesh ? "Closed" : "Open"]);
+  }
+  if (technical.scaleFixed !== null) {
+    facts.push(["scaleFixed", "Scale fixed", technical.scaleFixed ? "Yes" : "No"]);
+  }
+  if (technical.assembly !== null) {
+    facts.push(["assembly", "Assembly", technical.assembly ? "Yes" : "No"]);
+  }
+  if (technical.modular) facts.push(["modular", "Modular", "Yes"]);
   if (technical.tileable !== null) {
-    techRows.push([
+    facts.push([
+      "tileable",
       "Tileable",
       technical.tilingDirections.length > 0
         ? `Yes (${technical.tilingDirections.join(", ")})`
@@ -414,33 +453,15 @@ export function AssetDrawer() {
           : "No"
     ]);
   }
-  if (technical.meshType) techRows.push(["Mesh type", technical.meshType]);
-  if (technical.lodCount > 0) techRows.push(["LODs", String(technical.lodCount)]);
-  if (technical.maxTris > 0) {
-    techRows.push(["Max triangles", technical.maxTris.toLocaleString()]);
-  }
   if (technical.variationCount > 1) {
-    techRows.push(["Variations", String(technical.variationCount)]);
+    facts.push(["variations", "Variations", String(technical.variationCount)]);
   }
   if (technical.billboardCount > 0) {
-    techRows.push(["Billboards", String(technical.billboardCount)]);
+    facts.push(["billboards", "Billboards", String(technical.billboardCount)]);
   }
-  if (technical.resolution) {
-    techRows.push(["Max resolution", `${technical.resolution / 1024}K`]);
-  }
-  if (technical.mapCount > 0) techRows.push(["Map types", String(technical.mapCount)]);
-  if (technical.closedMesh !== null) {
-    techRows.push(["Mesh", technical.closedMesh ? "Closed" : "Open"]);
-  }
-  if (technical.scaleFixed !== null) {
-    techRows.push(["Scale fixed", technical.scaleFixed ? "Yes" : "No"]);
-  }
-  if (technical.assembly !== null) {
-    techRows.push(["Assembly", technical.assembly ? "Yes" : "No"]);
-  }
-  if (technical.modular) techRows.push(["Modular", "Yes"]);
   if (technical.materialWorkflow) {
-    techRows.push([
+    facts.push([
+      "materialWorkflow",
       "Material workflow",
       technical.materialWorkflow === "metal-rough"
         ? "Metal / Rough"
@@ -449,18 +470,20 @@ export function AssetDrawer() {
           : "Mixed"
     ]);
   }
-  if (technical.hasAlpha) techRows.push(["Alpha / opacity", "Yes"]);
-  if (technical.packName) techRows.push(["Pack", technical.packName]);
-  if (technical.revision != null) techRows.push(["Revision", String(technical.revision)]);
+  if (technical.hasAlpha) facts.push(["alpha", "Alpha / opacity", "Yes"]);
+  if (technical.packName) facts.push(["pack", "Pack", technical.packName]);
+  if (assetId) facts.push(["catalogueId", "Catalogue ID", assetId]);
+  if (technical.revision != null) facts.push(["revision", "Revision", String(technical.revision)]);
   if (technical.revised) {
-    const value =
-      typeof technical.revised === "number"
-        ? new Date(technical.revised).toLocaleDateString()
-        : typeof technical.revised === "string"
-          ? technical.revised
-          : "Updated";
-    techRows.push(["Updated", value]);
+    if (typeof technical.revised === "number") {
+      facts.push(["revised", "Updated", new Date(technical.revised).toLocaleDateString()]);
+    } else if (typeof technical.revised === "string") {
+      facts.push(["revised", "Updated", technical.revised]);
+    } else {
+      facts.push(["revised", "Revised", "Yes"]);
+    }
   }
+  const techGroups = groupTechnicalFacts(facts);
 
   const semanticLabels = [
     ["state", technical.semantic.state],
@@ -490,11 +513,20 @@ export function AssetDrawer() {
         <div className="drawer-head">
           <button type="button" className="text-btn" disabled={!history.length}
             onClick={() => useStore.getState().backSelection()} title="Back to previous asset (Alt+Left)">Back</button>
-          <span className="drawer-type">{typeLabel(assetType)}</span>
+          <ProviderLogo provider="megascans" className="drawer-provider-mark" />
           <button type="button" className="icon-btn" aria-label="Previous asset" disabled={resultIndex <= 0}
             onClick={() => useStore.getState().stepSelection(-1)}>‹</button>
           <button type="button" className="icon-btn" aria-label="Next asset" disabled={resultIndex < 0 || resultIndex >= resultCount - 1}
             onClick={() => useStore.getState().stepSelection(1)}>›</button>
+          <button
+            type="button"
+            className={favorited ? "icon-btn active" : "icon-btn"}
+            onClick={() => void toggleFavorite(assetId)}
+            aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
+            title={favorited ? "Remove from favorites" : "Add to favorites"}
+          >
+            {favorited ? "♥" : "♡"}
+          </button>
           <button type="button" className="icon-btn" onClick={close} title="Close">
             <CloseIcon />
           </button>
@@ -541,6 +573,37 @@ export function AssetDrawer() {
               </div>
             )}
 
+            {previewMode === "render" && renderItems.length > 1 && (
+              <div className="map-nav">
+                <div className="map-nav-label">
+                  <strong>{renderItems[renderIndex]?.label ?? "Render"}</strong>
+                </div>
+                <div className="map-nav-actions">
+                  <button
+                    type="button"
+                    onClick={() => setRenderIndex(index => Math.max(0, index - 1))}
+                    disabled={renderIndex <= 0}
+                    title="Previous render"
+                    aria-label="Previous render"
+                  >
+                    ‹
+                  </button>
+                  <span>
+                    {renderIndex + 1} / {renderItems.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRenderIndex(index => Math.min(renderItems.length - 1, index + 1))}
+                    disabled={renderIndex >= renderItems.length - 1}
+                    title="Next render"
+                    aria-label="Next render"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+            )}
+
             {previewMode === "maps" && activeMap && (
               <div className="map-nav">
                 <div className="map-nav-label">
@@ -551,6 +614,7 @@ export function AssetDrawer() {
                   <button
                     type="button"
                     onClick={() => stepMap(-1)}
+                    disabled={mapIndex <= 0}
                     title="Previous map"
                     aria-label="Previous map"
                   >
@@ -562,6 +626,7 @@ export function AssetDrawer() {
                   <button
                     type="button"
                     onClick={() => stepMap(1)}
+                    disabled={mapIndex >= availableMaps.length - 1}
                     title="Next map"
                     aria-label="Next map"
                   >
@@ -608,7 +673,17 @@ export function AssetDrawer() {
 
           <div className="meta-grid">
             <span>Type</span>
-            <strong>{typeLabel(assetType)}</strong>
+            <strong>{assetTypeLabel(typeLabel(assetType))}</strong>
+            <span>Access</span>
+            <strong>{points === 0 ? "Free" : owned ? "Owned" : "Not acquired"}</strong>
+            {technical.dimensions && (
+              <>
+                <span>Physical size</span>
+                <strong>{formatMeasurementText(technical.dimensions)}</strong>
+              </>
+            )}
+            <span>Asset ID</span>
+            <strong>{assetId}</strong>
             <span>Categories</span>
             <strong>{categories.join(" - ") || "-"}</strong>
             <span>Tags</span>
@@ -665,8 +740,8 @@ export function AssetDrawer() {
           <AssetScaleDiagram technical={technical} variation={local ? undefined : options?.variation} />
           </div>
           <div hidden={section !== "technical"}>
-          {techRows.length === 0 && !averageColor && <p className="hint">No technical metadata available.</p>}
-          {(techRows.length > 0 || averageColor) && (
+          {techGroups.length === 0 && !averageColor && <p className="hint">No technical metadata available.</p>}
+          {(techGroups.length > 0 || averageColor) && (
             <section className="technical-panel">
               <div className="technical-head">
                 <h3>Technical</h3>
@@ -677,15 +752,41 @@ export function AssetDrawer() {
                   </span>
                 )}
               </div>
-              <div className="technical-grid">
-                {techRows.map(([label, value]) => (
-                  <div key={label}>
-                    <span>{label}</span>
-                    <strong>{value}</strong>
+              {techGroups.map(group => (
+                <div className="technical-group" key={group.title}>
+                  <h4>{group.title}</h4>
+                  <div className="technical-grid">
+                    {group.rows.map(([label, value]) => (
+                      <div key={label}>
+                        <span>{label}</span>
+                        <strong>{value}</strong>
+                      </div>
+                    ))}
                   </div>
+                </div>
+              ))}
+            </section>
+          )}
+          {technical.mapTypes.length > 0 && (
+            <div className="poliigon-chips-section">
+              <strong>Texture maps</strong>
+              <div className="poliigon-chip-row">
+                {technical.mapTypes.map(type => (
+                  <span key={type}>{mapTypeLabel(type)}</span>
                 ))}
               </div>
-            </section>
+            </div>
+          )}
+          {(technical.lodTriangles?.length ?? 0) > 0 && (
+            <div className="poliigon-lods">
+              <strong>LOD triangles</strong>
+              {(technical.lodTriangles ?? []).map(item => (
+                <div key={item.label}>
+                  <span>{item.label}</span>
+                  <em>{item.tris.toLocaleString()}</em>
+                </div>
+              ))}
+            </div>
           )}
 
           </div>
@@ -1061,6 +1162,10 @@ export function AssetDrawer() {
                       )}
                     </div>
                   )}
+                  <p className="hint">
+                    Files are written to {settings?.libraryPath || "the library folder"} using the standard
+                    Megascans layout.
+                  </p>
                 </>
               )}
             </div>
@@ -1071,8 +1176,11 @@ export function AssetDrawer() {
           {local ? <button type="button" className="btn btn-primary btn-wide" onClick={() => void window.openbridge.openPath(local.path)}>
             <FolderIcon /> Open folder</button> : <>
           <div className="download-summary">
-            <span>{plan?.bytes ? `~${formatBytes(plan.bytes)}${plan.partial ? "+" : ""}` : "Size unavailable"} · {selectedMaps} maps
-              {threeD ? ` · ${selectedLods} LOD${selectedLods === 1 ? "" : "s"}` : ""}</span>
+            <span>
+              {options ? `${options.resolution / 1024}K · ` : ""}
+              {plan?.bytes ? `~${formatBytes(plan.bytes)}${plan.partial ? "+" : ""}` : "Size unavailable"} · {selectedMaps} {selectedMaps === 1 ? "map" : "maps"}
+              {threeD ? ` · ${selectedLods} LOD${selectedLods === 1 ? "" : "s"}` : ""}
+            </span>
             <button type="button" className="text-btn" onClick={() => setSection("settings")}>Edit plan</button>
           </div>
           {options && <div className="footer-resolution" role="group" aria-label="Quick download resolution">

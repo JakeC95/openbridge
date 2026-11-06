@@ -6,6 +6,8 @@ import { useBrowseScroll } from "../use-browse-scroll";
 import { LoadMore } from "../components/LoadMore";
 import { AssetList } from "../components/AssetList";
 import { useStore } from "../store";
+import { resolutionFacetValue, sortResolutionRecord } from "../catalog-utils";
+import { SIZE_FILTER_LABELS, SIZE_FILTER_OPTIONS, type SizeFilter } from "../size-filter";
 import { AssetCard } from "../components/AssetCard";
 import { galleryFacts, hitId, hitPreview, hitThumb, readinessBadges, typeLabel } from "../catalog-utils";
 import { CloseIcon, ChevronDownIcon, UserIcon } from "../icons";
@@ -35,13 +37,25 @@ const FACET_GROUPS = [
 
 type FacetGroupKey = (typeof FACET_GROUPS)[number]["key"];
 
+const SORT_OPTIONS = [
+  { value: "relevance", label: "Sort: Relevance" },
+  { value: "name", label: "Name A–Z" },
+  { value: "type", label: "Asset type" },
+  { value: "size", label: "Physical size · largest" },
+  { value: "resolution", label: "Resolution · highest" },
+  { value: "triangles", label: "Triangles · most" },
+  { value: "maps", label: "Texture maps · most" }
+] as const;
+
 function facetGroupLabel(key: string): string {
   return FACET_GROUPS.find(group => group.key === key)?.label ?? titleCase(key);
 }
 
 function titleCase(key: string): string {
   return key
+    .replace(/[-_]+/g, " ")
     .split(" ")
+    .filter(Boolean)
     .map(word =>
       word.toLowerCase() === "3d"
         ? "3D"
@@ -77,6 +91,7 @@ interface SavedSearch {
   freeOnly: boolean;
   favoritesOnly: boolean;
   sizeFilter: "any" | "small" | "medium" | "large" | "huge";
+  sort?: string;
   facetFilters: Record<string, string[]>;
   pack?: PackRef | null;
 }
@@ -190,6 +205,53 @@ export function DiscoverView() {
   const selectedCategoryLabel = categoryPathLabel(categories, categoryPath);
   const activeTab = TABS.find(isTabActive) ?? TABS[0];
   const stateFilter = freeOnly ? "free" : favoritesOnly ? "favorites" : "all";
+  const assetRoot = (categoryPath[0] ?? type ?? "").toLowerCase();
+  const sizeAllowed = !["atlas", "brush", "decal", "imperfection", "displacement"].includes(assetRoot);
+  const trianglesAllowed =
+    assetRoot === "" ||
+    assetRoot.includes("3d") ||
+    assetRoot.includes("plant") ||
+    assetRoot === "model";
+  const mapsAllowed = !["brush", "imperfection", "displacement"].includes(assetRoot);
+  const sortOptions = useMemo(
+    () => SORT_OPTIONS.filter(option => {
+      if (option.value === "size") return sizeAllowed;
+      if (option.value === "triangles") return trianglesAllowed;
+      if (option.value === "maps") return mapsAllowed;
+      if (option.value === "type") return assetRoot === "";
+      return true;
+    }),
+    [assetRoot, mapsAllowed, sizeAllowed, trianglesAllowed]
+  );
+  useEffect(() => {
+    if (!sortOptions.some(option => option.value === catalogSort)) {
+      setCatalogSort("relevance");
+      localStorage.setItem("openbridge.catalogSort", "relevance");
+    }
+  }, [catalogSort, sortOptions]);
+  useEffect(() => {
+    if (!sizeAllowed && sizeFilter !== "any") setSizeFilter("any");
+  }, [sizeAllowed, setSizeFilter, sizeFilter]);
+  useEffect(() => {
+    if (!["atlas", "brush", "decal", "imperfection", "displacement"].includes(assetRoot)) return;
+    const allowed = new Set(["resolution", "color", "theme"]);
+    const next = Object.fromEntries(
+      Object.entries(facetFilters).filter(([key]) => allowed.has(key))
+    );
+    if (Object.keys(next).length === Object.keys(facetFilters).length) return;
+    useStore.setState({ facetFilters: next });
+    void search(true);
+  }, [assetRoot, facetFilters, search]);
+
+  const visibleFacetGroups = useMemo(() => {
+    const restricted = ["atlas", "brush", "decal", "imperfection", "displacement"].includes(assetRoot);
+    const allowed = restricted ? new Set(["resolution", "color", "theme"]) : null;
+    return FACET_GROUPS.filter(group =>
+      (!allowed || allowed.has(group.key)) &&
+      (Object.keys(facets[group.key] ?? {}).length > 0 ||
+        (facetFilters[group.key]?.length ?? 0) > 0)
+    );
+  }, [assetRoot, facetFilters, facets]);
 
   function selectTab(tab: (typeof TABS)[number]): void {
     setCategoryPath(tab.path);
@@ -206,8 +268,9 @@ export function DiscoverView() {
 
   function toggleFilters(): void {
     if (!filtersOpen) {
-      const withSelection = FACET_GROUPS.find(group => (facetFilters[group.key] ?? []).length > 0);
+      const withSelection = visibleFacetGroups.find(group => (facetFilters[group.key] ?? []).length > 0);
       if (withSelection) setActiveGroup(withSelection.key);
+      else if (visibleFacetGroups[0]) setActiveGroup(visibleFacetGroups[0].key);
     }
     setFiltersOpen(value => !value);
   }
@@ -381,6 +444,9 @@ export function DiscoverView() {
     (sum, values) => sum + values.length,
     0
   );
+  useEffect(() => {
+    if (visibleFacetGroups.length === 0 && activeFacetCount === 0 && filtersOpen) setFiltersOpen(false);
+  }, [visibleFacetGroups.length, activeFacetCount, filtersOpen]);
 
   function saveCurrentSearch(): void {
     const name =
@@ -398,6 +464,7 @@ export function DiscoverView() {
         freeOnly,
         favoritesOnly,
         sizeFilter,
+        sort: catalogSort,
         facetFilters,
         pack: catalogPack
       },
@@ -419,6 +486,10 @@ export function DiscoverView() {
       facetFilters: saved.facetFilters,
       catalogPack: saved.pack ?? null
     });
+    if (saved.sort && SORT_OPTIONS.some(option => option.value === saved.sort)) {
+      setCatalogSort(saved.sort);
+      localStorage.setItem("openbridge.catalogSort", saved.sort);
+    }
     void search(true);
     setFiltersOpen(false);
   }
@@ -448,12 +519,7 @@ export function DiscoverView() {
           />
 
           <Dropdown className="filter-select" value={catalogSort} ariaLabel="Sort loaded catalogue results"
-            onChange={value => { setCatalogSort(value); localStorage.setItem("openbridge.catalogSort", value); }} options={[
-              { value: "relevance", label: "Sort: Relevance" }, { value: "name", label: "Name A–Z" },
-              { value: "type", label: "Asset type" }, { value: "size", label: "Physical size · largest" },
-              { value: "resolution", label: "Resolution · highest" }, { value: "triangles", label: "Triangles · most" },
-              { value: "maps", label: "Texture maps · most" }
-            ]} />
+            onChange={value => { setCatalogSort(value); localStorage.setItem("openbridge.catalogSort", value); }} options={sortOptions.map(option => ({ ...option }))} />
 
           <Dropdown
             className="filter-select"
@@ -472,21 +538,17 @@ export function DiscoverView() {
             ]}
           />
 
-              <Dropdown
-            className="filter-select"
-            value={sizeFilter}
-            onChange={value =>
-              setSizeFilter(value as "any" | "small" | "medium" | "large" | "huge")
-            }
-            ariaLabel="Filter by physical size"
-            options={[
-              { value: "any", label: "Any Size" },
-              { value: "small", label: "Up to 50 cm" },
-              { value: "medium", label: "50 cm-2 m" },
-              { value: "large", label: "2-5 m" },
-              { value: "huge", label: "5 m+" }
-            ]}
-          />
+          {sizeAllowed && (
+            <Dropdown
+              className="filter-select"
+              value={sizeFilter}
+              onChange={value =>
+                setSizeFilter(value as SizeFilter)
+              }
+              ariaLabel="Filter by physical size"
+              options={SIZE_FILTER_OPTIONS}
+            />
+          )}
           <button
                 type="button"
                 className={selectMode ? "filter-action active" : "filter-action"}
@@ -498,19 +560,21 @@ export function DiscoverView() {
                 )}
               </button>
 
-              <button
-                type="button"
-                className={filtersOpen ? "filter-action active" : "filter-action"}
-                aria-expanded={filtersOpen}
-                aria-controls="catalogue-filter-panel"
-                onClick={toggleFilters}
-              >
-                Filters
-                {activeFacetCount > 0 && (
-                  <span className="filter-count">{activeFacetCount}</span>
-                )}
-                <ChevronDownIcon className={filtersOpen ? "filter-chevron open" : "filter-chevron"} />
-              </button>
+              {(visibleFacetGroups.length > 0 || activeFacetCount > 0) && (
+                <button
+                  type="button"
+                  className={filtersOpen ? "filter-action active" : "filter-action"}
+                  aria-expanded={filtersOpen}
+                  aria-controls="catalogue-filter-panel"
+                  onClick={toggleFilters}
+                >
+                  Filters
+                  {activeFacetCount > 0 && (
+                    <span className="filter-count">{activeFacetCount}</span>
+                  )}
+                  <ChevronDownIcon className={filtersOpen ? "filter-chevron open" : "filter-chevron"} />
+                </button>
+              )}
 
           <span className="result-count">
             {loading && hits.length === 0
@@ -535,8 +599,8 @@ export function DiscoverView() {
         <div className="active-filters" aria-label="Active catalogue filters">
           {catalogPack && <button type="button" className="facet-chip active" onClick={() => useStore.getState().clearPack()}>Pack: {catalogPack.name} ×</button>}
           {categoryPath.length > 0 && <button type="button" className="facet-chip active" onClick={() => setCategoryPath([])}>{selectedCategoryLabel} ×</button>}
-          {stateFilter !== "all" && <button type="button" className="facet-chip active" onClick={() => setStateFilter("all")}>{stateFilter} ×</button>}
-          {sizeFilter !== "any" && <button type="button" className="facet-chip active" onClick={() => setSizeFilter("any")}>Size: {sizeFilter} ×</button>}
+          {stateFilter !== "all" && <button type="button" className="facet-chip active" onClick={() => setStateFilter("all")}>{stateFilter === "free" ? "Free" : "Favorites"} ×</button>}
+          {sizeFilter !== "any" && <button type="button" className="facet-chip active" onClick={() => setSizeFilter("any")}>Size: {SIZE_FILTER_LABELS[sizeFilter]} ×</button>}
           {Object.entries(facetFilters).flatMap(([group, values]) => values.map(value =>
             <button type="button" key={`${group}:${value}`} className="facet-chip active" onClick={() => toggleFacet(group, value)}>
               <span>{facetGroupLabel(group)}</span>
@@ -588,12 +652,16 @@ export function DiscoverView() {
               </p>
             )}
 
-            {Object.keys(facets).length === 0 ? (
-              <p className="hint">Run a search to load available filters.</p>
+            {visibleFacetGroups.length === 0 ? (
+              <p className="hint">No filters are available for this asset type.</p>
             ) : (
               <FilterWorkbench activeGroup={activeGroup} onActiveGroup={key => setActiveGroup(key as FacetGroupKey)}
-                groups={FACET_GROUPS.map(({ key, label }) => ({ key, label, values: facets[key] ?? {},
-                  selected: facetFilters[key] ?? [], toggle: value => toggleFacet(key, value) }))} />
+                groups={visibleFacetGroups.map(({ key, label }) => ({ key, label,
+                  values: key === "resolution" ? sortResolutionRecord(facets[key] ?? {}) : facets[key] ?? {},
+                  selected: facetFilters[key] ?? [], toggle: value => toggleFacet(key, value),
+                  ...(key === "resolution"
+                    ? { compare: (a: string, b: string) => resolutionFacetValue(a) - resolutionFacetValue(b) }
+                    : { labels: Object.fromEntries(Object.keys(facets[key] ?? {}).map(value => [value, titleCase(value)])) }) }))} />
             )}
 
             {savedSearches.length > 0 && (
