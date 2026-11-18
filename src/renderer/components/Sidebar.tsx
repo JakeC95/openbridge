@@ -5,7 +5,7 @@ import { usePolyHavenStore } from "../polyhaven-store";
 import { usePublicStore } from "../public-store";
 import { publicTypeForCategory } from "../public-taxonomy";
 import { PUBLIC_PROVIDER_IDS, isPublicProviderId, publicProviderLabel } from "../../shared/public-providers";
-import type { CategoryNode } from "../../shared/types";
+import type { AssetProvider, CategoryNode } from "../../shared/types";
 import { allCategoryNodes, allSourcePath, polyHavenHdriCategoryRoots } from "../all-sources";
 import {
   DiscoverIcon,
@@ -72,6 +72,9 @@ export function Sidebar() {
   const provider = useStore(state => state.provider);
   const publicStates = usePublicStore(state => state.providers);
   const setProvider = useStore(state => state.setProvider);
+  const disabledProviders = useStore(state => state.disabledProviders);
+  const toggleProviderEnabled = useStore(state => state.toggleProviderEnabled);
+  const enableAllProviders = useStore(state => state.enableAllProviders);
   const allType = useStore(state => state.allType);
   const setAllType = useStore(state => state.setAllType);
   const auth = useStore(state => state.auth);
@@ -166,41 +169,43 @@ export function Sidebar() {
       </div>
 
       {view === "discover" && (
-        <div className="provider-switch" role="group" aria-label="Asset source">
+        <>
+        <div className="provider-switch" role="group" aria-label="Asset sources">
           <button
             type="button"
-            className={`provider-all${provider === "all" ? " active" : ""}`}
-            aria-pressed={provider === "all"}
-            onClick={() => setProvider("all")}
+            className={`provider-all${provider === "all" && disabledProviders.length === 0 ? " active" : ""}`}
+            aria-pressed={provider === "all" && disabledProviders.length === 0}
+            title="Show every source"
+            onClick={() => { enableAllProviders(); setProvider("all"); }}
           >
             All
           </button>
-          <button
-            type="button"
-            className={`provider-megascans${provider === "megascans" ? " active" : ""}`}
-            aria-pressed={provider === "megascans"}
-            onClick={() => setProvider("megascans")}
-          >
-            Megascans
-          </button>
-          <button
-            type="button"
-            className={`provider-poliigon${provider === "poliigon" ? " active" : ""}`}
-            aria-pressed={provider === "poliigon"}
-            onClick={() => setProvider("poliigon")}
-          >
-            Poliigon
-          </button>
-          <button
-            type="button"
-            className={`provider-polyhaven${provider === "polyhaven" ? " active" : ""}`}
-            aria-pressed={provider === "polyhaven"}
-            onClick={() => setProvider("polyhaven")}
-          >
-            Poly Haven
-          </button>
-          {PUBLIC_PROVIDER_IDS.map(id => <button key={id} type="button" className={`provider-${id}${provider === id ? " active" : ""}`} aria-pressed={provider === id} onClick={() => setProvider(id)}>{publicProviderLabel(id)}</button>)}
+          {([
+            ["megascans", "Megascans"],
+            ["poliigon", "Poliigon"],
+            ["polyhaven", "Poly Haven"],
+            ...PUBLIC_PROVIDER_IDS.map(id => [id, publicProviderLabel(id)] as const)
+          ] as Array<[AssetProvider, string]>).map(([id, label]) => {
+            const enabled = !disabledProviders.includes(id);
+            return <button
+              key={id}
+              type="button"
+              className={`provider-${id}${provider === id ? " active" : ""}${enabled ? "" : " disabled"}`}
+              aria-pressed={enabled}
+              title={`${label} ${enabled ? "enabled" : "disabled"} · click to ${enabled ? "disable" : "enable"}`}
+              onClick={() => { if (provider === id && enabled) setProvider("all"); else toggleProviderEnabled(id); }}
+            >
+              {label}
+            </button>;
+          })}
         </div>
+        {view === "discover" && provider === "all" && disabledProviders.length > 0 && (
+          <p className="provider-switch-note">
+            {disabledProviders.length} {disabledProviders.length === 1 ? "source" : "sources"} hidden
+            <button type="button" className="text-btn" onClick={enableAllProviders}>Restore all</button>
+          </p>
+        )}
+        </>
       )}
 
       <div className="sidebar-scroll">

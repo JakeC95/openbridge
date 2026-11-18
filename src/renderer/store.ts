@@ -46,6 +46,11 @@ import {
 type View = "discover" | "library" | "downloads" | "settings";
 type LocalRepo = "all" | RepoKind;
 
+const ALL_PROVIDERS: AssetProvider[] = ["megascans", "poliigon", "polyhaven", ...PUBLIC_PROVIDER_IDS];
+function isAssetProvider(value: unknown): value is AssetProvider {
+  return typeof value === "string" && (ALL_PROVIDERS as string[]).includes(value);
+}
+
 let catalogRequest = 0;
 let libraryRequest = 0;
 
@@ -81,6 +86,10 @@ interface Toast {
 interface State {
   provider: ProviderScope;
   setProvider(value: ProviderScope): void;
+  /** Sources excluded from the combined All view. */
+  disabledProviders: AssetProvider[];
+  toggleProviderEnabled(provider: AssetProvider): void;
+  enableAllProviders(): void;
   allType: string;
   allStateFilter: AllStateFilter;
   allSort: AllSort;
@@ -312,6 +321,25 @@ export const useStore = create<State>((set, get) => ({
       return "all";
     }
   })(),
+  disabledProviders: (() => {
+    const saved = readPreference<unknown>("disabledProviders", []);
+    if (!Array.isArray(saved)) return [];
+    return [...new Set(saved.filter(isAssetProvider))];
+  })(),
+  toggleProviderEnabled(provider) {
+    if (get().provider !== "all") get().setProvider("all");
+    const disabledProviders = get().disabledProviders.includes(provider)
+      ? get().disabledProviders.filter(item => item !== provider)
+      : [...get().disabledProviders, provider];
+    set({ disabledProviders });
+    writePreference("disabledProviders", disabledProviders);
+    get().syncAllSources();
+  },
+  enableAllProviders() {
+    set({ disabledProviders: [] });
+    writePreference("disabledProviders", []);
+    get().syncAllSources();
+  },
   setProvider(value) {
     const previous = get().provider;
     const focusedQuery = isPublicProviderId(previous) ? usePublicStore.getState().providers[previous].query.query ?? "" : previous === "poliigon"
@@ -418,13 +446,14 @@ export const useStore = create<State>((set, get) => ({
   },
   syncAllSources() {
     const option = allSourceCategory(get().allType);
+    const disabled = new Set(get().disabledProviders);
     if (option.value.startsWith("hdri") && Object.keys(get().facetFilters).length > 0) {
       set({ facetFilters: {} });
     }
     const stateFilter = get().allStateFilter;
     const bounds = sizeBounds(get().sizeFilter);
     set({
-      type: option.megascansType ?? "",
+      type: disabled.has("megascans") ? NONE_TYPE : option.megascansType ?? "",
       categoryPath: [],
       categoryPaths: option.megascansPaths ?? [],
       freeOnly: stateFilter === "free",
@@ -432,7 +461,7 @@ export const useStore = create<State>((set, get) => ({
       downloadedOnly: stateFilter === "downloaded"
     });
     const poliigon = usePoliigonStore.getState();
-    let poliigonType = option.poliigonType ?? "";
+    let poliigonType = disabled.has("poliigon") ? NONE_TYPE : option.poliigonType ?? "";
     let poliigonIds = option.poliigonPaths?.length
       ? poliigonCategoryIds(poliigon.categories, option.poliigonPaths)
       : [];
@@ -463,7 +492,9 @@ export const useStore = create<State>((set, get) => ({
       option.polyhavenType !== undefined ||
       (option.polyhavenCategories?.length ?? 0) > 0 ||
       (option.polyhavenCategoryPaths?.length ?? 0) > 0;
-    const polyType = option.value === ""
+    const polyType = disabled.has("polyhaven")
+      ? NONE_TYPE
+      : option.value === ""
       ? ""
       : option.polyhavenType === NONE_TYPE
         ? NONE_TYPE
@@ -486,9 +517,9 @@ export const useStore = create<State>((set, get) => ({
         ? { timeStart: option.polyhavenTimeStart, timeEnd: option.polyhavenTimeEnd }
         : {})
     });
-    void get().search(true);
-    void usePoliigonStore.getState().search(true);
-    void usePolyHavenStore.getState().search(true);
+    if (!disabled.has("megascans")) void get().search(true);
+    if (!disabled.has("poliigon")) void usePoliigonStore.getState().search(true);
+    if (!disabled.has("polyhaven")) void usePolyHavenStore.getState().search(true);
   },
   clearAllFilters() {
     set({
@@ -534,11 +565,12 @@ export const useStore = create<State>((set, get) => ({
       timeEnd: null
     });
     for (const provider of PUBLIC_PROVIDER_IDS) {
+      if (get().disabledProviders.includes(provider)) continue;
       void usePublicStore.getState().search(provider, true, normalizePublicQuery(provider, {}));
     }
-    void get().search(true);
-    void usePoliigonStore.getState().search(true);
-    void usePolyHavenStore.getState().search(true);
+    if (!get().disabledProviders.includes("megascans")) void get().search(true);
+    if (!get().disabledProviders.includes("poliigon")) void usePoliigonStore.getState().search(true);
+    if (!get().disabledProviders.includes("polyhaven")) void usePolyHavenStore.getState().search(true);
   },
   density: (() => {
     const saved = readPreference<string>("density", "comfortable");

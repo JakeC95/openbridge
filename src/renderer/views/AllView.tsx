@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import type {
+  AssetProvider,
   CatalogHit,
   PoliigonAssetSummary,
   PolyHavenAssetSummary
@@ -310,6 +311,13 @@ export function AllView() {
   const downloads = useStore(state => state.downloads);
   const auth = useStore(state => state.auth);
   const login = useStore(state => state.login);
+  const disabledProviders = useStore(state => state.disabledProviders);
+  const toggleProviderEnabled = useStore(state => state.toggleProviderEnabled);
+  const enableAllProviders = useStore(state => state.enableAllProviders);
+  const megaEnabled = !disabledProviders.includes("megascans");
+  const poliEnabled = !disabledProviders.includes("poliigon");
+  const polyEnabled = !disabledProviders.includes("polyhaven");
+  const publicEnabled = PUBLIC_PROVIDER_IDS.filter(provider => !disabledProviders.includes(provider));
 
   const poliHits = usePoliigonStore(state => state.hits);
   const poliTotal = usePoliigonStore(state => state.total);
@@ -399,6 +407,7 @@ export function AllView() {
   }, []);
   useEffect(() => {
     for (const provider of PUBLIC_PROVIDER_IDS) {
+      if (!publicEnabled.includes(provider)) continue;
       const state = usePublicStore.getState();
       // Subcategory mappings are deliberately conservative until verified against each taxonomy.
       const category = publicCategoryQuery(provider, allType, state.providers[provider].categories);
@@ -409,7 +418,7 @@ export function AllView() {
       const unsupported = provider === "blenderkit" && (start !== null && end !== null || sizeFilter !== "any");
       void state.search(provider, true, { ...category, ...(unsupported ? { types: ["__none__"] } : {}), minSize: range?.min ?? undefined, maxSize: range?.max ?? undefined, timeStart: start ?? category.timeStart, timeEnd: end ?? category.timeEnd, query, freeOnly: allStateFilter === "free", ids: allStateFilter === "favorites" ? publicFavorites.filter(key => key.startsWith(`${provider}:`)).map(key => key.slice(provider.length + 1)) : allStateFilter === "downloaded" ? megaLocalRefs.filter(ref => ref.id.startsWith(`${provider}:`)).map(ref => ref.id.slice(provider.length + 1)) : undefined });
     }
-  }, [query, allType, allStateFilter, megaLocalRefs, publicFavoritesVersion, sizeFilter, poliTimeStart, poliTimeEnd, polyTimeStart, polyTimeEnd, publicMetadataReady]);
+  }, [query, allType, allStateFilter, megaLocalRefs, publicFavoritesVersion, sizeFilter, poliTimeStart, poliTimeEnd, polyTimeStart, polyTimeEnd, publicMetadataReady, disabledProviders]);
 
   useEffect(() => {
     // Poliigon category paths become IDs only after the category tree loads.
@@ -433,27 +442,27 @@ export function AllView() {
   const polyFavoriteSet = useMemo(() => new Set(polyFavorites), [polyFavorites]);
 
   const merged = useMemo<UnifiedItem[]>(() => {
-    const mega: UnifiedItem[] = megaHits.map(hit => ({
+    const mega: UnifiedItem[] = megaEnabled ? megaHits.map(hit => ({
       provider: "megascans",
       key: megaKey(hit),
       hit
-    }));
-    const poli: UnifiedItem[] = poliHits.map(hit => ({
+    })) : [];
+    const poli: UnifiedItem[] = poliEnabled ? poliHits.map(hit => ({
       provider: "poliigon",
       key: poliKey(hit),
       hit
-    }));
-    const poly: UnifiedItem[] = polyHits.map(hit => ({
+    })) : [];
+    const poly: UnifiedItem[] = polyEnabled ? polyHits.map(hit => ({
       provider: "polyhaven",
       key: polyHavenKey(hit),
       hit
-    }));
-    const additional: UnifiedItem[] = PUBLIC_PROVIDER_IDS.flatMap(provider => publicStates[provider].hits.map(hit => ({ provider: "public" as const, key: publicJobId(provider, hit.id), hit })));
+    })) : [];
+    const additional: UnifiedItem[] = publicEnabled.flatMap(provider => publicStates[provider].hits.map(hit => ({ provider: "public" as const, key: publicJobId(provider, hit.id), hit })));
     const groups: Array<{ provider: string; items: UnifiedItem[] }> = [
       { provider: "megascans", items: mega },
       { provider: "poliigon", items: poli },
       { provider: "polyhaven", items: poly },
-      ...PUBLIC_PROVIDER_IDS.map(provider => ({
+      ...publicEnabled.map(provider => ({
         provider,
         items: publicStates[provider].hits.map(hit => ({
           provider: "public" as const,
@@ -511,11 +520,14 @@ export function AllView() {
       if (bv === null) return -1;
       return bv - av || itemName(a).localeCompare(itemName(b));
     });
-  }, [allSort, megaHits, poliHits, polyHits, publicStates, query]);
+  }, [allSort, megaHits, poliHits, polyHits, publicStates, query, megaEnabled, poliEnabled, polyEnabled, disabledProviders]);
 
-  const total = megaTotal + poliTotal + polyTotal + PUBLIC_PROVIDER_IDS.reduce((sum, provider) => sum + publicStates[provider].total, 0);
-  const loading = megaLoading || poliLoading || polyLoadingState || PUBLIC_PROVIDER_IDS.some(provider => publicStates[provider].loading);
-  const hasMore = megaHasMore || poliHasMore || polyHasMore || PUBLIC_PROVIDER_IDS.some(provider => publicStates[provider].hasMore);
+  const total = (megaEnabled ? megaTotal : 0) + (poliEnabled ? poliTotal : 0) + (polyEnabled ? polyTotal : 0)
+    + publicEnabled.reduce((sum, provider) => sum + publicStates[provider].total, 0);
+  const loading = megaEnabled && megaLoading || poliEnabled && poliLoading || polyEnabled && polyLoadingState
+    || publicEnabled.some(provider => publicStates[provider].loading);
+  const hasMore = megaEnabled && megaHasMore || poliEnabled && poliHasMore || polyEnabled && polyHasMore
+    || publicEnabled.some(provider => publicStates[provider].hasMore);
   const typeOption = allSourceCategory(allType);
   const rootType = allType.split(":")[0];
   const isHdri = allType === "hdri" || allType.startsWith("hdri:");
@@ -544,22 +556,22 @@ export function AllView() {
     }
   }, [allowSize, sizeFilter]);
   const poliReady = poliStatus?.state === "ready";
-  const poliIndexing = poliStatus?.state === "refreshing" || (!poliReady && poliLoading);
-  const poliUnavailable = !poliReady && !poliIndexing && poliStatus?.state !== "error";
+  const poliIndexing = poliEnabled && (poliStatus?.state === "refreshing" || (!poliReady && poliLoading));
+  const poliUnavailable = poliEnabled && !poliReady && !poliIndexing && poliStatus?.state !== "error";
   const polyReady = polyStatus?.state === "ready";
-  const polyIndexing = polyStatus?.state === "refreshing" || (!polyReady && polyLoadingState);
-  const polyUnavailable = !polyReady && !polyIndexing && polyStatus?.state !== "error";
-  const publicIndexing = PUBLIC_PROVIDER_IDS.filter(provider => provider !== "blenderkit" && publicStates[provider].status?.state === "refreshing");
-  const publicUnindexed = PUBLIC_PROVIDER_IDS.filter(provider => provider !== "blenderkit" && publicStates[provider].status !== null && !publicStates[provider].loading && !publicStates[provider].error && publicStates[provider].hits.length === 0 && (!publicStates[provider].status?.count || publicStates[provider].status?.state === "empty"));
+  const polyIndexing = polyEnabled && (polyStatus?.state === "refreshing" || (!polyReady && polyLoadingState));
+  const polyUnavailable = polyEnabled && !polyReady && !polyIndexing && polyStatus?.state !== "error";
+  const publicIndexing = publicEnabled.filter(provider => provider !== "blenderkit" && publicStates[provider].status?.state === "refreshing");
+  const publicUnindexed = publicEnabled.filter(provider => provider !== "blenderkit" && publicStates[provider].status !== null && !publicStates[provider].loading && !publicStates[provider].error && publicStates[provider].hits.length === 0 && (!publicStates[provider].status?.count || publicStates[provider].status?.state === "empty"));
   const favoriteCount = megaFavorites.length + poliFavorites.length + polyFavorites.length + publicFavorites.length;
   const megaDownloadedCount = megaLocalRefs.filter(ref => !ref.id.startsWith("poliigon:") && !ref.id.startsWith("polyhaven:") && !parsePublicJobId(ref.id)).length;
   const downloadedCount = megaDownloadedCount + Object.keys(poliLocal).length + Object.keys(polyLocal).length + megaLocalRefs.filter(ref => Boolean(parsePublicJobId(ref.id))).length;
 
-  const megaFacetCount = Object.values(megaFacetFilters).reduce((sum, values) => sum + values.length, 0);
-  const poliFacetCount = poliResolutions.length + poliCreationMethods.length + poliMapTypes.length + poliWeather.length;
-  const polyFacetCount = polyResolutions.length + polyMapTypes.length + polyCategories.length + polyCollections.length;
-  const polyAttributeCount = Object.values(polyAttributeFilters).reduce((sum, values) => sum + values.length, 0);
-  const publicFacetCount = PUBLIC_PROVIDER_IDS.reduce((sum, provider) => {
+  const megaFacetCount = megaEnabled ? Object.values(megaFacetFilters).reduce((sum, values) => sum + values.length, 0) : 0;
+  const poliFacetCount = poliEnabled ? poliResolutions.length + poliCreationMethods.length + poliMapTypes.length + poliWeather.length : 0;
+  const polyFacetCount = polyEnabled ? polyResolutions.length + polyMapTypes.length + polyCategories.length + polyCollections.length : 0;
+  const polyAttributeCount = polyEnabled ? Object.values(polyAttributeFilters).reduce((sum, values) => sum + values.length, 0) : 0;
+  const publicFacetCount = publicEnabled.reduce((sum, provider) => {
     const query = publicStates[provider].query;
     return sum + (query.licenses?.length ?? 0) + (query.resolutions?.length ?? 0) + (query.mapTypes?.length ?? 0) + (query.modelFormats?.length ?? 0) + (query.weather?.length ?? 0) + (query.tags?.length ?? 0)
       + (query.minResolution !== undefined ? 1 : 0) + (query.maxTris !== undefined ? 1 : 0)
@@ -573,7 +585,7 @@ export function AllView() {
     const next = current.includes(value) ? current.filter(entry => entry !== value) : [...current, value];
     void usePublicStore.getState().search(provider, true, { [field]: next } as Partial<import("../../shared/public-providers").PublicCatalogQuery>);
   };
-  const publicChips = (): ReactElement[] => PUBLIC_PROVIDER_IDS.flatMap(provider => {
+  const publicChips = (): ReactElement[] => publicEnabled.flatMap(provider => {
     const query = publicStates[provider].query;
     const chips: ReactElement[] = [];
     const add = (field: "licenses" | "resolutions" | "mapTypes" | "modelFormats" | "weather" | "tags", value: string) => chips.push(
@@ -593,7 +605,7 @@ export function AllView() {
     return chips;
   });
 
-  const publicFacetGroups = (): FilterGroup[] => PUBLIC_PROVIDER_IDS.flatMap(provider => {
+  const publicFacetGroups = (): FilterGroup[] => publicEnabled.flatMap(provider => {
     const state = publicStates[provider];
     const groups: FilterGroup[] = [];
     const add = (field: "licenses" | "resolutions" | "mapTypes" | "modelFormats" | "weather", label: string, buckets: Array<{ value: string; count: number }>, labels?: Record<string, string>) => {
@@ -762,7 +774,13 @@ export function AllView() {
           })
       : []),
     ...publicFacetGroups()
-  ].filter(group => Object.keys(group.values).length > 0 || group.selected.length > 0);
+  ].filter(group => {
+    if (group.key.startsWith("mega:")) return megaEnabled;
+    if (group.key.startsWith("poli:")) return poliEnabled;
+    if (group.key.startsWith("poly:")) return polyEnabled;
+    if (group.key.startsWith("public:")) return publicEnabled.includes(group.key.split(":")[1] as PublicProviderId);
+    return true;
+  }).filter(group => Object.keys(group.values).length > 0 || group.selected.length > 0);
   const orderedFilterGroups = isHdri
     ? [...filterGroups].sort((a, b) => hdriFilterRank(a.key) - hdriFilterRank(b.key))
     : filterGroups;
@@ -772,7 +790,7 @@ export function AllView() {
   }, [filterGroups.length, activeFacetCount, filtersOpen]);
 
   const loadMore = (): void => {
-    for (const provider of PUBLIC_PROVIDER_IDS) if (publicStates[provider].hasMore) void usePublicStore.getState().search(provider, false);
+    for (const provider of publicEnabled) if (publicStates[provider].hasMore) void usePublicStore.getState().search(provider, false);
     if (megaHasMore) void useStore.getState().search(false);
     if (poliHasMore) void usePoliigonStore.getState().loadMore();
     if (polyHasMore) void usePolyHavenStore.getState().loadMore();
@@ -858,17 +876,17 @@ export function AllView() {
     try {
       let megaPoints = new Map<string, number | undefined>();
       const providers: Array<{ label: string; load: () => Promise<string[]> }> = [
-        {
+        ...(megaEnabled ? [{
           label: "Megascans",
           load: async () => {
             const result = await window.openbridge.catalog.ids(catalogFilterQuery(useStore.getState()));
             megaPoints = new Map(result.entries.map(entry => [`megascans:${entry.id}`, entry.points]));
             return result.entries.map(entry => `megascans:${entry.id}`);
           }
-        },
-        { label: "Poliigon", load: async () => (await usePoliigonStore.getState().selectAllIds()).map(id => `poliigon:${id}`) },
-        { label: "Poly Haven", load: async () => (await usePolyHavenStore.getState().selectAllIds()).map(id => `polyhaven:${id}`) },
-        ...PUBLIC_PROVIDER_IDS.map(provider => ({
+        }] : []),
+        ...(poliEnabled ? [{ label: "Poliigon", load: async () => (await usePoliigonStore.getState().selectAllIds()).map(id => `poliigon:${id}`) }] : []),
+        ...(polyEnabled ? [{ label: "Poly Haven", load: async () => (await usePolyHavenStore.getState().selectAllIds()).map(id => `polyhaven:${id}`) }] : []),
+        ...publicEnabled.map(provider => ({
           label: publicProviderLabel(provider),
           load: async () => (await window.openbridge.public.ids(usePublicStore.getState().providers[provider].query)).map(id => publicJobId(provider, id))
         }))
@@ -1288,50 +1306,30 @@ export function AllView() {
 
         <div className="all-source-summary" aria-label="Asset sources">
           <span className="all-source-summary-label">Sources</span>
-          <button type="button" className="all-source-pill active" aria-pressed="true" title="All catalogues">
-            <span>All</span>
-            <strong>{total.toLocaleString()}</strong>
-          </button>
-          {megaTotal > 0 && (
-            <button
+          {disabledProviders.length > 0 && <button type="button" className="text-btn" onClick={enableAllProviders}>Restore all</button>}
+          {([
+            ["megascans", "Megascans", megaTotal],
+            ["poliigon", "Poliigon", poliTotal],
+            ["polyhaven", "Poly Haven", polyTotal],
+            ...PUBLIC_PROVIDER_IDS.map(provider => [provider, publicProviderLabel(provider), publicStates[provider].total] as const)
+          ] as Array<[AssetProvider, string, number]>).map(([id, label, count]) => {
+            const enabled = !disabledProviders.includes(id);
+            return <button
+              key={id}
               type="button"
-              className="all-source-pill"
-              title="Focus the Megascans catalogue"
-              onClick={() => useStore.getState().setProvider("megascans")}
+              className={`all-source-pill${enabled ? " active" : " disabled"}`}
+              aria-pressed={enabled}
+              title={`${label} ${enabled ? "enabled" : "disabled"} · click to ${enabled ? "disable" : "enable"}`}
+              onClick={() => toggleProviderEnabled(id)}
             >
-              <ProviderLogo provider="megascans" />
-              <span>Megascans</span>
-              <strong>{megaTotal.toLocaleString()}</strong>
-            </button>
-          )}
-          {poliTotal > 0 && (
-            <button
-              type="button"
-              className="all-source-pill"
-              title="Focus the Poliigon catalogue"
-              onClick={() => useStore.getState().setProvider("poliigon")}
-            >
-              <ProviderLogo provider="poliigon" />
-              <span>Poliigon</span>
-              <strong>{poliTotal.toLocaleString()}</strong>
-            </button>
-          )}
-          {polyTotal > 0 && (
-            <button
-              type="button"
-              className="all-source-pill"
-              title="Focus the Poly Haven catalogue"
-              onClick={() => useStore.getState().setProvider("polyhaven")}
-            >
-              <ProviderLogo provider="polyhaven" />
-              <span>Poly Haven</span>
-              <strong>{polyTotal.toLocaleString()}</strong>
-            </button>
-          )}
-          {PUBLIC_PROVIDER_IDS.filter(provider => publicStates[provider].total > 0).map(provider => <button type="button" key={provider} className="all-source-pill" title={`Focus ${publicProviderLabel(provider)}`} onClick={() => useStore.getState().setProvider(provider)}><ProviderLogo provider={provider} /><span>{publicProviderLabel(provider)}</span><strong>{publicStates[provider].total.toLocaleString()}</strong></button>)}
+              <ProviderLogo provider={id} />
+              <span>{label}</span>
+              <strong>{count.toLocaleString()}</strong>
+            </button>;
+          })}
         </div>
-        {PUBLIC_PROVIDER_IDS.filter(provider => publicStates[provider].error).map(provider => <p className="error-box" role="alert" key={provider}>{publicProviderLabel(provider)}: {publicStates[provider].error}<button type="button" className="text-btn" onClick={() => void usePublicStore.getState().search(provider)}>Retry</button></p>)}
-        {PUBLIC_PROVIDER_IDS.some(provider => publicStates[provider].metadataReady && publicStates[provider].query.types?.includes("__none__") && !publicTypesForRoot(provider, allType).includes("__none__")) && <p className="hint">Sources without reliable metadata for the selected category or shared filter are excluded, rather than showing unrelated assets.</p>}
+        {publicEnabled.filter(provider => publicStates[provider].error).map(provider => <p className="error-box" role="alert" key={provider}>{publicProviderLabel(provider)}: {publicStates[provider].error}<button type="button" className="text-btn" onClick={() => void usePublicStore.getState().search(provider)}>Retry</button></p>)}
+        {publicEnabled.some(provider => publicStates[provider].metadataReady && publicStates[provider].query.types?.includes("__none__") && !publicTypesForRoot(provider, allType).includes("__none__")) && <p className="hint">Sources without reliable metadata for the selected category or shared filter are excluded, rather than showing unrelated assets.</p>}
         {publicStates.blenderkit.total >= 10000 && <p className="hint">BlenderKit totals are capped by its search API; the combined count is not a complete catalogue size.</p>}
 
         {isHdri && (
@@ -1532,11 +1530,11 @@ export function AllView() {
 
       <div className="view-body discover-body">
         <div className="asset-area" ref={bodyRef}>
-          {(megaError || poliError || polyError) && (
+          {(megaEnabled && megaError || poliEnabled && poliError || polyEnabled && polyError) && (
             <div className="error-box" role="alert">
-              {megaError && <span>Megascans: {megaError}</span>}
-              {poliError && <span>Poliigon: {poliError}</span>}
-              {polyError && <span>Poly Haven: {polyError}</span>}
+              {megaEnabled && megaError && <span>Megascans: {megaError}</span>}
+              {poliEnabled && poliError && <span>Poliigon: {poliError}</span>}
+              {polyEnabled && polyError && <span>Poly Haven: {polyError}</span>}
               <button type="button" className="btn btn-ghost" disabled={loading} onClick={() => useStore.getState().syncAllSources()}>
                 Retry
               </button>
@@ -1813,9 +1811,11 @@ export function AllView() {
 
           {!loading && !megaError && !poliError && !polyError && merged.length === 0 && (
             <div className="empty">
-              <h2>No assets found</h2>
-              <p>Try a different search or clear the filters.</p>
-              {(query || allType || allStateFilter !== "all" || sizeFilter !== "any" || hasTimeFilter || activeFacetCount > 0) && (
+              <h2>{disabledProviders.length >= PUBLIC_PROVIDER_IDS.length + 3 ? "All sources are hidden" : "No assets found"}</h2>
+              <p>{disabledProviders.length >= PUBLIC_PROVIDER_IDS.length + 3 ? "Enable a source to start browsing again." : "Try a different search or clear the filters."}</p>
+              {disabledProviders.length >= PUBLIC_PROVIDER_IDS.length + 3 ? (
+                <button type="button" className="btn btn-ghost" onClick={enableAllProviders}>Restore all sources</button>
+              ) : (query || allType || allStateFilter !== "all" || sizeFilter !== "any" || hasTimeFilter || activeFacetCount > 0) && (
                 <button type="button" className="btn btn-ghost" onClick={clearSearchAndFilters}>
                   {query ? "Clear search and filters" : "Clear filters"}
                 </button>

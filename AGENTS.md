@@ -76,6 +76,10 @@ Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new wor
   (208 px at 1060 px and below), shorter navigation/topbar and tighter gutters; provider names
   remain visible. The inspector follows the topbar edge. Public-provider primary controls fit
   on one row at 1024 px. Verified in the Windows app and covered by the Electron layout fixture.
+- Provider entries now toggle inclusion in the combined Discover view instead of immediately
+  switching to a focused view. Disabled sources are dimmed/struck through, excluded from search,
+  quick suggestions, counts, facets, paging and select-all, and are persisted. The All button or
+  Restore all clears exclusions; the Sources menu still opens a focused single-provider view.
 - Surface assets now have a **Sphere** preview in the drawer. It reuses the 3D viewer's
   manifest/material/UV/map pipeline with a dense sphere, applies every published map (including
   real vertex displacement with a 0–200% strength control), supports the inspector channels and

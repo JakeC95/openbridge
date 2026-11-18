@@ -151,12 +151,15 @@ function localSuggestion(asset: AssetRecord, groupIndex: number): GlobalSuggesti
 
 function localCatalogueRequests(query: string, scope: GlobalSuggestionScope): Array<Promise<GlobalSuggestion[]>> {
   if (scope === "local") return [];
-  return [
-    window.openbridge.poliigon.search({ query, limit: 4, offset: 0, includeFacets: false }).then(result => result.hits.map(poliigonSuggestion)),
-    window.openbridge.polyhaven.search({ query, limit: 4, offset: 0, includeFacets: false }).then(result => result.hits.map(polyHavenSuggestion)),
-    window.openbridge.public.search({ provider: "ambientcg", query, limit: 3, offset: 0, includeFacets: false }).then(result => result.hits.map(publicSuggestion)),
-    window.openbridge.public.search({ provider: "openhdri", query, limit: 3, offset: 0, includeFacets: false }).then(result => result.hits.map(publicSuggestion))
-  ];
+  const disabled = new Set(useStore.getState().disabledProviders);
+  const requests: Array<Promise<GlobalSuggestion[]>> = [];
+  if (!disabled.has("poliigon")) requests.push(window.openbridge.poliigon.search({ query, limit: 4, offset: 0, includeFacets: false }).then(result => result.hits.map(poliigonSuggestion)));
+  if (!disabled.has("polyhaven")) requests.push(window.openbridge.polyhaven.search({ query, limit: 4, offset: 0, includeFacets: false }).then(result => result.hits.map(polyHavenSuggestion)));
+  for (const provider of ["ambientcg", "openhdri"] as const) {
+    if (disabled.has(provider)) continue;
+    requests.push(window.openbridge.public.search({ provider, query, limit: 3, offset: 0, includeFacets: false }).then(result => result.hits.map(publicSuggestion)));
+  }
+  return requests;
 }
 
 async function librarySuggestions(query: string): Promise<GlobalSuggestion[]> {

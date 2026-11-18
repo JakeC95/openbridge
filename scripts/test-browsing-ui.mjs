@@ -151,6 +151,19 @@ app.whenReady().then(async()=>{
       const element = [...scope.querySelectorAll('button')].find(item => item.textContent.trim() === text);
       assert(element, 'Missing button: '+text); element.click();
     };
+    const focusProvider = async label => {
+      let summary = [...document.querySelectorAll('.browse-menu > summary')].find(item => item.textContent.trim() === 'Sources');
+      if (!summary) {
+        const all = [...document.querySelectorAll('.provider-switch button')].find(item => item.textContent.trim() === 'All');
+        all?.click(); await wait(300);
+        summary = [...document.querySelectorAll('.browse-menu > summary')].find(item => item.textContent.trim() === 'Sources');
+      }
+      assert(summary, 'Sources menu missing');
+      summary.click(); await wait(50);
+      const item = [...document.querySelectorAll('.browse-menu-panel button.source-summary')]
+        .find(entry => entry.querySelector('span')?.textContent === label);
+      assert(item, 'Focus source missing: '+label); item.click(); await wait(400);
+    };
      const navigate = label => {
        const name=label.replace(/\d+$/, '');
        const button=[...document.querySelectorAll('.nav-item')].find(item=>item.querySelector('span')?.textContent===name);
@@ -281,7 +294,7 @@ app.whenReady().then(async()=>{
     assert(!document.getElementById('root').inert,'Background remained inert');
     document.querySelector('.drawer [title="Close"]').click();
     navigate('Discover80');await wait(80);
-    [...document.querySelectorAll('.provider-switch button')].find(item=>/Megascans/i.test(item.textContent)).click();await wait(300);
+    await focusProvider('Megascans');
     clickText(root(),'Filters');await wait(20);
     const facetPanel=document.querySelector('.facet-panel');
     assert(facetPanel,'Catalogue filter panel missing');
@@ -525,10 +538,23 @@ app.whenReady().then(async()=>{
        const deadline = performance.now() + 5000;
        while (!condition()) { if (performance.now() > deadline) throw new Error(message); await wait(25); }
      };
+     const focusProvider = async label => {
+       let summary = [...document.querySelectorAll('.browse-menu > summary')].find(item => item.textContent.trim() === 'Sources');
+       if (!summary) {
+         const all = [...document.querySelectorAll('.provider-switch button')].find(item => item.textContent.trim() === 'All');
+         all?.click(); await wait(300);
+         summary = [...document.querySelectorAll('.browse-menu > summary')].find(item => item.textContent.trim() === 'Sources');
+       }
+       assert(summary, 'Sources menu missing');
+       summary.click(); await wait(50);
+       const item = [...document.querySelectorAll('.browse-menu-panel button.source-summary')]
+         .find(entry => entry.querySelector('span')?.textContent === label);
+       assert(item, 'Focus source missing: '+label); item.click(); await wait(400);
+     };
      window.fixturePublicEnabled();
      const discover = [...document.querySelectorAll('.nav-item')].find(item => item.querySelector('span')?.textContent === 'Discover'); discover.click(); await wait(200);
      for (const [provider, label] of [['ambientcg','ambientCG'],['blenderkit','BlenderKit'],['openhdri','OpenHDRI']]) {
-       button(document.querySelector('.provider-switch'),label).click(); await wait(400);
+       await focusProvider(label); await wait(400);
         const card = document.querySelector('[data-asset-id="'+provider+':fixture-'+provider+'"]');
         assert(card, label+': focused catalogue card missing');
         const title = card.querySelector('.asset-meta strong');
@@ -593,7 +619,7 @@ app.whenReady().then(async()=>{
      }
      await wait(300);
      for (const provider of ['ambientcg','blenderkit','openhdri']) assert(document.querySelector('[data-asset-id="'+provider+':fixture-'+provider+'"]'),provider+': missing from All-source merged grid');
-     window.fixturePublicMany(); button(document.querySelector('.provider-switch'),'ambientCG').click(); await wait(350);
+     window.fixturePublicMany(); await focusProvider('ambientCG'); await wait(350);
      const root=document.querySelector('.public-provider-view');
      assert(root.scrollHeight>root.clientHeight+200,'Public catalogue must scroll independently with a large result set');
      const nativeSelects=[...root.querySelectorAll('select.native-select')];
@@ -634,8 +660,7 @@ app.whenReady().then(async()=>{
       const resetCall=window.fixtureCalls().filter(call=>call.kind==='publicSearch'&&call.query.provider==='ambientcg').at(-1);
       assert(!resetCall.query.query&&!resetCall.query.resolutions?.length,'Start fresh did not reset the focused public source');
       button(document.querySelector('.provider-switch'),'All').click(); await wait(300);
-      const globalInput=document.querySelector('[aria-label="Search all asset sources"]');
-      globalInput.focus(); setInput(globalInput,'oak'); await wait(40);
+      const globalInput=document.querySelector('[aria-label="Search all asset sources"]');      globalInput.focus(); setInput(globalInput,'oak'); await wait(40);
       globalInput.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true,cancelable:true})); await wait(20);
       assert(document.getElementById(globalInput.getAttribute('aria-activedescendant'))?.classList.contains('global-search-action'),'Arrow Up from the search input should select the last action');
       globalInput.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true})); await wait(20);
@@ -643,9 +668,16 @@ app.whenReady().then(async()=>{
       globalInput.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})); await wait(20);
       assert(document.activeElement===globalInput && !document.querySelector('.global-search-panel'),'Escape should dismiss suggestions without moving focus');
       globalInput.blur();
-      button(document.querySelector('.provider-switch'),'ambientCG').click(); await wait(250);
+      const openhdriToggle=button(document.querySelector('.provider-switch'),'OpenHDRI');
+      openhdriToggle.click(); await wait(350);
+      assert(openhdriToggle.getAttribute('aria-pressed')==='false','Clicking a provider did not disable it');
+      assert(![...document.querySelectorAll('.asset-card')].some(card=>card.dataset.assetId?.startsWith('openhdri:')),'Disabled provider still shows cards');
+      assert(document.querySelector('.provider-switch-note'),'Hidden-source note missing');
+      openhdriToggle.click(); await wait(350);
+      assert(openhdriToggle.getAttribute('aria-pressed')==='true','Second click did not re-enable the provider');
+      await focusProvider('ambientCG'); await wait(250);
       window.fixtureSurface(true);
-      button(document.querySelector('.provider-switch'),'ambientCG').click(); await wait(300);
+      await focusProvider('ambientCG'); await wait(300);
       document.querySelector('[data-asset-id^="ambientcg:fixture-ambientcg"]').click(); await wait(200);
       const surfaceDrawer=document.querySelector('.drawer');
       button(surfaceDrawer,'Sphere').click();
@@ -693,13 +725,27 @@ app.whenReady().then(async()=>{
         }
       };
       const button = (root, text) => [...root.querySelectorAll('button')].find(item => item.textContent.trim() === text || item.getAttribute('aria-label') === text || item.title === text);
+      const focusProvider = async label => {
+        let summary = [...document.querySelectorAll('.browse-menu > summary')].find(item => item.textContent.trim() === 'Sources');
+        if (!summary) {
+          const all = [...document.querySelectorAll('.provider-switch button')].find(item => item.textContent.trim() === 'All');
+          all?.click(); await wait(300);
+          summary = [...document.querySelectorAll('.browse-menu > summary')].find(item => item.textContent.trim() === 'Sources');
+        }
+        if (!summary) throw new Error('Sources menu missing');
+        summary.click(); await wait(50);
+        const item = [...document.querySelectorAll('.browse-menu-panel button.source-summary')]
+          .find(entry => entry.querySelector('span')?.textContent === label);
+        if (!item) throw new Error('Focus source missing: '+label);
+        item.click(); await wait(400);
+      };
       const originalFetch = window.fetch;
       let lightingFetches = 0;
       window.fetch = (...args) => {
         if ((args[0]?.url ?? String(args[0])).includes('monochrome_studio_02_1k')) lightingFetches++;
         return originalFetch(...args);
       };
-      button(document.querySelector('.provider-switch'), 'Megascans').click();
+      await focusProvider('Megascans');
       const card = () => document.querySelector('.view-slot:not([hidden]) .asset-card');
       await until(card, 'Missing model fixture card');
       card().click();

@@ -4942,6 +4942,15 @@ body {
   color: var(--text);
 }
 
+.all-source-pill.disabled {
+  border-style: dashed;
+  opacity: 0.48;
+}
+
+.all-source-pill.disabled strong {
+  color: var(--muted);
+}
+
 .all-source-pill .provider-logo {
   width: 14px;
   height: 14px;
@@ -4980,6 +4989,25 @@ body {
 .provider-switch button.active {
   background: var(--panel-2);
   color: var(--text);
+}
+
+.provider-switch button.disabled {
+  opacity: 0.42;
+  text-decoration: line-through;
+}
+
+.provider-switch button.disabled:hover {
+  opacity: 0.8;
+}
+
+.provider-switch-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -6px 16px 10px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 /* Seven sources: let a final odd item use the full row instead of leaving a gap. */
