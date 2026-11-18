@@ -29,13 +29,14 @@ function clampPanoFov(value: number): number {
   return Math.max(MIN_PANO_FOV, Math.min(MAX_PANO_FOV, value));
 }
 
-export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution, loadHdrSource, modes = [], mode = "", onMode }: {
+export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution, loadHdrSource, modes = [], mode = "", onMode, emptyMessage }: {
   items: MapPreview[]; index: number; onIndex(index: number): void; onClose(): void;
   loadHighResolution?(item: MapPreview, signal?: AbortSignal): Promise<MapPreview | null>;
   loadHdrSource?(item: MapPreview, signal?: AbortSignal): Promise<PoliigonHdrData | null>;
   modes?: Array<{ id: string; label: string }>;
   mode?: string;
   onMode?(id: string): void;
+  emptyMessage?: string;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -219,7 +220,8 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
   canPanoramaRef.current = canPanorama;
   togglePanoramaRef.current = togglePanorama;
 
-  useModalFocus(dialog, Boolean(item), onClose);
+  const hasModeSwitch = modes.length > 0 && Boolean(onMode);
+  useModalFocus(dialog, Boolean(item) || hasModeSwitch, onClose);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -234,7 +236,7 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
         }
         return;
       }
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      if (items.length > 0 && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
         event.preventDefault(); event.stopImmediatePropagation();
         onIndex((index + (event.key === "ArrowLeft" ? -1 : 1) + items.length) % items.length);
       }
@@ -243,7 +245,15 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
     return () => window.removeEventListener("keydown", keydown, true);
   }, [index, items.length, onIndex]);
 
-  if (!item) return null;
+  const modeSwitch = hasModeSwitch && <div className="preview-mode-switch" role="group" aria-label="Preview mode">
+    {modes.map(entry => <button key={entry.id} type="button" className={mode === entry.id ? "active" : ""} aria-pressed={mode === entry.id} onClick={() => onMode?.(entry.id)}>{entry.label}</button>)}
+  </div>;
+  if (!item) return hasModeSwitch ? createPortal(
+    <div className="image-viewer" ref={dialog} role="dialog" aria-modal="true" aria-label="Expanded asset preview" tabIndex={-1}>
+      <div className="image-viewer-toolbar">{modeSwitch}<button type="button" className="btn btn-primary" onClick={onClose}>Close preview</button></div>
+      <div className="image-viewer-canvas" role="status">{emptyMessage || "No images are available in this preview mode."}</div>
+    </div>, document.body
+  ) : null;
   const currentUpgrade = upgrade.key === imageKey ? upgrade : null;
   const full = currentUpgrade?.phase === "ready" ? currentUpgrade.image : undefined;
   const hdrKey = item.exposure ? String(item.exposure.assetId) : "";
@@ -305,9 +315,7 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
   return createPortal(<div className="image-viewer" ref={dialog} role="dialog" aria-modal="true"
     aria-label="Expanded asset preview" tabIndex={-1}>
     <div className="image-viewer-toolbar">
-      {modes.length > 0 && <div className="preview-mode-switch" role="group" aria-label="Preview mode">
-        {modes.map(entry => <button key={entry.id} type="button" className={mode === entry.id ? "active" : ""} aria-pressed={mode === entry.id} onClick={() => onMode?.(entry.id)}>{entry.label}</button>)}
-      </div>}
+      {modeSwitch}
       <select aria-label="Preview image or texture set" value={index} onChange={event => onIndex(Number(event.target.value))}>
         {items.map((image, i) => <option value={i} key={`${image.url}:${i}`}>{image.label}</option>)}
       </select>

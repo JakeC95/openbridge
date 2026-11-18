@@ -19,6 +19,14 @@ Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new wor
 
 ## 1.6.2 additional providers and browsing pass
 
+- Post-release Windows viewer follow-up: the combined Discover source pills toggle inclusion
+  while focused provider views remain available separately. Surface previews use a 272-segment
+  spherified cube (887,808 triangles). PBR, Matcap and full-triangle Wireframe share the
+  displaced surface geometry; the normal-detail toggle is independent of displacement.
+  The sphere reports decoded texture sizes. Render, Maps, Sphere and 3D switch within
+  fullscreen, including while image maps are loading. Model previews start at the highest
+  available mesh LOD; texture quality and lower mesh LODs remain selectable.
+
 - Version 1.6.2 packages ambientCG, BlenderKit and OpenHDRI alongside Megascans, Poliigon and
   Poly Haven. It was released from commit `6caa6b2`; see the release status section for the
   verified CI asset details.

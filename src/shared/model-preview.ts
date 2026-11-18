@@ -186,7 +186,7 @@ export function canonicalModelMapType(value: string): { mapType: ModelMapType; n
       hasEarlierMapToken(whole.slice(0, offset)) ? prefix : match
   );
   const lower = cleaned.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-  if (/normal.*dx|nor_dx|nrm_dx/.test(lower)) return { mapType: "normal", normalSpace: "dx" };
+  if (/normal.*(?:dx|direct_?x)|nor_dx|nrm_dx/.test(lower)) return { mapType: "normal", normalSpace: "dx" };
   if (/normal|nor_gl|nrm|bump/.test(lower)) return { mapType: "normal", normalSpace: "gl" };
   if (/basecolor|base_color|albedo|diffuse|diff|_col(?:or)?|color/.test(lower)) return { mapType: "basecolor" };
   if (/(?:^|_)(?:orm|arm)(?:_|$)|rough.*ao|ao.*rough/.test(lower)) return { mapType: "orm" };

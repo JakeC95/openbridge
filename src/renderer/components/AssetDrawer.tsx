@@ -587,13 +587,20 @@ export function AssetDrawer() {
               name={hit?.name ?? local?.name ?? assetId}
               path={local?.path}
               type={assetType}
+              startFullscreen={viewerOpen}
+              onExitFullscreen={() => setViewerOpen(false)}
               isPlant={/3dplant|plant|foliage/i.test(`${assetType} ${hit?.name ?? local?.name ?? ""}`)}
               onMode={mode => {
+                setViewerOpen(true);
                 if (mode === "maps") { void openMaps(); return; }
                 setPreviewMode(mode === "render" ? "render" : "3d");
               }}
             /> : previewMode === "sphere" && surfacePreview ? (
-              availableMaps.length > 0 ? <SurfacePreviewPanel
+              <SurfacePreviewPanel
+                startFullscreen={viewerOpen}
+                onExitFullscreen={() => setViewerOpen(false)}
+                preparing={mapsLoading}
+                unavailableMessage={mapsError ?? undefined}
                 maps={availableMaps.map(map => ({ url: map.url, type: map.type, label: map.label, resolution: map.resolution, source: map }))}
                 assetId={assetId}
                 provider="megascans"
@@ -602,12 +609,11 @@ export function AssetDrawer() {
                 maxTier={maxResolution}
                 resolveTier={(map) => map.source ? loadHighResolution(map.source).then(result => result?.url ? { url: result.url, resolution: result.resolution } : null) : Promise.resolve(null)}
                 onMode={mode => {
+                  setViewerOpen(true);
                   if (mode === "maps") { void openMaps(); return; }
                   setPreviewMode("render");
                 }}
-              /> : <span className="map-preview-status">
-                {mapsLoading ? "Preparing maps for the sphere preview…" : mapsError || "No browser-readable maps are available for a sphere preview."}
-              </span>
+              />
             ) : activePreview ? (
               <button type="button" className="expand-preview" onClick={() => setViewerOpen(true)} aria-label="Expand preview" title="Expand preview">
                 <img src={activePreview} alt={activeMap?.label ?? "Asset render"} referrerPolicy="no-referrer" />
@@ -699,7 +705,8 @@ export function AssetDrawer() {
             <button type="button" className="btn btn-ghost preview-expand-action"
               onClick={() => setViewerOpen(true)} aria-label="Expand preview in larger viewer">Expand</button>
           </div>}
-          {viewerOpen && previewItems.length > 0 && <ImageViewer items={previewItems}
+          {viewerOpen && (previewMode === "render" || previewMode === "maps") && <ImageViewer items={previewItems}
+            emptyMessage={previewMode === "maps" ? mapsLoading ? "Preparing texture maps…" : mapsError ?? undefined : undefined}
             index={previewMode === "maps" ? mapIndex : renderIndex}
             loadHighResolution={loadHighResolution}
             modes={[
@@ -710,8 +717,8 @@ export function AssetDrawer() {
             ]}
             mode={previewMode}
             onMode={id => {
-              if (id === "sphere") { setViewerOpen(false); void openSphere(); return; }
-              if (id === "3d") { setViewerOpen(false); setPreviewMode("3d"); return; }
+              if (id === "sphere") { void openSphere(); return; }
+              if (id === "3d") { setPreviewMode("3d"); return; }
               if (id === "maps") { void openMaps(); return; }
               setPreviewMode("render");
             }}

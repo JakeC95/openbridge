@@ -690,16 +690,18 @@ export function PoliigonDrawer() {
               type="Models"
               isPlant={/plant|foliage|leaf|tree/i.test(`${selection.summary.name} ${selection.summary.tags.join(" ")}`)}
               startFullscreen
-              onMode={mode => { if (mode !== "3d") setModelOpen(false); setMode(mode === "maps" ? "maps" : "renders"); }}
+              onExitFullscreen={() => setViewerOpen(false)}
+              onMode={mode => { if (mode === "3d") return; setModelOpen(false); setViewerOpen(true); setMode(mode === "maps" ? "maps" : "renders"); }}
             />}
 
             {mode === "sphere" && ["Textures", "Brushes"].includes(selection.summary.type) ? (
-              genuineLoading ? (
-                <div className="poliigon-map-empty"><span className="spinner" aria-hidden="true" /><strong>Preparing maps for the sphere preview…</strong></div>
-              ) : maps.length ? (
                 <div className="drawer-preview model-drawer-preview">
                   <SurfacePreviewPanel
-                    maps={maps.map(map => ({ url: map.url, type: map.mapCode ?? map.type, label: map.role ?? map.fileName }))}
+                    startFullscreen={viewerOpen}
+                    onExitFullscreen={() => setViewerOpen(false)}
+                    preparing={genuineLoading}
+                    unavailableMessage={mapsError ?? undefined}
+                    maps={(genuineLoading ? [] : maps).map(map => ({ url: map.url, type: map.mapCode ?? map.type, label: map.role ?? map.fileName }))}
                     assetId={String(selection.summary.id)}
                     provider="poliigon"
                     name={selection.summary.name}
@@ -708,12 +710,9 @@ export function PoliigonDrawer() {
                     resolveTier={map => map.type
                       ? window.openbridge.poliigon.highResolutionMapPreview(selection.summary.id, map.type).then(result => result?.url ? { url: result.url } : null)
                       : Promise.resolve(null)}
-                    onMode={mode => setMode(mode === "maps" ? "maps" : "renders")}
+                    onMode={mode => { setViewerOpen(true); setMode(mode === "maps" ? "maps" : "renders"); }}
                   />
                 </div>
-              ) : (
-                <div className="poliigon-map-empty"><strong>Sphere preview unavailable</strong><p>No browser-readable maps are available for this asset.</p></div>
-              )
             ) : mode === "maps" && genuineLoading ? (
               <div className="poliigon-map-empty">
                 <span className="spinner" aria-hidden="true" />
@@ -875,9 +874,10 @@ export function PoliigonDrawer() {
               )}
             </p>
           )}
-          {viewerOpen && previewItems.length > 0 && (
+          {viewerOpen && !modelOpen && mode !== "sphere" && (
             <ImageViewer
               items={previewItems}
+              emptyMessage={mode === "maps" ? genuineLoading ? "Preparing texture maps…" : mapsError ?? undefined : undefined}
               index={activeIndex}
               onIndex={setActiveIndex}
               onClose={() => setViewerOpen(false)}
@@ -891,7 +891,6 @@ export function PoliigonDrawer() {
               ]}
               mode={mode === "renders" ? "render" : mode}
               onMode={id => {
-                setViewerOpen(false);
                 if (id === "sphere") { setMode("sphere"); return; }
                 if (id === "3d") { setModelOpen(true); return; }
                 setMode(id === "maps" ? "maps" : "renders");

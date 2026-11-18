@@ -412,20 +412,26 @@ export function PublicDrawer() {
           name={asset?.name ?? local?.name ?? ""}
           path={local?.path}
           type={asset?.type ?? local?.type}
+          startFullscreen={viewer}
+          onExitFullscreen={() => setViewer(false)}
           isPlant={is3dAssetType(asset?.type ?? local?.type) && /plant|foliage|leaf/i.test(`${asset?.type ?? ""} ${asset?.name ?? ""} ${local?.type ?? ""} ${local?.name ?? ""}`)}
-          onMode={mode => { setMode(mode === "maps" ? "maps" : mode === "render" ? "renders" : "3d"); }}
+          onMode={mode => { setViewer(true); setIndex(0); setMode(mode === "maps" ? "maps" : mode === "render" ? "renders" : "3d"); }}
         />
       </div> : mode === "sphere" && canSurface ? <div className="drawer-preview model-drawer-preview">
-        {previewSet?.maps.length ? <SurfacePreviewPanel
-          maps={previewSet.maps.map(map => ({ url: map.url, type: map.type, label: map.label, resolution: map.resolution, source: map }))}
+        <SurfacePreviewPanel
+          startFullscreen={viewer}
+          onExitFullscreen={() => setViewer(false)}
+          preparing={previewLoading}
+          unavailableMessage={previewError || previewSet?.note}
+          maps={(previewSet?.maps ?? []).map(map => ({ url: map.url, type: map.type, label: map.label, resolution: map.resolution, source: map }))}
           assetId={assetId ?? ""}
           provider={drawerProvider ?? ""}
           name={asset?.name ?? local?.name ?? ""}
           source={local ? "local" : "provider"}
           maxTier={asset?.maxResolution}
           resolveTier={map => map.source ? loadHighResolution(map.source).then(result => result?.url ? { url: result.url, resolution: result.resolution } : null) : Promise.resolve(null)}
-          onMode={mode => setMode(mode === "maps" ? "maps" : "renders")}
-        /> : <span className="map-preview-status">{previewLoading ? "Preparing maps for the sphere preview…" : previewSet?.note || "No browser-readable maps are available for a sphere preview."}</span>}
+          onMode={mode => { setViewer(true); setIndex(0); setMode(mode === "maps" ? "maps" : "renders"); }}
+        />
       </div> : <>
         {image && mode !== "sphere" && <div className="drawer-preview"><button className="expand-preview" type="button" onClick={() => { if (/^(hdr|hdri|hdri-element)$/.test(asset?.type ?? "") && previewSet?.maps.length) { setMode("maps"); setIndex(0); } setViewer(true); }}><SmartThumbImage source={image} direct={drawerDirect} crop={drawerProvider === "openhdri" && (local || !previewSet) ? "top-2-1" : undefined} alt={asset?.name ?? local?.name} /></button></div>}
         {!image && mode === "maps" && !previewLoading && <div className="poliigon-map-empty"><p>{previewSet?.note ?? "This provider does not publish separate browser-readable texture maps."}</p><button type="button" className="btn btn-ghost" onClick={() => setMode("renders")}>Show render</button></div>}
@@ -442,7 +448,8 @@ export function PublicDrawer() {
           </div>
         </div>}
       </>}
-      {viewer && previews.length > 0 && <ImageViewer items={previews} index={index}
+      {viewer && (mode === "renders" || mode === "maps") && <ImageViewer items={previews} index={index}
+        emptyMessage={previewLoading ? "Preparing previews…" : previewError || previewSet?.note}
         modes={[
           { id: "render", label: "Render" },
           { id: "maps", label: "Maps" },
@@ -451,8 +458,9 @@ export function PublicDrawer() {
         ]}
         mode={mode === "renders" ? "render" : mode}
         onMode={id => {
-          if (id === "sphere") { setViewer(false); setMode("sphere"); return; }
-          if (id === "3d") { setViewer(false); setMode("3d"); return; }
+          if (id === "sphere") { setMode("sphere"); return; }
+          if (id === "3d") { setMode("3d"); return; }
+          if (id !== (mode === "renders" ? "render" : mode)) setIndex(0);
           setMode(id === "maps" ? "maps" : "renders");
         }}
         onIndex={setIndex} loadHighResolution={provider ? loadHighResolution : undefined} loadHdrSource={provider && previewSet?.hdrAvailable ? loadHdr : undefined} onClose={() => setViewer(false)} />}

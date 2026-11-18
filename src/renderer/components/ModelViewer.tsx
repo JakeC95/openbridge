@@ -14,7 +14,7 @@ import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
 import type { ModelManifest, ModelLodMode, ModelMeshVariant, ModelTextureVariant, ModelMapType } from "../../shared/model-preview";
-import { modelLodLabel, modelQualityLabel, normalizeModelMaterialKey, preferredTextureFormat, resolutionFromText } from "../../shared/model-preview";
+import { modelLodLabel, modelQualityLabel, normalizeModelMaterialKey, preferredTextureFormat } from "../../shared/model-preview";
 import environmentUrl from "../assets/monochrome_studio_02_1k.hdr";
 import { CloseIcon } from "../icons";
 import { useModalFocus } from "../use-modal-focus";
@@ -309,7 +309,9 @@ function applyGlossInversion(material: THREE.MeshStandardMaterial): void {
   material.customProgramCacheKey = () => "openbridge-gloss-inverted";
 }
 
-function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "gl" | "dx", displacementStrength = 0): THREE.MeshPhysicalMaterial {
+const surfaceNormalUniform = new WeakMap<THREE.Material, { value: number }>();
+
+function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "gl" | "dx", bakedSurface = false): THREE.MeshPhysicalMaterial {
   const roughnessMap = maps.roughness ?? maps.orm ?? maps.gloss;
   const metalnessMap = maps.metalness ?? maps.orm;
   const aoMap = maps.ao ?? maps.orm;
@@ -327,13 +329,8 @@ function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "
     emissiveMap: maps.emissive,
     emissive: maps.emissive ? new THREE.Color(0xffffff) : new THREE.Color(0x000000),
     emissiveIntensity: 1,
-    // Surfaces use real vertex displacement on the dense sphere; models keep
-    // the cheaper bump fallback so their published LOD meshes are not altered.
-    bumpMap: !maps.normal && maps.displacement && !displacementStrength ? maps.displacement : null,
-    bumpScale: !maps.normal && maps.displacement && !displacementStrength ? 0.02 : 1,
-    displacementMap: displacementStrength ? maps.displacement : null,
-    displacementScale: displacementStrength,
-    displacementBias: displacementStrength ? -displacementStrength / 2 : 0,
+    bumpMap: !maps.normal && !bakedSurface ? maps.displacement : null,
+    bumpScale: 0.02,
     specularColorMap: maps.specular,
     specularColor: new THREE.Color(0xffffff),
     specularIntensity: 1,
@@ -349,21 +346,65 @@ function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "
     envMapIntensity: 1
   });
   if (!maps.roughness && !maps.orm && maps.gloss) applyGlossInversion(material);
-  if (normalSpace === "dx") material.normalScale.y = -1;
+  if (bakedSurface) {
+    const applyExisting = material.onBeforeCompile;
+    const shaderKey = material.customProgramCacheKey();
+    const normalDetail = { value: 1 };
+    surfaceNormalUniform.set(material, normalDetail);
+    material.onBeforeCompile = (shader, renderer) => {
+      applyExisting.call(material, shader, renderer);
+      shader.uniforms.openBridgeNormalDetail = normalDetail;
+      shader.fragmentShader = "uniform float openBridgeNormalDetail;\n" + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace("#include <normal_fragment_maps>", `
+        #include <normal_fragment_maps>
+        #ifdef USE_NORMALMAP
+          if (openBridgeNormalDetail < 0.5) normal = nonPerturbedNormal;
+        #endif
+      `);
+      // Three filters specular response using the geometry normal. Account
+      // for normal-map variation too, so tiny highlights don't alias into
+      // alternating bright/dark pixels as the sphere moves.
+      shader.fragmentShader = shader.fragmentShader.replace("#include <lights_physical_fragment>", `
+        #ifdef USE_NORMALMAP
+          vec3 detailNormal = normal - nonPerturbedNormal;
+          vec3 detailDx = dFdx(detailNormal);
+          vec3 detailDy = dFdy(detailNormal);
+          float detailVariance = min(0.12, 0.30 * (dot(detailDx, detailDx) + dot(detailDy, detailDy)));
+          roughnessFactor = sqrt(sqrt(clamp(pow(max(roughnessFactor, 0.08), 4.0) + detailVariance, 0.0, 1.0)));
+        #endif
+        #include <lights_physical_fragment>
+      `);
+    };
+    material.customProgramCacheKey = () => `openbridge-surface-normal-detail:${shaderKey}`;
+  }
+  // The sphere already has normals derived from the deformed triangles.
+  // Avoid applying the same relief twice at full strength.
+  const normalStrength = bakedSurface && maps.displacement ? 0.55 : 1;
+  material.normalScale.set(normalStrength, normalSpace === "dx" ? -normalStrength : normalStrength);
   return material;
 }
 
 const SURFACE_DISPLACEMENT = 0.1;
 
-/** Cube-sphere: six 0–1 UV faces with equal texel density and no pole pinch. */
+// 887,808 triangles, approximately twice the former 442,368.
+const SURFACE_SEGMENTS = 272;
+/** Cube-sphere: six 0–1 UV faces with no pole pinch. */
 function createSurfaceSphere(): THREE.Mesh {
-  const segments = 192;
+  const segments = SURFACE_SEGMENTS;
   const geometry = new THREE.BoxGeometry(2, 2, 2, segments, segments, segments);
   const position = geometry.getAttribute("position");
   const normal = new THREE.BufferAttribute(new Float32Array(position.count * 3), 3);
   const point = new THREE.Vector3();
   for (let index = 0; index < position.count; index += 1) {
-    point.set(position.getX(index), position.getY(index), position.getZ(index)).normalize();
+    // Spherified cube projection: unlike radial normalization, it spreads
+    // samples out near cube corners while preserving the six square charts.
+    const x = position.getX(index), y = position.getY(index), z = position.getZ(index);
+    const xx = x * x, yy = y * y, zz = z * z;
+    point.set(
+      x * Math.sqrt(1 - (yy + zz) / 2 + yy * zz / 3),
+      y * Math.sqrt(1 - (zz + xx) / 2 + zz * xx / 3),
+      z * Math.sqrt(1 - (xx + yy) / 2 + xx * yy / 3)
+    );
     position.setXYZ(index, point.x, point.y, point.z);
     normal.setXYZ(index, point.x, point.y, point.z);
   }
@@ -523,7 +564,7 @@ interface WireframeEntry {
   mesh: THREE.Mesh;
   original: THREE.Material | THREE.Material[];
   flat: THREE.MeshBasicMaterial;
-  lines: THREE.LineSegments;
+  lines: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
 }
 
 type DisplayMode = "pbr" | "map" | "matcap" | "uv" | "normals";
@@ -601,7 +642,7 @@ function frameModel(state: ViewerState): void {
   state.camera.near = Math.max(0.001, radius / 100);
   state.camera.far = Math.max(10, radius * 100);
   state.camera.updateProjectionMatrix();
-  state.controls.minDistance = radius * 0.15;
+  state.controls.minDistance = state.model.userData.surfacePreview ? 1.14 : radius * 0.15;
   state.controls.maxDistance = radius * 12;
   state.controls.update();
   state.render();
@@ -611,8 +652,7 @@ function clearWireframe(state: ViewerState): void {
   for (const entry of state.wireframe) {
     entry.mesh.material = entry.original;
     entry.mesh.remove(entry.lines);
-    entry.lines.geometry.dispose();
-    (entry.lines.material as THREE.Material).dispose();
+    entry.lines.material.dispose();
     entry.flat.dispose();
   }
   state.wireframe = [];
@@ -625,19 +665,20 @@ function applyWireframe(state: ViewerState, enabled: boolean): void {
     return;
   }
   if (!state.model || state.wireframe.length > 0) return;
-  state.model.traverse(child => {
-    if (!(child instanceof THREE.Mesh)) return;
+  for (const { mesh: child } of state.inspectionEntries) {
     const original = child.material;
-    const flat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-    const lines = new THREE.LineSegments(
-      new THREE.WireframeGeometry(child.geometry),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthTest: true })
+    // Reuse the displaced positions and Three's cached wireframe index.
+    const flat = new THREE.MeshBasicMaterial({ color: 0x101419, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const lines = new THREE.Mesh(
+      child.geometry,
+      new THREE.MeshBasicMaterial({ color: 0x8c9ca8, wireframe: true, depthWrite: false, toneMapped: false })
     );
+    lines.frustumCulled = false;
     lines.renderOrder = 1000;
     child.material = flat;
     child.add(lines);
     state.wireframe.push({ mesh: child, original, flat, lines });
-  });
+  }
   state.render();
 }
 
@@ -883,13 +924,30 @@ function refreshDisplay(state: ViewerState, options: DisplayOptions): void {
       entry.mesh.material = materials.length > 1 ? materials : materials[0];
     }
   } else if (options.mode === "matcap" || options.mode === "normals" || options.mode === "uv") {
-    let material: THREE.Material;
     if (options.mode === "matcap") {
       for (const entry of entries) {
-        if (!entry.mesh.geometry.getAttribute("normal")) entry.mesh.geometry.computeVertexNormals();
+        const materials = entry.slots.map(slot => {
+          const original = slotSourceMaterial(slot);
+          const bakedSurface = entry.mesh.userData.surfacePreview === true;
+          const displacementMap = bakedSurface ? null : original?.displacementMap ?? slot.maps.displacement;
+          const displacementScale = original?.displacementMap ? original.displacementScale : SURFACE_DISPLACEMENT * 0.6;
+          const material = new THREE.MeshMatcapMaterial({
+            matcap: getMatcapTexture(), toneMapped: false, side,
+            displacementMap, displacementScale,
+            displacementBias: original?.displacementMap ? original.displacementBias : -displacementScale / 2,
+            alphaMap: original?.alphaMap ?? slot.maps.opacity,
+            alphaTest: original?.alphaTest ?? 0
+          });
+          state.inspectionMaterials.push(material);
+          return material;
+        });
+        entry.mesh.material = materials.length > 1 ? materials : materials[0];
       }
-      material = new THREE.MeshMatcapMaterial({ matcap: getMatcapTexture(), toneMapped: false, side });
-    } else if (options.mode === "normals") {
+      state.render();
+      return;
+    }
+    let material: THREE.Material;
+    if (options.mode === "normals") {
       for (const entry of entries) {
         if (!entry.mesh.geometry.getAttribute("normal")) entry.mesh.geometry.computeVertexNormals();
       }
@@ -913,9 +971,10 @@ export interface ModelViewerProps {
   onExpand?: () => void;
   /** Delayed status shown while a texture/LOD request is still downloading. */
   pendingLabel?: string;
+  footerControls?: React.ReactNode;
 }
 
-export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClose, onExpand, pendingLabel = "" }: ModelViewerProps) {
+export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClose, onExpand, pendingLabel = "", footerControls }: ModelViewerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -923,16 +982,20 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   const [environmentAngle, setEnvironmentAngle] = useState(0);
   const [wireframe, setWireframe] = useState(false);
   const [displacement, setDisplacement] = useState(60);
+  const [surfaceNormalDetail, setSurfaceNormalDetail] = useState(true);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("pbr");
   const [activeMap, setActiveMap] = useState<ModelMapType | null>(null);
-  const [singleSided, setSingleSided] = useState(false);
+  const [singleSided, setSingleSided] = useState(Boolean(manifest.surface));
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [availableChannels, setAvailableChannels] = useState<ModelMapType[]>([]);
+  const [decodedSizes, setDecodedSizes] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
-  const displayRef = useRef<DisplayOptions>({ mode: "pbr", map: null, singleSided: false, wireframe: false });
+  const displayRef = useRef<DisplayOptions>({ mode: "pbr", map: null, singleSided: Boolean(manifest.surface), wireframe: false });
   const clickStart = useRef<{ x: number; y: number } | null>(null);
   const stateRef = useRef<ViewerState | null>(null);
-  const surfaceGeometry = useRef(new Map<THREE.BufferGeometry, { positions: Float32Array; normals: Float32Array }>());
+  const resizeViewer = useRef<(() => void) | null>(null);
+  const framedAsset = useRef("");
+  const surfaceGeometry = useRef(new Map<THREE.BufferGeometry, { positions: Float32Array; normals: Float32Array; heights?: Float32Array }>());
 
   useEffect(() => {
     const host = hostRef.current;
@@ -981,7 +1044,11 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       const rect = host.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) return;
       const pixelBudget = fullscreen ? 3840 * 2160 : 1600 * 900;
-      const ratio = Math.min(window.devicePixelRatio || 1, fullscreen ? 2 : 1.5,
+      // Rasterize the full wireframe at a higher sampling rate when there is
+      // framebuffer budget. A single GPU line can then be thinner than a CSS pixel.
+      const desiredRatio = fullscreen && displayRef.current.wireframe
+        ? Math.max(2, window.devicePixelRatio || 1) : window.devicePixelRatio || 1;
+      const ratio = Math.min(desiredRatio, fullscreen ? 2 : 1.5,
         Math.sqrt(pixelBudget / (rect.width * rect.height)));
       if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
       renderer.setSize(rect.width, rect.height, false);
@@ -990,6 +1057,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       render();
     };
     const observer = new ResizeObserver(resize);
+    resizeViewer.current = resize;
     observer.observe(host);
     stateRef.current = { renderer, scene, camera, controls, pmrem, model: null, textures: [], wireframe: [], inspectionEntries: [], inspectionMaterials: [], inspectionTextures: [], environmentYaw: 0, lightRig, disposed: false, render, environment: null, environmentTarget: null };
     let endDrag: (() => void) | undefined;
@@ -1091,6 +1159,8 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         state.renderer.domElement.remove();
       }
       stateRef.current = null;
+      resizeViewer.current = null;
+      framedAsset.current = "";
       surfaceGeometry.current.clear();
     };
   }, [fullscreen]);
@@ -1107,6 +1177,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     displayRef.current = { mode: displayMode, map: activeMap, singleSided, wireframe };
     const state = stateRef.current;
     if (state) refreshDisplay(state, displayRef.current);
+    resizeViewer.current?.();
   }, [displayMode, activeMap, singleSided, wireframe]);
 
   useEffect(() => {
@@ -1115,6 +1186,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     const token = { cancelled: false };
     setLoading(true);
     setError("");
+    setDecodedSizes("");
     surfaceGeometry.current.clear();
     const manager = new THREE.LoadingManager();
     const textureByUrl = new Map<string, Promise<THREE.Texture>>();
@@ -1236,7 +1308,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           const hasCustomMaps = !embeddedMaterials && Object.values(maps).some(Boolean);
           materialsByKey.set(
             key,
-            hasCustomMaps ? createPreviewMaterial(maps, manifest.alpha || Boolean(maps.opacity), normalSpaceByKey.get(key), surface ? SURFACE_DISPLACEMENT : 0) : null
+            hasCustomMaps ? createPreviewMaterial(maps, manifest.alpha || Boolean(maps.opacity), normalSpaceByKey.get(key), surface) : null
           );
         }
         const defaultKey = materialKeys.find(key => Object.values(mapsByKey.get(key) ?? {}).some(Boolean))
@@ -1253,7 +1325,8 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           child.receiveShadow = false;
           const position = child.geometry.getAttribute("position");
           const normal = child.geometry.getAttribute("normal");
-          if (position && normal) {
+          if (surface && position && normal) {
+            child.userData.surfacePreview = true;
             surfaceGeometry.current.set(child.geometry, {
               positions: new Float32Array(position.array),
               normals: new Float32Array(normal.array)
@@ -1319,6 +1392,17 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           .filter(channel => channelSet.has(channel.type))
           .map(channel => channel.type);
         setAvailableChannels(orderedChannels);
+        if (surface) {
+          const sizes = [...sidecars].map(texture => {
+            const image = texture.image as { width?: number; height?: number } | null;
+            return Math.max(image?.width ?? 0, image?.height ?? 0);
+          })
+            .filter(size => size > 0).sort((a, b) => a - b);
+          if (sizes.length) {
+            const first = sizes[0], last = sizes.at(-1)!;
+            setDecodedSizes(first === last ? `${modelQualityLabel(first)} loaded` : `${modelQualityLabel(first)}–${modelQualityLabel(last)} loaded`);
+          }
+        }
         let displayOptions = displayRef.current;
         if (displayOptions.map && !orderedChannels.includes(displayOptions.map)) {
           displayOptions = { ...displayOptions, mode: "pbr", map: null };
@@ -1328,7 +1412,11 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         }
         state.scene.add(object);
         refreshDisplay(state, displayOptions);
-        frameModel(state);
+        const assetKey = `${manifest.provider}:${manifest.assetId}:${manifest.source}`;
+        if (framedAsset.current !== assetKey) {
+          framedAsset.current = assetKey;
+          frameModel(state);
+        }
         setLoading(false);
       } catch (cause) {
         if (token.cancelled) return;
@@ -1368,10 +1456,6 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   };
 
   const selectDisplay = (mode: DisplayMode, map: ModelMapType | null = null): void => {
-    const hasDisplacement = Boolean(stateRef.current?.inspectionEntries
-      .some(entry => entry.slots.some(slot => slot.maps.displacement)));
-    if (mode === "matcap" && hasDisplacement) displaceGeometry(displacement);
-    else if (displayMode === "matcap") restoreGeometry();
     setDisplayMode(mode);
     setActiveMap(map);
     setWireframe(false);
@@ -1383,28 +1467,23 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       if (!position) continue;
       (position.array as Float32Array).set(base.positions);
       position.needsUpdate = true;
-      geometry.computeVertexNormals();
+      const normal = geometry.getAttribute("normal");
+      (normal.array as Float32Array).set(base.normals);
+      normal.needsUpdate = true;
     }
     const dom = stateRef.current?.renderer.domElement;
     if (dom) delete dom.dataset.surfaceDisplaced;
   }, []);
 
-  /** Matcap/wireframe are unlit, so displace on the CPU before rendering them. */
+  /** All sphere display modes share the same deformed geometry. */
   const displaceGeometry = useCallback((strength: number) => {
     const state = stateRef.current;
-    if (!state) return;
+    if (!state || !surfaceGeometry.current.size) return;
     const texture = state.inspectionEntries
       .flatMap(entry => entry.slots)
       .find(slot => slot.maps.displacement)?.maps.displacement;
-    const image = texture?.image as HTMLImageElement | undefined;
+    const image = texture?.image as (HTMLImageElement & { data?: ArrayLike<number> }) | undefined;
     if (!image || !image.width || !image.height) return;
-    const width = 256, height = 128;
-    const canvas = document.createElement("canvas");
-    canvas.width = width; canvas.height = height;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) return;
-    context.drawImage(image, 0, 0, width, height);
-    const pixels = context.getImageData(0, 0, width, height).data;
     const scale = SURFACE_DISPLACEMENT * (strength / 100);
     for (const [geometry, base] of surfaceGeometry.current) {
       const position = geometry.getAttribute("position");
@@ -1412,10 +1491,48 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       const uv = geometry.getAttribute("uv");
       if (!position || !normal || !uv) continue;
       const array = position.array as Float32Array;
+      if (!base.heights) {
+        // Band-limit height separately from material textures. Fine detail
+        // below the mesh sampling rate belongs in the normal map.
+        const width = image.data ? image.width : Math.min(SURFACE_SEGMENTS * 2, image.width);
+        const height = image.data ? image.height : Math.min(SURFACE_SEGMENTS * 2, image.height);
+        let pixels = image.data;
+        if (!pixels) {
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return;
+          try {
+            context.imageSmoothingQuality = "high";
+            context.drawImage(image, 0, 0, width, height);
+            pixels = context.getImageData(0, 0, width, height).data;
+          } catch { return; }
+        }
+        const channels = pixels.length / (width * height);
+        const sample = (x: number, y: number) => {
+          const raw = pixels![(((y + height) % height) * width + (x + width) % width) * channels];
+          const value = texture?.type === THREE.HalfFloatType ? THREE.DataUtils.fromHalfFloat(raw)
+            : texture?.type === THREE.FloatType ? raw : raw / 255;
+          return Number.isFinite(value) ? THREE.MathUtils.clamp(value, 0, 1) : 0.5;
+        };
+        const heights = new Float32Array(position.count);
+        for (let index = 0; index < position.count; index++) {
+          const s = uv.getX(index), t = uv.getY(index);
+          const u = s * width - 0.5, v = (texture?.flipY ? 1 - t : t) * height - 0.5;
+          const x = Math.floor(u), y = Math.floor(v);
+          const value = THREE.MathUtils.lerp(
+            THREE.MathUtils.lerp(sample(x, y), sample(x + 1, y), u - x),
+            THREE.MathUtils.lerp(sample(x, y + 1), sample(x + 1, y + 1), u - x), v - y
+          );
+          // Adjacent cube faces use different UVs. Meet at the same radius
+          // with zero slope at each edge so height maps can't tear the mesh.
+          const edge = Math.min(s, 1 - s, t, 1 - t);
+          heights[index] = (value - 0.5) * THREE.MathUtils.smoothstep(edge, 0, 0.035);
+        }
+        base.heights = heights;
+      }
       for (let index = 0; index < position.count; index += 1) {
-        const u = Math.min(width - 1, Math.max(0, Math.round(uv.getX(index) * (width - 1))));
-        const v = Math.min(height - 1, Math.max(0, Math.round((1 - uv.getY(index)) * (height - 1))));
-        const heightValue = pixels[(v * width + u) * 4] / 255 - 0.5;
+        const heightValue = base.heights[index];
         const offset = index * 3;
         array[offset] = base.positions[offset] + base.normals[offset] * heightValue * scale;
         array[offset + 1] = base.positions[offset + 1] + base.normals[offset + 1] * heightValue * scale;
@@ -1423,6 +1540,16 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       }
       position.needsUpdate = true;
       geometry.computeVertexNormals();
+      // Both copies of a shared chart edge should have exactly the same
+      // normal; one-sided triangle sums otherwise leave a lighting crease.
+      for (let index = 0; index < normal.count; index++) {
+        const u = uv.getX(index), v = uv.getY(index);
+        if (u !== 0 && u !== 1 && v !== 0 && v !== 1) continue;
+        const offset = index * 3;
+        normal.setXYZ(index, base.normals[offset], base.normals[offset + 1], base.normals[offset + 2]);
+      }
+      normal.needsUpdate = true;
+      geometry.computeBoundingSphere();
     }
     state.renderer.domElement.dataset.surfaceDisplaced = "true";
   }, []);
@@ -1431,37 +1558,32 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     if (value) {
       setDisplayMode("pbr");
       setActiveMap(null);
-      displaceGeometry(displacement);
-    } else {
-      restoreGeometry();
     }
     setWireframe(value);
   };
 
   useEffect(() => {
     const state = stateRef.current;
-    if (!state) return;
-    const scale = SURFACE_DISPLACEMENT * (displacement / 100);
+    if (!state || !manifest.surface || loading) return;
+    const frame = requestAnimationFrame(() => {
+      if (displacement > 0) displaceGeometry(displacement);
+      else restoreGeometry();
+      state.render();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [displacement, loading, displaceGeometry, restoreGeometry, manifest.surface]);
+
+  useEffect(() => {
+    const state = stateRef.current;
+    if (!state || !manifest.surface || loading) return;
     for (const entry of state.inspectionEntries) {
       for (const slot of entry.slots) {
-        for (const material of materialList(slot.original)) {
-          if (!(material instanceof THREE.MeshStandardMaterial) || !material.displacementMap) continue;
-          material.displacementScale = scale;
-          material.displacementBias = -scale / 2;
-        }
+        const uniform = surfaceNormalUniform.get(slot.original);
+        if (uniform) uniform.value = surfaceNormalDetail ? 1 : 0;
       }
     }
-    if (wireframe) {
-      clearWireframe(state);
-      displaceGeometry(displacement);
-      applyWireframe(state, true);
-    } else if (displayMode === "matcap") {
-      displaceGeometry(displacement);
-    } else {
-      restoreGeometry();
-    }
     state.render();
-  }, [displacement, loading, displayMode, wireframe, displaceGeometry, restoreGeometry]);
+  }, [loading, manifest.surface, surfaceNormalDetail]);
 
   const environmentDegrees = Math.round((((environmentAngle * 180) / Math.PI) % 360 + 360) % 360);
   const qualityLabel = useMemo(() => modelQualityLabel(quality), [quality]);
@@ -1497,7 +1619,9 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       {!loading && pendingLabel && <div className="model-viewer-status switch" role="status" aria-live="polite"><span className="spinner" /><strong>{pendingLabel}</strong><span>Downloading and preparing the selected files…</span></div>}
       {error && <div className="model-viewer-status error" role="alert"><strong>3D preview unavailable</strong><span>{error}</span><button type="button" className="text-btn" onClick={() => { setError(""); setLoading(true); setReloadKey(value => value + 1); }}>Retry</button></div>}
       {fullscreen && <div className="model-viewer-chrome">
-        <div className="model-viewer-chrome-head"><div><strong>{manifest.name}</strong><span>{meshLabel} · {qualityLabel}</span></div><button type="button" className="icon-btn model-viewer-close" aria-label="Close 3D viewer" data-modal-autofocus onClick={onClose}><CloseIcon /></button></div>
+        <div className="model-viewer-chrome-head"><div><strong>{manifest.name}</strong><span>{meshLabel} · {manifest.surface ? decodedSizes || "Texture preview" : qualityLabel}</span></div><button type="button" className="icon-btn model-viewer-close" aria-label="Close 3D viewer" data-modal-autofocus onClick={onClose}><CloseIcon /></button></div>
+        <div className="model-viewer-chrome-footer">
+        {footerControls}
         <div className="model-viewer-toolbar">
           <label>Exposure <input type="range" min="-10" max="10" step="0.1" value={exposureStops} aria-label="3D exposure stops" onChange={event => setExposureStops(Number(event.target.value))} /></label>
           <strong className="model-viewer-ev">{exposureStops > 0 ? "+" : ""}{exposureStops.toFixed(1)} EV</strong>
@@ -1505,12 +1629,13 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           <button type="button" className={`text-btn${inspectorOpen ? " active" : ""}`} onClick={() => setInspectorOpen(value => !value)}>Inspector</button>
           <label className="toggle inline"><input type="checkbox" checked={wireframe} onChange={event => changeWireframe(event.target.checked)} /><span>Wireframe</span></label>
           {manifest.surface && manifest.textures.some(texture => texture.mapType === "displacement") && (
-            <label>Displacement <input type="range" min="0" max="200" step="5" value={displacement} aria-label="Surface displacement strength" onChange={event => setDisplacement(Number(event.target.value))} /><strong>{displacement}%</strong></label>
+            <label>Displacement <input type="range" min="0" max="200" step="5" value={displacement} aria-label="Surface displacement strength" onInput={event => setDisplacement(Number(event.currentTarget.value))} /><strong>{displacement}%</strong></label>
           )}
           <button type="button" className="text-btn" onClick={() => { const state = stateRef.current; if (state) frameModel(state); }}>Reset view</button>
           <button type="button" className="text-btn" onClick={resetEnvironment}>Reset environment</button>
           <strong className="model-viewer-env-angle">Env {environmentDegrees}°</strong>
           <span className="model-viewer-controls-hint">LMB orbit · MMB pan · RMB/Alt+RMB dolly · Shift+RMB environment</span>
+        </div>
         </div>
       </div>}
       {fullscreen && inspectorOpen && (
@@ -1548,7 +1673,11 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           <section>
             <h4>Geometry</h4>
             <label className="toggle inline"><input type="checkbox" checked={wireframe} onChange={event => changeWireframe(event.target.checked)} /><span>Wireframe</span></label>
+            {wireframe && manifest.surface && <p className="hint">{(12 * SURFACE_SEGMENTS ** 2).toLocaleString()} triangles · zoom in to inspect edges</p>}
             <label className="toggle inline"><input type="checkbox" checked={singleSided} onChange={event => setSingleSided(event.target.checked)} /><span>Single Sided</span></label>
+            {manifest.surface && availableChannels.includes("normal") && <label className="toggle inline" title="Compare PBR with and without the normal map; displacement stays active">
+              <input type="checkbox" checked={surfaceNormalDetail} onChange={event => setSurfaceNormalDetail(event.target.checked)} /><span>Normal map detail</span>
+            </label>}
           </section>
           <p className="hint">Inspect the model’s PBR channels, UV layout and geometry without leaving the viewer.</p>
         </div>
@@ -1597,88 +1726,109 @@ export interface SurfacePreviewPanelProps {
   className?: string;
   /** Highest provider-published map tier, used for on-demand quality options. */
   maxTier?: number | null;
-  resolveTier?: (map: SurfacePreviewMap, tier: number) => Promise<{ url: string; resolution?: string } | null>;
+  resolveTier?: (map: SurfacePreviewMap) => Promise<{ url: string; resolution?: string } | null>;
   onMode?: (mode: "render" | "maps") => void;
+  startFullscreen?: boolean;
+  preparing?: boolean;
+  unavailableMessage?: string;
+  onExitFullscreen?: () => void;
 }
 
 /** Wrap a 2D surface map set around a sphere using the 3D viewer pipeline. */
-export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "provider", className = "", maxTier, resolveTier, onMode }: SurfacePreviewPanelProps) {
+export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "provider", className = "", maxTier, resolveTier, onMode, startFullscreen = false, preparing = false, unavailableMessage, onExitFullscreen }: SurfacePreviewPanelProps) {
   const [tierMaps, setTierMaps] = useState<SurfacePreviewMap[] | null>(null);
   const [tierLoading, setTierLoading] = useState(false);
   const [quality, setQuality] = useState(1024);
-  const [ceiling, setCeiling] = useState<number | null>(null);
-  const displayMaps = tierMaps ?? maps;
+  const [tierNote, setTierNote] = useState("");
+  // Drawers can rebuild equivalent arrays on unrelated store updates.
+  const mapKey = JSON.stringify(maps);
+  const stableMaps = useMemo(() => JSON.parse(mapKey) as SurfacePreviewMap[], [mapKey]);
+  const displayMaps = useMemo(() => tierMaps && quality !== 0 ? [...stableMaps, ...tierMaps] : stableMaps, [stableMaps, tierMaps, quality === 0]);
+  const baseQualities = useMemo(() => surfaceManifest(maps, { assetId, provider, name, source })?.availableQualities ?? [], [maps, assetId, provider, name, source]);
+  const verifiedQualities = useMemo(() => tierMaps
+    ? surfaceManifest(tierMaps, { assetId, provider, name, source })?.availableQualities ?? [] : [], [tierMaps, assetId, provider, name, source]);
   const manifest = useMemo(
     () => surfaceManifest(displayMaps, { assetId, provider, name, source }),
     [displayMaps, assetId, provider, name, source]
   );
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(startFullscreen);
   const dialog = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => setFullscreen(false), []);
+  const close = () => { setFullscreen(false); onExitFullscreen?.(); };
   useModalFocus(dialog, fullscreen, close);
-  const published = manifest?.availableQualities ?? [];
-  const upward = resolveTier && maxTier
-    ? [2048, 4096, 8192].filter(value => value > (published.at(-1) ?? 0) && value <= (ceiling ?? maxTier))
-    : [];
-  const qualities = [...new Set([...published, ...upward])].sort((a, b) => a - b);
+  const qualities = [...new Set([...(baseQualities.length ? baseQualities : [0]), ...verifiedQualities])].sort((a, b) => a - b);
   const appliedQuality = qualities.includes(quality)
     ? quality
-    : qualities.find(value => value >= 1024) ?? qualities[0] ?? 1024;
+    : qualities.find(value => value >= 1024) ?? qualities[0] ?? 0;
 
-  const selectQuality = async (next: number): Promise<void> => {
-    setQuality(next);
-    if (!resolveTier || next <= (published.at(-1) ?? 0)) return;
+  const canUpgrade = source === "provider" && resolveTier && maxTier && maxTier > (qualities.at(-1) ?? 1024);
+  const selectQuality = async (choice: string): Promise<void> => {
+    setTierNote("");
+    if (choice !== "maximum") { setQuality(Number(choice)); return; }
+    if (!resolveTier) return;
     setTierLoading(true);
     try {
-      const upgraded = await Promise.all(maps.map(async map => {
-        const result = await resolveTier(map, next).catch(() => null);
-        return result?.url ? { ...map, url: result.url, resolution: result.resolution ?? String(next) } : map;
-      }));
-      const actual = upgraded
-        .map(map => resolutionFromText(map.resolution ?? ""))
-        .filter((value): value is number => typeof value === "number" && value > 0);
-      if (actual.length) {
-        const highest = Math.max(...actual);
-        setCeiling(current => Math.max(current ?? 0, highest));
-        setQuality(highest);
+      const upgraded: SurfacePreviewMap[] = [];
+      // Decode sequentially so checking a large map set doesn't hold all of
+      // its full-resolution bitmaps in memory at once.
+      for (const map of maps) {
+        try {
+          const result = await resolveTier(map);
+          if (!result?.url || result.url === map.url) continue;
+          const image = new Image();
+          image.crossOrigin = "anonymous";
+          image.src = result.url;
+          await image.decode();
+          const resolution = Math.max(image.naturalWidth, image.naturalHeight);
+          if (resolution > 0) upgraded.push({ ...map, url: result.url, resolution: `${resolution}x${resolution}` });
+        } catch {
+          // A missing channel keeps its original preview.
+        }
       }
-      setTierMaps(upgraded);
+      const actual = surfaceManifest(upgraded, { assetId, provider, name })?.availableQualities ?? [];
+      if (actual.length) {
+        setTierMaps(upgraded);
+        setQuality(actual.at(-1)!);
+      }
+      setTierNote(actual.length ? `Verified up to ${modelQualityLabel(actual.at(-1)!)}; individual maps may use lower tiers.` : "No higher-resolution preview could be verified.");
     } finally {
       setTierLoading(false);
     }
   };
 
-  if (!manifest) {
-    return <div className={`model-preview-panel ${className}`.trim()}>
-      <div className="model-preview-empty">
-        <strong>Sphere preview unavailable</strong>
-        <span>No browser-readable colour, normal, roughness or displacement maps were found.</span>
-      </div>
-    </div>;
-  }
+  const empty = <div className="model-preview-empty" role="status">
+    {preparing && <span className="spinner" />}
+    <strong>{preparing ? "Preparing maps for the sphere preview…" : "Sphere preview unavailable"}</strong>
+    {!preparing && <span>{unavailableMessage || "No browser-readable maps are available for this asset."}</span>}
+    {fullscreen && <button type="button" className="btn btn-ghost" onClick={close}>Close preview</button>}
+  </div>;
+
+  const qualityPicker = <label>Textures <select className="native-select" value={tierLoading ? "maximum" : appliedQuality} disabled={tierLoading} onChange={event => void selectQuality(event.target.value)}>
+    {(qualities.length ? qualities : [0]).map(value => <option key={value} value={value}>{value ? modelQualityLabel(value) : "Preview (size unknown)"}</option>)}
+    {canUpgrade && <option value="maximum">Load highest available</option>}
+  </select></label>;
 
   return (
     <div className={`model-preview-panel surface-preview ${className}`.trim()}>
+      {!fullscreen && (manifest ? <>
       <ModelViewer manifest={manifest} quality={appliedQuality} lod="lowest" onExpand={() => setFullscreen(true)} />
       <div className="model-preview-controls">
         <span className="hint">Sphere surface preview · drag to orbit</span>
-        <label>Textures <select className="native-select" value={appliedQuality} disabled={tierLoading} onChange={event => void selectQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
-        {tierLoading && <span className="hint" role="status">Loading {modelQualityLabel(appliedQuality)} maps…</span>}
+        {qualityPicker}
+        {(tierLoading || tierNote) && <span className="hint" role="status">{tierLoading ? "Checking highest available maps…" : tierNote}</span>}
         <button type="button" className="text-btn" onClick={() => setFullscreen(true)}>Full screen</button>
-      </div>
+      </div></> : empty)}
       {fullscreen && createPortal(
         <div ref={dialog} tabIndex={-1} className="model-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${name} sphere preview`}>
           <div className="model-viewer-fullscreen-card">
-            <ModelViewer fullscreen manifest={manifest} quality={appliedQuality} lod="lowest" onClose={close} />
-            <div className="model-viewer-quality-bar">
+             {manifest ? <ModelViewer fullscreen manifest={manifest} quality={appliedQuality} lod="lowest" onClose={close} footerControls={<div className="model-viewer-quality-bar">
               {onMode && <div className="preview-mode-switch" role="group" aria-label="Preview mode">
                 <button type="button" onClick={() => { setFullscreen(false); onMode("render"); }}>Render</button>
                 <button type="button" onClick={() => { setFullscreen(false); onMode("maps"); }}>Maps</button>
                 <button type="button" className="active" aria-pressed="true">Sphere</button>
               </div>}
-              <label>Textures <select className="native-select" value={appliedQuality} disabled={tierLoading} onChange={event => void selectQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
-              <span className="model-viewer-quality-note">{tierLoading ? `Loading ${modelQualityLabel(appliedQuality)} maps…` : "Sphere surface preview"}</span>
-            </div>
+              {qualityPicker}
+              <span className="model-viewer-quality-note" role="status">{tierLoading ? "Checking highest available maps…" : tierNote || "Sphere surface preview"}</span>
+             </div>} /> : empty}
           </div>
         </div>,
         document.body
@@ -1697,24 +1847,25 @@ export interface ModelPreviewPanelProps {
   className?: string;
   /** Open the full-screen viewer as soon as the inline manifest is ready. */
   startFullscreen?: boolean;
+  onExitFullscreen?: () => void;
   onMode?: (mode: "render" | "maps" | "3d") => void;
 }
 
-export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant = false, className = "", startFullscreen = false, onMode }: ModelPreviewPanelProps) {
+export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant = false, className = "", startFullscreen = false, onMode, onExitFullscreen }: ModelPreviewPanelProps) {
   const [manifest, setManifest] = useState<ModelManifest | null>(null);
   // Applied values drive the live viewer. Choice values drive the selects and
   // update immediately, while the old preview remains visible until the new
   // manifest is ready.
   const [quality, setQuality] = useState(1024);
   const [qualityChoice, setQualityChoice] = useState(1024);
-  const [lod, setLod] = useState<ModelLodMode>(isPlant ? "highest" : "lowest");
-  const [lodChoice, setLodChoice] = useState<ModelLodMode>(isPlant ? "highest" : "lowest");
+  const [lod, setLod] = useState<ModelLodMode>("highest");
+  const [lodChoice, setLodChoice] = useState<ModelLodMode>("highest");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(startFullscreen);
   const [fullscreenQuality, setFullscreenQuality] = useState(4096);
   const [fullscreenQualityChoice, setFullscreenQualityChoice] = useState(4096);
-  const [fullscreenLod, setFullscreenLod] = useState<ModelLodMode>(isPlant ? "highest" : "lowest");
+  const [fullscreenLod, setFullscreenLod] = useState<ModelLodMode>("highest");
   const [fullscreenLodChoice, setFullscreenLodChoice] = useState<ModelLodMode>(fullscreenLod);
   const [fullscreenManifest, setFullscreenManifest] = useState<ModelManifest | null>(null);
   const [autoQualityNote, setAutoQualityNote] = useState("");
@@ -1812,8 +1963,8 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
   }, []);
 
   useEffect(() => {
-    void request(1024, isPlant ? "highest" : "lowest", "inline");
-  }, [request, isPlant]);
+    void request(1024, "highest", "inline");
+  }, [request]);
 
   const qualities = manifest?.availableQualities.length ? manifest.availableQualities : [];
   const lods = manifest?.availableLods ?? [];
@@ -1838,8 +1989,9 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
     openFullscreen();
   }, [startFullscreen, loading, manifest, openFullscreen]);
 
-  const closeFullscreen = (): void => {
-    ++requestId.current;
+  const closeFullscreen = (exit = true): void => {
+    autoOpened.current = true;
+    if (fullscreenManifest) ++requestId.current;
     if (switchTimer.current !== null) window.clearTimeout(switchTimer.current);
     switchTimer.current = null;
     setPendingSwitch(null);
@@ -1847,6 +1999,7 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
     setFullscreen(false);
     setFullscreenManifest(null);
     setAutoQualityNote("");
+    if (exit) onExitFullscreen?.();
   };
 
   useModalFocus(fullscreenDialog, fullscreen, closeFullscreen);
@@ -1882,25 +2035,24 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
           {manifest.notes.length > 0 && <p className="hint model-preview-note">{manifest.notes[0]}</p>}
         </>
       ) : loading ? (
-        <div className="model-preview-empty"><span className="spinner" /><strong>Preparing 3D preview…</strong><span className="hint">Loading the lowest-quality mesh and 1K textures.</span></div>
+        <div className="model-preview-empty"><span className="spinner" /><strong>Preparing 3D preview…</strong><span className="hint">Loading the highest-detail mesh and initial textures.</span></div>
       ) : (
         <div className="model-preview-empty error"><strong>3D preview unavailable</strong><span>{error || "This asset has no runtime 3D mesh."}</span><button type="button" className="btn btn-ghost" onClick={() => void request(quality, lod, "inline", "Loading 3D preview…")}>Retry 3D</button></div>
       )}
       {fullscreen && createPortal(
         <div ref={fullscreenDialog} tabIndex={-1} className="model-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${name} 3D viewer`}>
           <div className="model-viewer-fullscreen-card">
-            {fullscreenManifest ? <ModelViewer fullscreen manifest={fullscreenManifest} quality={fullscreenQuality} lod={fullscreenLod} onClose={closeFullscreen} pendingLabel={pendingSwitch?.target === "fullscreen" && pendingSwitch.visible ? pendingSwitch.label : ""} /> : <div className="model-preview-empty"><span className="spinner" /><strong>Preparing full-screen 3D preview…</strong></div>}
-            {fullscreenManifest && <div className="model-viewer-quality-bar">
+            {fullscreenManifest ? <ModelViewer fullscreen manifest={fullscreenManifest} quality={fullscreenQuality} lod={fullscreenLod} onClose={() => closeFullscreen()} pendingLabel={pendingSwitch?.target === "fullscreen" && pendingSwitch.visible ? pendingSwitch.label : ""} footerControls={<div className="model-viewer-quality-bar">
               {onMode && <div className="preview-mode-switch" role="group" aria-label="Preview mode">
-                <button type="button" onClick={() => { closeFullscreen(); onMode("render"); }}>Render</button>
-                <button type="button" onClick={() => { closeFullscreen(); onMode("maps"); }}>Maps</button>
+                <button type="button" onClick={() => { closeFullscreen(false); onMode("render"); }}>Render</button>
+                <button type="button" onClick={() => { closeFullscreen(false); onMode("maps"); }}>Maps</button>
                 <button type="button" className="active" aria-pressed="true">3D</button>
               </div>}
               <label>Textures <select className="native-select" value={switchError?.target === "fullscreen" ? fullscreenQuality : fullscreenQualityChoice} onChange={event => { const value = Number(event.target.value); setAutoQualityNote(""); setFullscreenQualityChoice(value); void request(value, fullscreenLod, "fullscreen", textureSwitchLabel(value)); }}>{qualityOptions.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
               {lods.length > 1 && <label>Mesh <select className="native-select" value={String(switchError?.target === "fullscreen" ? fullscreenLod : fullscreenLodChoice)} onChange={event => { const raw = event.target.value; const value: ModelLodMode = raw === "lowest" || raw === "highest" ? raw : Number(raw); setFullscreenLodChoice(value); void request(fullscreenQuality, value, "fullscreen", meshSwitchLabel(value)); }}><option value="lowest">Lowest</option><option value="highest">Highest</option>{lods.map(value => <option key={value} value={String(value)}>{modelLodLabel(value)}</option>)}</select></label>}
               {autoQualityNote && <span className="model-viewer-quality-note">{autoQualityNote}</span>}
               {renderSwitchError("fullscreen")}
-            </div>}
+            </div>} /> : <div className="model-preview-empty" role="status">{loading && <span className="spinner" />}<strong>{loading ? "Preparing full-screen 3D preview…" : error || "3D preview unavailable"}</strong><button type="button" className="btn btn-ghost" onClick={() => closeFullscreen()}>Close preview</button></div>}
           </div>
         </div>,
         document.body

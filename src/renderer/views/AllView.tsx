@@ -429,7 +429,7 @@ export function AllView() {
     setSelectedKeys(new Set());
     setPointsByKey(new Map());
     anchor.current = null;
-  }, [query, allType, allStateFilter, allSort]);
+  }, [query, allType, allStateFilter, allSort, disabledProviders]);
 
   const megaOwned = useMemo(() => new Set(megaAcquired), [megaAcquired]);
   const megaLocal = useMemo(
@@ -791,9 +791,9 @@ export function AllView() {
 
   const loadMore = (): void => {
     for (const provider of publicEnabled) if (publicStates[provider].hasMore) void usePublicStore.getState().search(provider, false);
-    if (megaHasMore) void useStore.getState().search(false);
-    if (poliHasMore) void usePoliigonStore.getState().loadMore();
-    if (polyHasMore) void usePolyHavenStore.getState().loadMore();
+    if (megaEnabled && megaHasMore) void useStore.getState().search(false);
+    if (poliEnabled && poliHasMore) void usePoliigonStore.getState().loadMore();
+    if (polyEnabled && polyHasMore) void usePolyHavenStore.getState().loadMore();
   };
 
   const quickPublicDownload = async (hit: PublicAssetSummary): Promise<void> => {
@@ -892,6 +892,7 @@ export function AllView() {
         }))
       ];
       const settled = await Promise.allSettled(providers.map(provider => provider.load()));
+      if (useStore.getState().disabledProviders !== disabledProviders) return;
       const keys: string[] = [];
       const failures: string[] = [];
       settled.forEach((result, index) => {

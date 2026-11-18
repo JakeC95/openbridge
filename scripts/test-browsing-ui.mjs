@@ -9,18 +9,39 @@ import { crc32, deflateSync } from "node:zlib";
 // Uses an isolated Electron profile and a fixture preload; never opens the real app/library/session.
 const directory = await mkdtemp(join(tmpdir(), "openbridge-ui-"));
 const publicImagePath = join(directory, "public-panorama.png");
+const heightImagePath = join(directory, "surface-height.png");
+const normalImagePath = join(directory, "surface-normal.png");
 const modelPath = join(directory, "fixture.obj");
 await writeFile(modelPath, "v -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n");
 const pngChunk = (name, body) => { const type = Buffer.from(name), size = Buffer.alloc(4), crc = Buffer.alloc(4); size.writeUInt32BE(body.length); crc.writeUInt32BE(crc32(Buffer.concat([type, body]))); return Buffer.concat([size, type, body, crc]); };
 const pngHeader = Buffer.alloc(13); pngHeader.writeUInt32BE(2); pngHeader.writeUInt32BE(1, 4); pngHeader[8] = 8; pngHeader[9] = 6;
 await writeFile(publicImagePath, Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk("IHDR", pngHeader), pngChunk("IDAT", deflateSync(Buffer.from([0,180,120,60,255,140,80,30,255]))), pngChunk("IEND", Buffer.alloc(0))]));
+const side = 256, stride = side * 4 + 1;
+const heightPixels = Buffer.alloc(stride * side);
+for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+  const height = Math.round(128 + 82 * Math.sin(x / 7 + Math.cos(y / 15)) * Math.cos(y / 9));
+  heightPixels.fill(height, y * stride + 1 + 4 * x, y * stride + 4 + 4 * x);
+  heightPixels[y * stride + 4 + 4 * x] = 255;
+}
+pngHeader.writeUInt32BE(side); pngHeader.writeUInt32BE(side, 4);
+await writeFile(heightImagePath, Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk("IHDR", pngHeader), pngChunk("IDAT", deflateSync(heightPixels)), pngChunk("IEND", Buffer.alloc(0))]));
+const normalPixels = Buffer.alloc(stride * side);
+for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+  const offset = y * stride + 1 + x * 4;
+  const nx = 0.62 * Math.sin(x * 1.9 + Math.cos(y * 0.7)), ny = 0.48 * Math.cos(y * 1.6);
+  normalPixels[offset] = Math.round((nx + 1) * 127.5);
+  normalPixels[offset + 1] = Math.round((ny + 1) * 127.5);
+  normalPixels[offset + 2] = Math.round((Math.sqrt(1 - nx * nx - ny * ny) + 1) * 127.5);
+  normalPixels[offset + 3] = 255;
+}
+await writeFile(normalImagePath, Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), pngChunk("IHDR", pngHeader), pngChunk("IDAT", deflateSync(normalPixels)), pngChunk("IEND", Buffer.alloc(0))]));
 const require = createRequire(import.meta.url);
 // Hosted runners expose a small virtual desktop, so clamp every requested size to the work area.
 // Set OPENBRIDGE_UI_WIDTH/HEIGHT to reproduce a narrower layout locally.
 const viewportWidth = Number(process.env.OPENBRIDGE_UI_WIDTH) || 1440;
 const viewportHeight = Number(process.env.OPENBRIDGE_UI_HEIGHT) || 1000;
 const preload = `
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 const image = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="sienna"/></svg>');
 const publicImage = ${JSON.stringify(pathToFileURL(publicImagePath).href)};
 const highImage = type => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="4096"><rect width="4096" height="4096" fill="'+(type==='normal'?'royalblue':'forestgreen')+'"/></svg>');
@@ -116,13 +137,14 @@ contextBridge.exposeInMainWorld('fixturePaged',value=>{paged=value});
 contextBridge.exposeInMainWorld('fixturePreviewMode',mode=>{previewMode=mode});
 contextBridge.exposeInMainWorld('fixtureModelFail',value=>{modelFails=value});
 contextBridge.exposeInMainWorld('fixtureSurface',value=>{surfaceMode=value});
+contextBridge.exposeInMainWorld('fixtureSurfaceScreenshot',name=>ipcRenderer.invoke('fixture:surface-screenshot',name));
 contextBridge.exposeInMainWorld('fixturePauseDownload',()=>progressListener({...downloadItem,status:'paused',message:'Paused',
   diagnostics:{...downloadItem.diagnostics,activeTransfers:0,receiveBytesPerSecond:0,writeBytesPerSecond:0}}));
 contextBridge.exposeInMainWorld('fixtureDownloading',()=>progressListener(downloadItem));
 contextBridge.exposeInMainWorld('fixtureProgress',value=>progressListener({...downloadItem,diagnostics:{...downloadItem.diagnostics,receiveBytesPerSecond:value,writeBytesPerSecond:value*0.9}}));
 `;
 const main = `
-const { app, BrowserWindow, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const { readFile, writeFile } = require('node:fs/promises');
 const { join } = require('node:path');
 const assert = require('node:assert/strict');
@@ -137,7 +159,22 @@ app.whenReady().then(async()=>{
   try {
    // Keep fixture thumbnail URLs testable without relying on any remote server.
    const providerImage = await readFile(${JSON.stringify(publicImagePath)});
-   win.webContents.session.protocol.handle('https', () => new Response(providerImage, { headers:{'content-type':'image/png'} }));
+   const heightImage = await readFile(${JSON.stringify(heightImagePath)});
+   const normalImage = await readFile(${JSON.stringify(normalImagePath)});
+   win.webContents.session.protocol.handle('https', request => new Response(
+     request.url.includes('fixture_displacement_') ? heightImage : request.url.includes('fixture_normal_') ? normalImage : providerImage,
+     { headers:{'content-type':'image/png'} }));
+   ipcMain.handle('fixture:surface-screenshot', async (_event, name) => {
+     const output = process.env.OPENBRIDGE_UI_SCREENSHOTS;
+     if (name === 'camera' || name === 'silhouette') {
+       const [width,height]=win.getContentSize();
+       const size=name==='silhouette'?360:160;
+       return (await win.webContents.capturePage({x:Math.floor((width-size)/2),y:Math.floor((height-size)/2),width:size,height:size})).toPNG().toString('base64');
+     }
+     if (output && ['pbr','matcap','wireframe','wireframe-zoomed','normals-off'].includes(name)) {
+       await writeFile(join(output,'surface-fullscreen-'+name+'.png'),(await win.webContents.capturePage()).toPNG());
+     }
+   });
    await win.loadFile(${JSON.stringify(resolve("out/renderer/index.html"))});
   const results = await win.webContents.executeJavaScript('('+${JSON.stringify(async function run() {
     const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -695,26 +732,88 @@ app.whenReady().then(async()=>{
       assert(document.querySelector('.model-viewer-overlay input[aria-label="Surface displacement strength"]'),'Displacement strength control missing');
       assert(document.querySelector('.model-viewer-quality-bar select'),'Fullscreen quality selector missing');
       const wire=document.querySelector('.model-viewer-overlay input[type=checkbox]');
-      wire.click(); await until(()=>document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Wireframe did not displace the sphere geometry');
-      const strength=document.querySelector('.model-viewer-overlay input[aria-label="Surface displacement strength"]');
-      strength.value='150';strength.dispatchEvent(new Event('input',{bubbles:true}));await wait(80);
+      await until(()=>document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','PBR did not use the displaced sphere');
+      const viewerOverlay=document.querySelector('.model-viewer-overlay');
+      const qualityBar=viewerOverlay.querySelector('.model-viewer-quality-bar').getBoundingClientRect();
+      const tools=viewerOverlay.querySelector('.model-viewer-toolbar').getBoundingClientRect();
+      assert(qualityBar.bottom<=tools.top+1,'Fullscreen texture controls cover the viewer toolbar');
+      assert(viewerOverlay.querySelector('.model-viewer-chrome-head').textContent.includes('2px–256px loaded'),
+        'Sphere reports a requested tier as if it were the decoded size');
+      await wait(150); await window.fixtureSurfaceScreenshot('pbr');
+      const normalDetail=[...viewerOverlay.querySelectorAll('label')].find(label=>label.textContent.includes('Normal map detail')).querySelector('input');
+      const strength=viewerOverlay.querySelector('input[aria-label="Surface displacement strength"]');
+      const setDisplacement=async (value,capture='camera')=>{
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(strength,String(value));
+        strength.dispatchEvent(new Event('input',{bubbles:true}));
+        await until(()=>strength.parentElement.querySelector('strong')?.textContent===value+'%','Displacement slider did not commit '+value);
+        await wait(180);
+        return window.fixtureSurfaceScreenshot(capture);
+      };
+      const withNormal=await window.fixtureSurfaceScreenshot('camera');
+      const flatWithNormal=await setDisplacement(0);
+      assert(flatWithNormal!==withNormal,'Displacement changed no rendered pixels with normal detail on');
+      assert(await setDisplacement(60)!==flatWithNormal,'Raising displacement did not work with normal detail on');
+      normalDetail.click(); await wait(150);
+      assert(withNormal!==await window.fixtureSurfaceScreenshot('camera'),'Normal-map diagnostic did not change PBR');
+      assert(viewerOverlay.querySelector('.model-viewer-canvas').dataset.surfaceDisplaced==='true','Disabling normal detail also disabled displacement');
+      await window.fixtureSurfaceScreenshot('normals-off');
+      const flatWithoutNormal=await setDisplacement(0);
+      assert(await setDisplacement(60)!==flatWithoutNormal,'Displacement changed no rendered pixels with normal detail off');
+      normalDetail.click();
+      const glPrototype=WebGL2RenderingContext.prototype;
+      const drawElements=glPrototype.drawElements;
+      let wireIndices=0;
+      glPrototype.drawElements=function(mode,count,...args){
+        if(mode===this.LINES) wireIndices=Math.max(count,wireIndices);
+        return drawElements.call(this,mode,count,...args);
+      };
+      try {
+        wire.click();
+        await until(()=>wireIndices===12*272**2*6,'Sphere wireframe did not draw all triangle edges');
+      } finally {
+        glPrototype.drawElements=drawElements;
+      }
+      await wait(100); await window.fixtureSurfaceScreenshot('wireframe');
+      const fineWire=await window.fixtureSurfaceScreenshot('silhouette');
+      assert(await setDisplacement(150,'silhouette')!==fineWire,'Displacement did not update the wireframe');
+      for(let i=0;i<6;i++) viewerOverlay.querySelector('.model-viewer-canvas')
+        .dispatchEvent(new WheelEvent('wheel',{deltaY:-1400,bubbles:true,cancelable:true}));
+      await wait(150); await window.fixtureSurfaceScreenshot('wireframe-zoomed');
+      button(viewerOverlay,'Reset view').click(); await wait(100);
       assert(document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Displacement update dropped the displaced wireframe');
       wire.click(); await wait(80);
-      assert(!document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced,'Wireframe-off did not restore the base sphere');
+      assert(document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Wireframe-off lost the displaced surface');
       const matcap=[...document.querySelectorAll('.model-inspector-option')].find(button=>button.textContent==='Matcap');
       matcap.click(); await until(()=>document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Matcap did not use the displaced mesh');
+      await wait(100); await window.fixtureSurfaceScreenshot('matcap');
+      const viewCanvas=viewerOverlay.querySelector('.model-viewer-canvas');
+      const fitted=await window.fixtureSurfaceScreenshot('camera');
+      viewCanvas.dispatchEvent(new WheelEvent('wheel',{deltaY:-360,bubbles:true,cancelable:true}));
+      await wait(150);
+      const zoomed=await window.fixtureSurfaceScreenshot('camera');
+      assert(fitted!==zoomed,'Camera probe did not zoom');
+      viewCanvas.dispatchEvent(new PointerEvent('pointerdown',{button:2,shiftKey:true,clientX:300,bubbles:true,cancelable:true}));
+      window.dispatchEvent(new PointerEvent('pointermove',{clientX:420,shiftKey:true}));
+      window.dispatchEvent(new PointerEvent('pointerup',{button:2}));
+      await until(()=>viewerOverlay.querySelector('.model-viewer-env-angle')?.textContent!=='Env 0°','Environment did not rotate');
+      assert(zoomed===await window.fixtureSurfaceScreenshot('camera'),'Environment spin moved the zoomed Matcap camera');
       const pbr=[...document.querySelectorAll('.model-inspector-option')].find(button=>button.textContent==='PBR');
       pbr.click(); await wait(80);
-      assert(!document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced,'Leaving matcap did not restore the base sphere');
+      assert(document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Leaving matcap lost the displaced surface');
       const modeSwitch=document.querySelector('.model-viewer-overlay .preview-mode-switch');
       assert(modeSwitch && ['Render','Maps','Sphere'].every(label=>[...modeSwitch.querySelectorAll('button')].some(button=>button.textContent===label)),'Fullscreen mode switch is incomplete');
       [...modeSwitch.querySelectorAll('button')].find(button=>button.textContent==='Maps').click();
-      await until(()=>!document.querySelector('.model-viewer-overlay'),'Fullscreen Maps mode did not close the overlay');
+      await until(()=>document.querySelector('.image-viewer .preview-mode-switch .active')?.textContent==='Maps','Sphere-to-Maps handoff left fullscreen');
+      assert(document.getElementById('root').inert,'Maps handoff did not keep the drawer inert');
       assert(surfaceDrawer.querySelector('.preview-switch button.active')?.textContent==='Maps','Fullscreen Maps mode did not switch the drawer');
-      [...surfaceDrawer.querySelectorAll('.preview-switch button')].find(button=>button.textContent==='Sphere').click();
-      await until(()=>surfaceDrawer.querySelector('.surface-preview .model-viewer-canvas'),'Sphere did not reopen for screenshot');
+      button(document.querySelector('.image-viewer .preview-mode-switch'),'Render').click();
+      await until(()=>document.querySelector('.image-viewer .preview-mode-switch .active')?.textContent==='Render','Maps-to-Render handoff left fullscreen');
+      button(document.querySelector('.image-viewer .preview-mode-switch'),'Sphere').click();
+      await until(()=>document.querySelector('.model-viewer-overlay .model-viewer-canvas'),'Image-to-sphere handoff left fullscreen');
+      assert(document.getElementById('root').inert,'Sphere handoff did not keep the drawer inert');
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
       await until(()=>!document.querySelector('.model-viewer-overlay'),'Escape did not close the sphere fullscreen');
+      await until(()=>surfaceDrawer.querySelector('.surface-preview .model-viewer-canvas'),'Sphere did not return to inline after closing');
       window.fixtureSurface(false);
    }.toString())}+')()');
    const publicScreenshots=process.env.OPENBRIDGE_UI_SCREENSHOTS;
@@ -779,7 +878,8 @@ app.whenReady().then(async()=>{
       await until(() => drawer() && button(drawer(), '3D'), 'Missing 3D preview tab');
       button(drawer(), '3D').click();
       const canvas = () => drawer()?.querySelector('.model-viewer-canvas');
-      await until(() => canvas() && !drawer().querySelector('.model-viewer-status'), '3D fixture did not render');
+       await until(() => canvas() && !drawer().querySelector('.model-viewer-status'), '3D fixture did not render');
+       if (window.fixtureCalls().filter(call => call.kind === 'model').at(-1)?.request.lod !== 'highest') throw new Error('Model did not request highest mesh detail initially');
       const context = canvas().getContext('webgl2');
       const textures = () => drawer().querySelector('.model-preview-controls select');
       textures().value = '2048';
@@ -805,8 +905,19 @@ app.whenReady().then(async()=>{
       if (fullscreenTextures.value !== '2048' || !expanded().querySelector('.model-viewer-canvas') || !canvas()) throw new Error('Failed switch discarded the working preview or showed the wrong tier');
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await until(() => !expanded(), 'Escape did not close fullscreen');
-      if (document.activeElement !== expand || document.getElementById('root').inert) throw new Error('Fullscreen did not restore focus');
-      button(drawer(), 'Close').click();
+       if (document.activeElement !== expand || document.getElementById('root').inert) throw new Error('Fullscreen did not restore focus');
+       window.fixtureModelFail(false);
+       button(drawer(), 'Render').click();
+       await until(() => drawer().querySelector('.expand-preview'), 'Model render missing');
+       drawer().querySelector('.expand-preview').click();
+       await until(() => document.querySelector('.image-viewer .preview-mode-switch'), 'Fullscreen render missing');
+       button(document.querySelector('.image-viewer .preview-mode-switch'), '3D').click();
+       await until(() => expanded(), 'Render-to-3D handoff left fullscreen');
+       if (!document.getElementById('root').inert) throw new Error('3D handoff did not keep drawer inert');
+       await until(() => expanded().querySelector('.model-viewer-canvas'), 'Fullscreen model did not load after handoff');
+       document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+       await until(() => !expanded(), 'Could not close model after handoff');
+       button(drawer(), 'Close').click();
       await until(() => context.isContextLost(), 'Closing the model did not release its WebGL context');
       const thumbnail = card().querySelector('.asset-thumb-img');
       thumbnail.dispatchEvent(new Event('error'));

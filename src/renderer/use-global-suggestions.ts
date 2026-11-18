@@ -176,6 +176,7 @@ export function useGlobalSuggestions(
   const [response, setResponse] = useState<{ query: string; scope: GlobalSuggestionScope; items: GlobalSuggestion[]; loading: boolean } | null>(null);
   const generation = useRef(0);
   const text = query.trim();
+  const exclusions = useStore(state => scope === "all" ? state.disabledProviders.join(",") : "");
 
   useEffect(() => {
     if (!enabled || !text) {
@@ -214,9 +215,11 @@ export function useGlobalSuggestions(
       generation.current += 1;
       window.clearTimeout(timer);
     };
-  }, [enabled, text, scope]);
+  }, [enabled, text, scope, exclusions]);
 
   if (!enabled || !text) return { items: [], loading: false };
   if (response?.query !== text || response.scope !== scope) return { items: [], loading: true };
-  return response;
+  return exclusions
+    ? { ...response, items: response.items.filter(item => !exclusions.split(",").includes(item.provider)) }
+    : response;
 }
