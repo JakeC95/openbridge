@@ -59,6 +59,8 @@ const calls = [];
 const noop = () => () => {};
 let publicEnabled = false;
 let publicMany = false;
+// Reading categories can wait for the first index, even if the status event arrived earlier.
+const indexesPending = new Set(['ambientcg', 'openhdri']);
 const publicHit = provider => ({id:'fixture-'+provider,provider,name:provider+' fixture',type:surfaceMode?'surface':provider==='blenderkit'?'hdr':'hdri',typeLabel:surfaceMode?'Surface':'HDRI',categories:[surfaceMode?'Surfaces/Brick':'HDRIs/Outdoor'],category:surfaceMode?'Surfaces/Brick':'HDRIs/Outdoor',tags:['clear'],description:'Public provider fixture',authors:{'Fixture Author':'Creator'},attributes:provider==='ambientcg'?{technique:'hdri-bracketed-panorama',collections:['Fixture collection'],colors:['112233','445566'],downloadStats:{total:12,lastMonth:5,lastWeek:2,lastDay:1}}:provider==='blenderkit'?{canDownload:true,rating:9.5,ratingCount:4,verification:'validated',versionNumber:2,sourceApp:'blender 5.1.1',downloadBytes:18017740}:{fileFormat:'32-bit Float OpenEXR (.exr)',dynamicRange:'12 EV',whiteBalance:'5400 K',captureDate:'November 12, 2025 at 03:05 PM',location:'Fixture location',downloadSize:'312 MB',colorChecker:'https://example.invalid/colorchecker.exr'},maxResolution:2048,resolutions:['2K'],dimensions:null,dimensionsMm:null,polycount:null,texelDensity:null,publishedAt:1,downloadCount:1,thumbnail:image,previews:surfaceMode?[{type:'albedo',label:'Albedo',url:'https://example.invalid/fixture_albedo.png'},{type:'normal',label:'Normal',url:'https://example.invalid/fixture_normal.png'}]:provider==='ambientcg'?[{type:'hdr-source',label:'HDR panorama LQ',url:'https://example.invalid/fixture_LQ.exr?1'},{type:'hdr-source',label:'HDR panorama HQ',url:'https://example.invalid/fixture_HQ.exr?2'}]:[{type:'preview',label:'Preview',url:image}],timeOfDay:12,weather:'clear',mapCodes:surfaceMode?['albedo','normal','roughness','displacement']:[],mapFormats:['exr'],modelFormats:[],lodCount:0,license:'CC0-1.0',free:true,websiteUrl:'https://example.invalid',filesHash:'fixture',enriched:true,files:[{role:'hdri',name:'fixture.exr',url:'https://example.invalid/fixture.exr',bytes:4,resolution:'2K',format:'exr'}]});
  const progressListeners = new Set();
  const progressListener = item => progressListeners.forEach(callback=>callback(item));
@@ -92,7 +94,19 @@ const api = {
     }
   },
    smartThumbnail:async source=>source,
-   public:{status:async()=>({state:'ready',count:1,refreshedAt:1}),refresh:async()=>({state:'ready',count:1,refreshedAt:1}),categories:async()=>[],onStatus:noop,
+   public:{
+     status:async provider=>indexesPending.has(provider)
+       ? {state:'refreshing',count:0,refreshedAt:null}
+       : {state:'ready',count:1,refreshedAt:1},
+     refresh:async()=>({state:'ready',count:1,refreshedAt:1}),
+     categories:async provider=>{
+       if(indexesPending.has(provider)) {
+         await new Promise(resolve=>setTimeout(resolve,120));
+         indexesPending.delete(provider);
+       }
+       return [];
+     },
+     onStatus:noop,
      search:async query=>{calls.push({kind:'publicSearch',query});const hit=publicHit(query.provider);const available=publicEnabled&&!query.types?.includes('__none__')&&query.ids?.length!==0;const all=publicMany?Array.from({length:96},(_,index)=>({...hit,id:hit.id+'-'+index,name:hit.name+' '+index})):[hit];const offset=query.offset??0,limit=query.limit??60;return {hits:available?all.slice(offset,offset+limit):[],total:available?all.length:0,hasMore:available&&offset+limit<all.length,offset,limit,tookMs:1,facets:{types:[{value:hit.type,count:1}],licenses:[{value:hit.license,count:1}],resolutions:[{value:'2K',count:1},{value:'4K',count:1}],mapTypes:[],modelFormats:[],categories:[],weather:[{value:'clear',count:1}],free:1}}},
      ids:async query=>[publicHit(query.provider).id],extended:async(provider,id)=>({...publicHit(provider),id,raw:{}}),
      previews:async(provider,id)=>{const assetId=provider+':'+id;const base={type:'JPG',label:'Panorama preview',url:publicImage,assetId,panorama:true,map:{type:'JPG'},exposure:{assetId,mapType:'JPG'}};const hdr={type:'HDR',label:'HDR · live exposure',url:publicImage,assetId,panorama:true,exposure:{assetId,mapType:'HDR'}};if(surfaceMode)return {renders:[{type:'preview',label:'Render',url:image}],maps:['albedo','normal','roughness','displacement'].flatMap(type=>['1K','2K'].map(tier=>({type,label:type,resolution:tier,url:'https://example.invalid/fixture_'+type+'_'+tier+'.png'}))),hdrAvailable:false};return {renders:[{type:'preview',label:'Render',url:image}],maps:provider==='openhdri'?[base]:[base,hdr],hdrAvailable:provider!=='openhdri',note:provider==='openhdri'?'OpenHDRI publishes 16K EXRs only. Live HDR exposure is disabled because 16K exceeds the safe 8K preview budget for most systems.':undefined}},
@@ -183,6 +197,12 @@ app.whenReady().then(async()=>{
       const start=Date.now(); while(!condition()) { assert(Date.now()-start<5000,message); await wait(25); }
     };
     const root = () => document.querySelector('.view-slot:not([hidden])');
+    await until(() => ['ambientcg','openhdri'].every(provider =>
+      window.fixtureCalls().some(call => call.kind === 'publicSearch' && call.query.provider === provider)),
+      'Public catalogue searches did not start after the initial indexing');
+    assert(![...document.querySelectorAll('.poliigon-indexing')].some(banner =>
+      /Indexing (ambientCG|OpenHDRI)/i.test(banner.textContent)),
+      'Public catalogue still shows Indexing after its index is ready');
     const clickText = (scope, text) => {
       assert(scope, 'Missing scope for button: '+text);
       const element = [...scope.querySelectorAll('button')].find(item => item.textContent.trim() === text);

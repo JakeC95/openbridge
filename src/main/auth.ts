@@ -199,11 +199,13 @@ export class AuthService {
     this.record = record;
     this.profileCache = null;
     this.profileFlight = null; this.refreshFlight = null; this.profileAt = 0;
-    this.store();
+    const saved = this.store();
     await this.ensureProfile();
     const state = this.state();
     this.emit(state);
-    this.notify(`Signed in as ${state.email || "Epic user"}`);
+    this.notify(saved
+      ? `Signed in as ${state.email || "Epic user"}`
+      : "Signed in for this session. Unlock your system credential store to stay signed in.");
     return state;
   }
 
@@ -289,8 +291,8 @@ export class AuthService {
     return decodeJwt(this.record.token)?.email ?? this.record.email;
   }
 
-  private store(): void {
-    if (!this.record) return;
+  private store(): boolean {
+    if (!this.record) return false;
     const json = JSON.stringify(this.record);
     try {
       if (hasSecureCredentialStorage()) {
@@ -301,9 +303,12 @@ export class AuthService {
         writeFileSync(this.legacyFile, json, "utf8");
       } else {
         this.logger.warn("Secure credential storage is unavailable. This session will last until the app closes.");
+        return false;
       }
+      return true;
     } catch (error) {
       this.logger.error("Could not persist auth", { error });
+      return false;
     }
   }
 

@@ -38,6 +38,7 @@ interface PublicStore {
   patch(provider: PublicProviderId, patch: Partial<ProviderState>): void;
   search(provider: PublicProviderId, reset?: boolean, query?: Partial<PublicCatalogQuery>): Promise<void>;
   init(provider: PublicProviderId): Promise<void>;
+  loadMetadata(provider: PublicProviderId): Promise<void>;
   toggleFacet(provider: PublicProviderId, field: "types" | "licenses" | "resolutions" | "mapTypes" | "modelFormats" | "weather", value: string): void;
   clearRecent(provider: PublicProviderId): void;
   rememberSearch(provider: PublicProviderId, term: string): void;
@@ -97,10 +98,21 @@ export const usePublicStore = create<PublicStore>((set, get) => ({
   async init(provider) {
     if (!window.openbridge.public) return; // Older UI test fixtures do not supply optional providers.
     try {
-      const [categories, status] = await Promise.all([window.openbridge.public.categories(provider), window.openbridge.public.status(provider)]);
-      get().patch(provider, { categories, status, metadataReady: true });
+      await get().loadMetadata(provider);
       await get().search(provider, true, get().providers[provider].query.types?.includes("__none__") ? { types: [], categoryPaths: [], ids: undefined, weather: [], timeStart: undefined, timeEnd: undefined } : {});
     } catch (error) { get().patch(provider, { error: String(error) }); }
+  },
+  async loadMetadata(provider) {
+    // Categories can trigger and wait for the initial index. Read status after they resolve.
+    const categories = await window.openbridge.public.categories(provider);
+    const previousStatus = get().providers[provider].status;
+    const status = await window.openbridge.public.status(provider);
+    // A refresh event may have already supplied a newer status while IPC was pending.
+    get().patch(provider, {
+      categories,
+      metadataReady: true,
+      ...(get().providers[provider].status === previousStatus ? { status } : {})
+    });
   },
   async search(provider, reset = true, patch = {}) {
     if (!window.openbridge.public) return;
@@ -111,10 +123,7 @@ export const usePublicStore = create<PublicStore>((set, get) => ({
     if (reset && !query.types?.includes("__none__")) writePreference(`publicQuery.${provider}`, normalizePublicQuery(provider, query));
     get().patch(provider, { loading: true, error: null, query, ...(reset ? { hasMore: false } : {}) });
     try {
-      if (!previous.metadataReady) {
-        const [categories, status] = await Promise.all([window.openbridge.public.categories(provider), window.openbridge.public.status(provider)]);
-        get().patch(provider, { categories, status, metadataReady: true });
-      }
+      if (!previous.metadataReady) await get().loadMetadata(provider);
       if (generation !== generations[provider]) return;
       const result = await window.openbridge.public.search(query);
       if (generation !== generations[provider]) return;
