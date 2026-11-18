@@ -11,6 +11,7 @@ permissions:
 jobs:
   check:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
@@ -23,6 +24,12 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Configure Electron sandbox on the Ubuntu runner
+        if: runner.os == 'Linux'
+        run: |
+          node node_modules/electron/install.js
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       - run: npm run typecheck
       - run: npm run check:public
       - run: npm run test:browsing
