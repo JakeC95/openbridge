@@ -706,7 +706,7 @@ export function PoliigonDrawer() {
                     source={localPath ? "local" : "provider"}
                     maxTier={selection.summary.maxResolution}
                     resolveTier={map => map.type
-                      ? window.openbridge.poliigon.highResolutionMapPreview(selection.summary.id, map.type).then(result => result?.url ?? null)
+                      ? window.openbridge.poliigon.highResolutionMapPreview(selection.summary.id, map.type).then(result => result?.url ? { url: result.url } : null)
                       : Promise.resolve(null)}
                     onMode={mode => setMode(mode === "maps" ? "maps" : "renders")}
                   />

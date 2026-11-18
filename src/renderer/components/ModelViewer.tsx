@@ -14,7 +14,7 @@ import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
 import { TGALoader } from "three/addons/loaders/TGALoader.js";
 import type { ModelManifest, ModelLodMode, ModelMeshVariant, ModelTextureVariant, ModelMapType } from "../../shared/model-preview";
-import { modelLodLabel, modelQualityLabel, normalizeModelMaterialKey, preferredTextureFormat } from "../../shared/model-preview";
+import { modelLodLabel, modelQualityLabel, normalizeModelMaterialKey, preferredTextureFormat, resolutionFromText } from "../../shared/model-preview";
 import environmentUrl from "../assets/monochrome_studio_02_1k.hdr";
 import { CloseIcon } from "../icons";
 import { useModalFocus } from "../use-modal-focus";
@@ -353,11 +353,11 @@ function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "
   return material;
 }
 
-const SURFACE_DISPLACEMENT = 0.18;
+const SURFACE_DISPLACEMENT = 0.1;
 
 /** Cube-sphere: six 0–1 UV faces with equal texel density and no pole pinch. */
 function createSurfaceSphere(): THREE.Mesh {
-  const segments = 96;
+  const segments = 192;
   const geometry = new THREE.BoxGeometry(2, 2, 2, segments, segments, segments);
   const position = geometry.getAttribute("position");
   const normal = new THREE.BufferAttribute(new Float32Array(position.count * 3), 3);
@@ -922,7 +922,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   const [exposureStops, setExposureStops] = useState(0);
   const [environmentAngle, setEnvironmentAngle] = useState(0);
   const [wireframe, setWireframe] = useState(false);
-  const [displacement, setDisplacement] = useState(100);
+  const [displacement, setDisplacement] = useState(60);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("pbr");
   const [activeMap, setActiveMap] = useState<ModelMapType | null>(null);
   const [singleSided, setSingleSided] = useState(false);
@@ -1251,15 +1251,13 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           if (!(child instanceof THREE.Mesh)) return;
           child.castShadow = false;
           child.receiveShadow = false;
-          if (surface) {
-            const position = child.geometry.getAttribute("position");
-            const normal = child.geometry.getAttribute("normal");
-            if (position && normal) {
-              surfaceGeometry.current.set(child.geometry, {
-                positions: new Float32Array(position.array),
-                normals: new Float32Array(normal.array)
-              });
-            }
+          const position = child.geometry.getAttribute("position");
+          const normal = child.geometry.getAttribute("normal");
+          if (position && normal) {
+            surfaceGeometry.current.set(child.geometry, {
+              positions: new Float32Array(position.array),
+              normals: new Float32Array(normal.array)
+            });
           }
           if (!child.geometry.getAttribute("uv1") && child.geometry.getAttribute("uv")) {
             child.geometry.setAttribute("uv1", child.geometry.getAttribute("uv")!);
@@ -1370,12 +1368,16 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   };
 
   const selectDisplay = (mode: DisplayMode, map: ModelMapType | null = null): void => {
+    const hasDisplacement = Boolean(stateRef.current?.inspectionEntries
+      .some(entry => entry.slots.some(slot => slot.maps.displacement)));
+    if (mode === "matcap" && hasDisplacement) displaceGeometry(displacement);
+    else if (displayMode === "matcap") restoreGeometry();
     setDisplayMode(mode);
     setActiveMap(map);
     setWireframe(false);
   };
 
-  const restoreSurfaceGeometry = useCallback(() => {
+  const restoreGeometry = useCallback(() => {
     for (const [geometry, base] of surfaceGeometry.current) {
       const position = geometry.getAttribute("position");
       if (!position) continue;
@@ -1387,10 +1389,10 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     if (dom) delete dom.dataset.surfaceDisplaced;
   }, []);
 
-  /** Wireframes are real geometry, so displace on the CPU before building lines. */
-  const displaceSurfaceGeometry = useCallback((strength: number) => {
+  /** Matcap/wireframe are unlit, so displace on the CPU before rendering them. */
+  const displaceGeometry = useCallback((strength: number) => {
     const state = stateRef.current;
-    if (!state || !manifest.surface) return;
+    if (!state) return;
     const texture = state.inspectionEntries
       .flatMap(entry => entry.slots)
       .find(slot => slot.maps.displacement)?.maps.displacement;
@@ -1423,15 +1425,15 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       geometry.computeVertexNormals();
     }
     state.renderer.domElement.dataset.surfaceDisplaced = "true";
-  }, [manifest.surface]);
+  }, []);
 
   const changeWireframe = (value: boolean): void => {
     if (value) {
       setDisplayMode("pbr");
       setActiveMap(null);
-      if (manifest.surface) displaceSurfaceGeometry(displacement);
-    } else if (manifest.surface) {
-      restoreSurfaceGeometry();
+      displaceGeometry(displacement);
+    } else {
+      restoreGeometry();
     }
     setWireframe(value);
   };
@@ -1449,17 +1451,17 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         }
       }
     }
-    if (manifest.surface) {
-      if (wireframe) {
-        clearWireframe(state);
-        displaceSurfaceGeometry(displacement);
-        applyWireframe(state, true);
-      } else {
-        restoreSurfaceGeometry();
-      }
+    if (wireframe) {
+      clearWireframe(state);
+      displaceGeometry(displacement);
+      applyWireframe(state, true);
+    } else if (displayMode === "matcap") {
+      displaceGeometry(displacement);
+    } else {
+      restoreGeometry();
     }
     state.render();
-  }, [displacement, loading, manifest.surface, wireframe, displaceSurfaceGeometry, restoreSurfaceGeometry]);
+  }, [displacement, loading, displayMode, wireframe, displaceGeometry, restoreGeometry]);
 
   const environmentDegrees = Math.round((((environmentAngle * 180) / Math.PI) % 360 + 360) % 360);
   const qualityLabel = useMemo(() => modelQualityLabel(quality), [quality]);
@@ -1595,7 +1597,7 @@ export interface SurfacePreviewPanelProps {
   className?: string;
   /** Highest provider-published map tier, used for on-demand quality options. */
   maxTier?: number | null;
-  resolveTier?: (map: SurfacePreviewMap, tier: number) => Promise<string | null>;
+  resolveTier?: (map: SurfacePreviewMap, tier: number) => Promise<{ url: string; resolution?: string } | null>;
   onMode?: (mode: "render" | "maps") => void;
 }
 
@@ -1604,6 +1606,7 @@ export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "p
   const [tierMaps, setTierMaps] = useState<SurfacePreviewMap[] | null>(null);
   const [tierLoading, setTierLoading] = useState(false);
   const [quality, setQuality] = useState(1024);
+  const [ceiling, setCeiling] = useState<number | null>(null);
   const displayMaps = tierMaps ?? maps;
   const manifest = useMemo(
     () => surfaceManifest(displayMaps, { assetId, provider, name, source }),
@@ -1615,7 +1618,7 @@ export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "p
   useModalFocus(dialog, fullscreen, close);
   const published = manifest?.availableQualities ?? [];
   const upward = resolveTier && maxTier
-    ? [2048, 4096, 8192].filter(value => value > (published.at(-1) ?? 0) && value <= maxTier)
+    ? [2048, 4096, 8192].filter(value => value > (published.at(-1) ?? 0) && value <= (ceiling ?? maxTier))
     : [];
   const qualities = [...new Set([...published, ...upward])].sort((a, b) => a - b);
   const appliedQuality = qualities.includes(quality)
@@ -1628,9 +1631,17 @@ export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "p
     setTierLoading(true);
     try {
       const upgraded = await Promise.all(maps.map(async map => {
-        const url = await resolveTier(map, next).catch(() => null);
-        return url ? { ...map, url, resolution: String(next) } : map;
+        const result = await resolveTier(map, next).catch(() => null);
+        return result?.url ? { ...map, url: result.url, resolution: result.resolution ?? String(next) } : map;
       }));
+      const actual = upgraded
+        .map(map => resolutionFromText(map.resolution ?? ""))
+        .filter((value): value is number => typeof value === "number" && value > 0);
+      if (actual.length) {
+        const highest = Math.max(...actual);
+        setCeiling(current => Math.max(current ?? 0, highest));
+        setQuality(highest);
+      }
       setTierMaps(upgraded);
     } finally {
       setTierLoading(false);

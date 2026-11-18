@@ -701,11 +701,18 @@ app.whenReady().then(async()=>{
       assert(document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Displacement update dropped the displaced wireframe');
       wire.click(); await wait(80);
       assert(!document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced,'Wireframe-off did not restore the base sphere');
+      const matcap=[...document.querySelectorAll('.model-inspector-option')].find(button=>button.textContent==='Matcap');
+      matcap.click(); await until(()=>document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Matcap did not use the displaced mesh');
+      const pbr=[...document.querySelectorAll('.model-inspector-option')].find(button=>button.textContent==='PBR');
+      pbr.click(); await wait(80);
+      assert(!document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced,'Leaving matcap did not restore the base sphere');
       const modeSwitch=document.querySelector('.model-viewer-overlay .preview-mode-switch');
       assert(modeSwitch && ['Render','Maps','Sphere'].every(label=>[...modeSwitch.querySelectorAll('button')].some(button=>button.textContent===label)),'Fullscreen mode switch is incomplete');
       [...modeSwitch.querySelectorAll('button')].find(button=>button.textContent==='Maps').click();
       await until(()=>!document.querySelector('.model-viewer-overlay'),'Fullscreen Maps mode did not close the overlay');
       assert(surfaceDrawer.querySelector('.preview-switch button.active')?.textContent==='Maps','Fullscreen Maps mode did not switch the drawer');
+      [...surfaceDrawer.querySelectorAll('.preview-switch button')].find(button=>button.textContent==='Sphere').click();
+      await until(()=>surfaceDrawer.querySelector('.surface-preview .model-viewer-canvas'),'Sphere did not reopen for screenshot');
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
       await until(()=>!document.querySelector('.model-viewer-overlay'),'Escape did not close the sphere fullscreen');
       window.fixtureSurface(false);

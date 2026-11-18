@@ -600,7 +600,7 @@ export function AssetDrawer() {
                 name={hit?.name ?? local?.name ?? assetId}
                 source={local ? "local" : "provider"}
                 maxTier={maxResolution}
-                resolveTier={(map) => map.source ? loadHighResolution(map.source).then(result => result?.url ?? null) : Promise.resolve(null)}
+                resolveTier={(map) => map.source ? loadHighResolution(map.source).then(result => result?.url ? { url: result.url, resolution: result.resolution } : null) : Promise.resolve(null)}
                 onMode={mode => {
                   if (mode === "maps") { void openMaps(); return; }
                   setPreviewMode("render");
