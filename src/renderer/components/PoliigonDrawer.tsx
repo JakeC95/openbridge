@@ -703,6 +703,10 @@ export function PoliigonDrawer() {
                     provider="poliigon"
                     name={selection.summary.name}
                     source={localPath ? "local" : "provider"}
+                    maxTier={selection.summary.maxResolution}
+                    resolveTier={map => map.type
+                      ? window.openbridge.poliigon.highResolutionMapPreview(selection.summary.id, map.type).then(result => result?.url ?? null)
+                      : Promise.resolve(null)}
                   />
                 </div>
               ) : (

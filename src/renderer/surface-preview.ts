@@ -1,3 +1,4 @@
+import type { MapPreview } from "../shared/types";
 import {
   MODEL_IMAGE_EXTENSIONS,
   canonicalModelMapType,
@@ -14,6 +15,7 @@ export interface SurfacePreviewMap {
   type?: string;
   label?: string;
   resolution?: string;
+  source?: MapPreview;
 }
 
 const MAP_ORDER: ModelMapType[] = [

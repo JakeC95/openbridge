@@ -683,6 +683,7 @@ app.whenReady().then(async()=>{
       button(surfaceDrawer,'Sphere').click();
       await until(()=>surfaceDrawer.querySelector('.surface-preview .model-viewer-canvas'),'Sphere surface preview did not render');
       const sphereCanvas=surfaceDrawer.querySelector('.model-viewer-canvas');
+      await until(()=>sphereCanvas.dataset.surfaceUv==='cube','Sphere is not using cube-sphere UVs');
       assert(sphereCanvas.width>0,'Sphere canvas has no drawing buffer');
       assert(!surfaceDrawer.querySelector('.image-viewer'),'Image viewer opened instead of the sphere');
       const inlineQuality=surfaceDrawer.querySelector('.model-preview-controls select');

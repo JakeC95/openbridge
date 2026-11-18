@@ -589,6 +589,10 @@ export function PolyHavenDrawer() {
                     provider="polyhaven"
                     name={summary.name}
                     source={localPath ? "local" : "provider"}
+                    maxTier={summary.maxResolution}
+                    resolveTier={map => map.type
+                      ? window.openbridge.polyhaven.highResolutionMapPreview(summary.id, map.type).then(result => result?.url ?? null)
+                      : Promise.resolve(null)}
                   />
                 </div>
               ) : (

@@ -355,14 +355,24 @@ function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "
 
 const SURFACE_DISPLACEMENT = 0.18;
 
-/** Dense sphere so 1K+ height maps have enough vertices to displace. */
+/** Cube-sphere: six 0–1 UV faces with equal texel density and no pole pinch. */
 function createSurfaceSphere(): THREE.Mesh {
-  const geometry = new THREE.SphereGeometry(1, 384, 192);
+  const segments = 96;
+  const geometry = new THREE.BoxGeometry(2, 2, 2, segments, segments, segments);
+  const position = geometry.getAttribute("position");
+  const normal = new THREE.BufferAttribute(new Float32Array(position.count * 3), 3);
+  const point = new THREE.Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    point.set(position.getX(index), position.getY(index), position.getZ(index)).normalize();
+    position.setXYZ(index, point.x, point.y, point.z);
+    normal.setXYZ(index, point.x, point.y, point.z);
+  }
+  position.needsUpdate = true;
+  geometry.setAttribute("normal", normal);
   const uv = geometry.getAttribute("uv");
   if (uv) geometry.setAttribute("uv1", uv);
   const mesh = new THREE.Mesh(geometry, new THREE.MeshPhysicalMaterial());
-  // Put the equirectangular seam behind the initial camera.
-  mesh.rotation.y = Math.PI / 2;
+  mesh.rotation.y = Math.PI / 4;
   mesh.userData.materialKey = "";
   return mesh;
 }
@@ -1120,6 +1130,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         if (token.cancelled) { disposeObject(object, true); return; }
         if (!object) return;
         state.model = object;
+        if (surface) state.renderer.domElement.dataset.surfaceUv = "cube";
         state.textures.push(...objectTextures(object));
         // glTF/GLB and USD packages carry their own per-submesh materials and
         // texture sets. Replacing them with one global material breaks
@@ -1582,23 +1593,48 @@ export interface SurfacePreviewPanelProps {
   name: string;
   source?: "local" | "provider";
   className?: string;
+  /** Highest provider-published map tier, used for on-demand quality options. */
+  maxTier?: number | null;
+  resolveTier?: (map: SurfacePreviewMap, tier: number) => Promise<string | null>;
 }
 
 /** Wrap a 2D surface map set around a sphere using the 3D viewer pipeline. */
-export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "provider", className = "" }: SurfacePreviewPanelProps) {
+export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "provider", className = "", maxTier, resolveTier }: SurfacePreviewPanelProps) {
+  const [tierMaps, setTierMaps] = useState<SurfacePreviewMap[] | null>(null);
+  const [tierLoading, setTierLoading] = useState(false);
+  const [quality, setQuality] = useState(1024);
+  const displayMaps = tierMaps ?? maps;
   const manifest = useMemo(
-    () => surfaceManifest(maps, { assetId, provider, name, source }),
-    [maps, assetId, provider, name, source]
+    () => surfaceManifest(displayMaps, { assetId, provider, name, source }),
+    [displayMaps, assetId, provider, name, source]
   );
   const [fullscreen, setFullscreen] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setFullscreen(false), []);
   useModalFocus(dialog, fullscreen, close);
-  const [quality, setQuality] = useState(1024);
-  const qualities = manifest?.availableQualities ?? [];
+  const published = manifest?.availableQualities ?? [];
+  const upward = resolveTier && maxTier
+    ? [2048, 4096, 8192].filter(value => value > (published.at(-1) ?? 0) && value <= maxTier)
+    : [];
+  const qualities = [...new Set([...published, ...upward])].sort((a, b) => a - b);
   const appliedQuality = qualities.includes(quality)
     ? quality
     : qualities.find(value => value >= 1024) ?? qualities[0] ?? 1024;
+
+  const selectQuality = async (next: number): Promise<void> => {
+    setQuality(next);
+    if (!resolveTier || next <= (published.at(-1) ?? 0)) return;
+    setTierLoading(true);
+    try {
+      const upgraded = await Promise.all(maps.map(async map => {
+        const url = await resolveTier(map, next).catch(() => null);
+        return url ? { ...map, url, resolution: String(next) } : map;
+      }));
+      setTierMaps(upgraded);
+    } finally {
+      setTierLoading(false);
+    }
+  };
 
   if (!manifest) {
     return <div className={`model-preview-panel ${className}`.trim()}>
@@ -1614,17 +1650,18 @@ export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "p
       <ModelViewer manifest={manifest} quality={appliedQuality} lod="lowest" onExpand={() => setFullscreen(true)} />
       <div className="model-preview-controls">
         <span className="hint">Sphere surface preview · drag to orbit</span>
-        {qualities.length > 1 && <label>Textures <select className="native-select" value={appliedQuality} onChange={event => setQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>}
+        <label>Textures <select className="native-select" value={appliedQuality} disabled={tierLoading} onChange={event => void selectQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
+        {tierLoading && <span className="hint" role="status">Loading {modelQualityLabel(appliedQuality)} maps…</span>}
         <button type="button" className="text-btn" onClick={() => setFullscreen(true)}>Full screen</button>
       </div>
       {fullscreen && createPortal(
         <div ref={dialog} tabIndex={-1} className="model-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${name} sphere preview`}>
           <div className="model-viewer-fullscreen-card">
             <ModelViewer fullscreen manifest={manifest} quality={appliedQuality} lod="lowest" onClose={close} />
-            {qualities.length > 1 && <div className="model-viewer-quality-bar">
-              <label>Textures <select className="native-select" value={appliedQuality} onChange={event => setQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
-              <span className="model-viewer-quality-note">Sphere surface preview</span>
-            </div>}
+            <div className="model-viewer-quality-bar">
+              <label>Textures <select className="native-select" value={appliedQuality} disabled={tierLoading} onChange={event => void selectQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
+              <span className="model-viewer-quality-note">{tierLoading ? `Loading ${modelQualityLabel(appliedQuality)} maps…` : "Sphere surface preview"}</span>
+            </div>
           </div>
         </div>,
         document.body

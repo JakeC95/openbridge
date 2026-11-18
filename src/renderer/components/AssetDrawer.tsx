@@ -590,11 +590,13 @@ export function AssetDrawer() {
               isPlant={/3dplant|plant|foliage/i.test(`${assetType} ${hit?.name ?? local?.name ?? ""}`)}
             /> : previewMode === "sphere" && surfacePreview ? (
               availableMaps.length > 0 ? <SurfacePreviewPanel
-                maps={availableMaps}
+                maps={availableMaps.map(map => ({ url: map.url, type: map.type, label: map.label, resolution: map.resolution, source: map }))}
                 assetId={assetId}
                 provider="megascans"
                 name={hit?.name ?? local?.name ?? assetId}
                 source={local ? "local" : "provider"}
+                maxTier={maxResolution}
+                resolveTier={(map) => map.source ? loadHighResolution(map.source).then(result => result?.url ?? null) : Promise.resolve(null)}
               /> : <span className="map-preview-status">
                 {mapsLoading ? "Preparing maps for the sphere preview…" : mapsError || "No browser-readable maps are available for a sphere preview."}
               </span>

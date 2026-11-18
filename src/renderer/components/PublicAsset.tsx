@@ -416,11 +416,13 @@ export function PublicDrawer() {
         />
       </div> : mode === "sphere" && canSurface ? <div className="drawer-preview model-drawer-preview">
         {previewSet?.maps.length ? <SurfacePreviewPanel
-          maps={previewSet.maps}
+          maps={previewSet.maps.map(map => ({ url: map.url, type: map.type, label: map.label, resolution: map.resolution, source: map }))}
           assetId={assetId ?? ""}
           provider={drawerProvider ?? ""}
           name={asset?.name ?? local?.name ?? ""}
           source={local ? "local" : "provider"}
+          maxTier={asset?.maxResolution}
+          resolveTier={map => map.source ? loadHighResolution(map.source).then(result => result?.url ?? null) : Promise.resolve(null)}
         /> : <span className="map-preview-status">{previewLoading ? "Preparing maps for the sphere preview…" : previewSet?.note || "No browser-readable maps are available for a sphere preview."}</span>}
       </div> : <>
         {image && mode !== "sphere" && <div className="drawer-preview"><button className="expand-preview" type="button" onClick={() => { if (/^(hdr|hdri|hdri-element)$/.test(asset?.type ?? "") && previewSet?.maps.length) { setMode("maps"); setIndex(0); } setViewer(true); }}><SmartThumbImage source={image} direct={drawerDirect} crop={drawerProvider === "openhdri" && (local || !previewSet) ? "top-2-1" : undefined} alt={asset?.name ?? local?.name} /></button></div>}
