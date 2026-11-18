@@ -922,6 +922,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   const displayRef = useRef<DisplayOptions>({ mode: "pbr", map: null, singleSided: false, wireframe: false });
   const clickStart = useRef<{ x: number; y: number } | null>(null);
   const stateRef = useRef<ViewerState | null>(null);
+  const surfaceGeometry = useRef(new Map<THREE.BufferGeometry, { positions: Float32Array; normals: Float32Array }>());
 
   useEffect(() => {
     const host = hostRef.current;
@@ -1080,6 +1081,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         state.renderer.domElement.remove();
       }
       stateRef.current = null;
+      surfaceGeometry.current.clear();
     };
   }, [fullscreen]);
 
@@ -1090,22 +1092,6 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     state.renderer.toneMappingExposure = Math.pow(2, exposureStops);
     state.render();
   }, [exposureStops]);
-
-  useEffect(() => {
-    const state = stateRef.current;
-    if (!state) return;
-    const scale = SURFACE_DISPLACEMENT * (displacement / 100);
-    for (const entry of state.inspectionEntries) {
-      for (const slot of entry.slots) {
-        for (const material of materialList(slot.original)) {
-          if (!(material instanceof THREE.MeshStandardMaterial) || !material.displacementMap) continue;
-          material.displacementScale = scale;
-          material.displacementBias = -scale / 2;
-        }
-      }
-    }
-    state.render();
-  }, [displacement, loading]);
 
   useEffect(() => {
     displayRef.current = { mode: displayMode, map: activeMap, singleSided, wireframe };
@@ -1119,6 +1105,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     const token = { cancelled: false };
     setLoading(true);
     setError("");
+    surfaceGeometry.current.clear();
     const manager = new THREE.LoadingManager();
     const textureByUrl = new Map<string, Promise<THREE.Texture>>();
     const sidecars = new Set<THREE.Texture>();
@@ -1253,6 +1240,16 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           if (!(child instanceof THREE.Mesh)) return;
           child.castShadow = false;
           child.receiveShadow = false;
+          if (surface) {
+            const position = child.geometry.getAttribute("position");
+            const normal = child.geometry.getAttribute("normal");
+            if (position && normal) {
+              surfaceGeometry.current.set(child.geometry, {
+                positions: new Float32Array(position.array),
+                normals: new Float32Array(normal.array)
+              });
+            }
+          }
           if (!child.geometry.getAttribute("uv1") && child.geometry.getAttribute("uv")) {
             child.geometry.setAttribute("uv1", child.geometry.getAttribute("uv")!);
           }
@@ -1367,13 +1364,91 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     setWireframe(false);
   };
 
+  const restoreSurfaceGeometry = useCallback(() => {
+    for (const [geometry, base] of surfaceGeometry.current) {
+      const position = geometry.getAttribute("position");
+      if (!position) continue;
+      (position.array as Float32Array).set(base.positions);
+      position.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+    const dom = stateRef.current?.renderer.domElement;
+    if (dom) delete dom.dataset.surfaceDisplaced;
+  }, []);
+
+  /** Wireframes are real geometry, so displace on the CPU before building lines. */
+  const displaceSurfaceGeometry = useCallback((strength: number) => {
+    const state = stateRef.current;
+    if (!state || !manifest.surface) return;
+    const texture = state.inspectionEntries
+      .flatMap(entry => entry.slots)
+      .find(slot => slot.maps.displacement)?.maps.displacement;
+    const image = texture?.image as HTMLImageElement | undefined;
+    if (!image || !image.width || !image.height) return;
+    const width = 256, height = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+    context.drawImage(image, 0, 0, width, height);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    const scale = SURFACE_DISPLACEMENT * (strength / 100);
+    for (const [geometry, base] of surfaceGeometry.current) {
+      const position = geometry.getAttribute("position");
+      const normal = geometry.getAttribute("normal");
+      const uv = geometry.getAttribute("uv");
+      if (!position || !normal || !uv) continue;
+      const array = position.array as Float32Array;
+      for (let index = 0; index < position.count; index += 1) {
+        const u = Math.min(width - 1, Math.max(0, Math.round(uv.getX(index) * (width - 1))));
+        const v = Math.min(height - 1, Math.max(0, Math.round((1 - uv.getY(index)) * (height - 1))));
+        const heightValue = pixels[(v * width + u) * 4] / 255 - 0.5;
+        const offset = index * 3;
+        array[offset] = base.positions[offset] + base.normals[offset] * heightValue * scale;
+        array[offset + 1] = base.positions[offset + 1] + base.normals[offset + 1] * heightValue * scale;
+        array[offset + 2] = base.positions[offset + 2] + base.normals[offset + 2] * heightValue * scale;
+      }
+      position.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+    state.renderer.domElement.dataset.surfaceDisplaced = "true";
+  }, [manifest.surface]);
+
   const changeWireframe = (value: boolean): void => {
     if (value) {
       setDisplayMode("pbr");
       setActiveMap(null);
+      if (manifest.surface) displaceSurfaceGeometry(displacement);
+    } else if (manifest.surface) {
+      restoreSurfaceGeometry();
     }
     setWireframe(value);
   };
+
+  useEffect(() => {
+    const state = stateRef.current;
+    if (!state) return;
+    const scale = SURFACE_DISPLACEMENT * (displacement / 100);
+    for (const entry of state.inspectionEntries) {
+      for (const slot of entry.slots) {
+        for (const material of materialList(slot.original)) {
+          if (!(material instanceof THREE.MeshStandardMaterial) || !material.displacementMap) continue;
+          material.displacementScale = scale;
+          material.displacementBias = -scale / 2;
+        }
+      }
+    }
+    if (manifest.surface) {
+      if (wireframe) {
+        clearWireframe(state);
+        displaceSurfaceGeometry(displacement);
+        applyWireframe(state, true);
+      } else {
+        restoreSurfaceGeometry();
+      }
+    }
+    state.render();
+  }, [displacement, loading, manifest.surface, wireframe, displaceSurfaceGeometry, restoreSurfaceGeometry]);
 
   const environmentDegrees = Math.round((((environmentAngle * 180) / Math.PI) % 360 + 360) % 360);
   const qualityLabel = useMemo(() => modelQualityLabel(quality), [quality]);
@@ -1546,6 +1621,10 @@ export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "p
         <div ref={dialog} tabIndex={-1} className="model-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${name} sphere preview`}>
           <div className="model-viewer-fullscreen-card">
             <ModelViewer fullscreen manifest={manifest} quality={appliedQuality} lod="lowest" onClose={close} />
+            {qualities.length > 1 && <div className="model-viewer-quality-bar">
+              <label>Textures <select className="native-select" value={appliedQuality} onChange={event => setQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
+              <span className="model-viewer-quality-note">Sphere surface preview</span>
+            </div>}
           </div>
         </div>,
         document.body

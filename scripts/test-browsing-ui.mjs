@@ -74,7 +74,7 @@ const api = {
    public:{status:async()=>({state:'ready',count:1,refreshedAt:1}),refresh:async()=>({state:'ready',count:1,refreshedAt:1}),categories:async()=>[],onStatus:noop,
      search:async query=>{calls.push({kind:'publicSearch',query});const hit=publicHit(query.provider);const available=publicEnabled&&!query.types?.includes('__none__')&&query.ids?.length!==0;const all=publicMany?Array.from({length:96},(_,index)=>({...hit,id:hit.id+'-'+index,name:hit.name+' '+index})):[hit];const offset=query.offset??0,limit=query.limit??60;return {hits:available?all.slice(offset,offset+limit):[],total:available?all.length:0,hasMore:available&&offset+limit<all.length,offset,limit,tookMs:1,facets:{types:[{value:hit.type,count:1}],licenses:[{value:hit.license,count:1}],resolutions:[{value:'2K',count:1},{value:'4K',count:1}],mapTypes:[],modelFormats:[],categories:[],weather:[{value:'clear',count:1}],free:1}}},
      ids:async query=>[publicHit(query.provider).id],extended:async(provider,id)=>({...publicHit(provider),id,raw:{}}),
-     previews:async(provider,id)=>{const assetId=provider+':'+id;const base={type:'JPG',label:'Panorama preview',url:publicImage,assetId,panorama:true,map:{type:'JPG'},exposure:{assetId,mapType:'JPG'}};const hdr={type:'HDR',label:'HDR · live exposure',url:publicImage,assetId,panorama:true,exposure:{assetId,mapType:'HDR'}};if(surfaceMode)return {renders:[{type:'preview',label:'Render',url:image}],maps:[{type:'albedo',label:'Albedo',url:'https://example.invalid/fixture_albedo.png'},{type:'normal',label:'Normal',url:'https://example.invalid/fixture_normal.png'},{type:'roughness',label:'Roughness',url:'https://example.invalid/fixture_roughness.png'},{type:'displacement',label:'Displacement',url:'https://example.invalid/fixture_displacement.png'}],hdrAvailable:false};return {renders:[{type:'preview',label:'Render',url:image}],maps:provider==='openhdri'?[base]:[base,hdr],hdrAvailable:provider!=='openhdri',note:provider==='openhdri'?'OpenHDRI publishes 16K EXRs only. Live HDR exposure is disabled because 16K exceeds the safe 8K preview budget for most systems.':undefined}},
+     previews:async(provider,id)=>{const assetId=provider+':'+id;const base={type:'JPG',label:'Panorama preview',url:publicImage,assetId,panorama:true,map:{type:'JPG'},exposure:{assetId,mapType:'JPG'}};const hdr={type:'HDR',label:'HDR · live exposure',url:publicImage,assetId,panorama:true,exposure:{assetId,mapType:'HDR'}};if(surfaceMode)return {renders:[{type:'preview',label:'Render',url:image}],maps:['albedo','normal','roughness','displacement'].flatMap(type=>['1K','2K'].map(tier=>({type,label:type,resolution:tier,url:'https://example.invalid/fixture_'+type+'_'+tier+'.png'}))),hdrAvailable:false};return {renders:[{type:'preview',label:'Render',url:image}],maps:provider==='openhdri'?[base]:[base,hdr],hdrAvailable:provider!=='openhdri',note:provider==='openhdri'?'OpenHDRI publishes 16K EXRs only. Live HDR exposure is disabled because 16K exceeds the safe 8K preview budget for most systems.':undefined}},
      highResolutionPreview:async(provider,id,type)=>{calls.push({kind:'publicHighResolution',provider,id,type});return {type,label:type,url:publicImage}},
      hdrPreview:async(provider,id)=>{calls.push({kind:'publicHdr',provider,id});return {width:2,height:1,resolution:'fixture',data:new Uint16Array(8).fill(15360)}},
      cancelPreviews:async(provider,id)=>{calls.push({kind:'publicCancelPreviews',provider,id})}},
@@ -682,11 +682,24 @@ app.whenReady().then(async()=>{
       const surfaceDrawer=document.querySelector('.drawer');
       button(surfaceDrawer,'Sphere').click();
       await until(()=>surfaceDrawer.querySelector('.surface-preview .model-viewer-canvas'),'Sphere surface preview did not render');
-      assert(surfaceDrawer.querySelector('.model-viewer-canvas').width>0,'Sphere canvas has no drawing buffer');
+      const sphereCanvas=surfaceDrawer.querySelector('.model-viewer-canvas');
+      assert(sphereCanvas.width>0,'Sphere canvas has no drawing buffer');
       assert(!surfaceDrawer.querySelector('.image-viewer'),'Image viewer opened instead of the sphere');
+      const inlineQuality=surfaceDrawer.querySelector('.model-preview-controls select');
+      assert(inlineQuality && inlineQuality.options.length>1,'Inline sphere quality selector missing');
+      inlineQuality.value='2048';inlineQuality.dispatchEvent(new Event('change',{bubbles:true}));await wait(300);
+      assert(inlineQuality.value==='2048','Inline quality selector did not apply');
       button(surfaceDrawer,'Full screen').click();
       await until(()=>document.querySelector('.model-viewer-overlay'),'Sphere fullscreen missing');
       assert(document.querySelector('.model-viewer-overlay input[aria-label="Surface displacement strength"]'),'Displacement strength control missing');
+      assert(document.querySelector('.model-viewer-quality-bar select'),'Fullscreen quality selector missing');
+      const wire=document.querySelector('.model-viewer-overlay input[type=checkbox]');
+      wire.click(); await until(()=>document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Wireframe did not displace the sphere geometry');
+      const strength=document.querySelector('.model-viewer-overlay input[aria-label="Surface displacement strength"]');
+      strength.value='150';strength.dispatchEvent(new Event('input',{bubbles:true}));await wait(80);
+      assert(document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Displacement update dropped the displaced wireframe');
+      wire.click(); await wait(80);
+      assert(!document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced,'Wireframe-off did not restore the base sphere');
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
       await until(()=>!document.querySelector('.model-viewer-overlay'),'Escape did not close the sphere fullscreen');
       window.fixtureSurface(false);

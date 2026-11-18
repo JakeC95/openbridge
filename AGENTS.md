@@ -82,9 +82,12 @@ Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new wor
   Restore all clears exclusions; the Sources menu still opens a focused single-provider view.
 - Surface assets now have a **Sphere** preview in the drawer. It reuses the 3D viewer's
   manifest/material/UV/map pipeline with a dense sphere, applies every published map (including
-  real vertex displacement with a 0–200% strength control), supports the inspector channels and
-  full-screen focus handling, and is available for local Megascans maps plus ambientCG, BlenderKit,
-  Poly Haven and Poliigon texture previews. HDRIs stay on their panorama viewer.
+  real vertex displacement with a 0–200% strength control), exposes every available texture tier
+  inline and in full screen, supports the inspector channels and full-screen focus handling, and is
+  available for local Megascans maps plus ambientCG, BlenderKit, Poly Haven and Poliigon texture
+  previews. Wireframe displaces the actual sphere geometry on the CPU, then rebuilds the lines, so
+  it shows the generated surface shape rather than the smooth base sphere. HDRIs stay on their
+  panorama viewer.
 - Catalog preview downloads are cache-only under `userData/model-previews`, use the provider's
   signed/entitled endpoints, and are pruned as a rolling 2 GB LRU. Megascans now requests the
   selected 1K–8K/LOD tier through the account's `v1/downloads` signing path, exposing LOD0–5 for
