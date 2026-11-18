@@ -9,8 +9,11 @@ permissions:
   contents: write
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  package:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     env:
       OPENBRIDGE_EPIC_CLIENT_ID: ${{ secrets.OPENBRIDGE_EPIC_CLIENT_ID }}
       OPENBRIDGE_ALGOLIA_APP_ID: ${{ secrets.OPENBRIDGE_ALGOLIA_APP_ID }}
@@ -30,27 +33,52 @@ jobs:
           cache: npm
 
       - name: Verify service configuration
-        shell: pwsh
+        shell: bash
         run: |
-          if (-not $env:OPENBRIDGE_EPIC_CLIENT_ID) { throw "OPENBRIDGE_EPIC_CLIENT_ID secret is not set" }
-          if (-not $env:OPENBRIDGE_ALGOLIA_API_KEY) { throw "OPENBRIDGE_ALGOLIA_API_KEY secret is not set" }
+          : "${OPENBRIDGE_EPIC_CLIENT_ID:?Missing Epic client ID}"
+          : "${OPENBRIDGE_ALGOLIA_APP_ID:?Missing Algolia app ID}"
+          : "${OPENBRIDGE_ALGOLIA_API_KEY:?Missing Algolia API key}"
 
       - run: npm ci
-      - run: node node_modules/electron/install.js
       - run: npm run typecheck
       - run: npm run check:public
       - run: npm run dist:portable
 
-      - shell: pwsh
+      - name: Generate update manifest
+        shell: bash
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          $zip = Get-ChildItem "dist" -Filter "OpenBridge-$version-win-x64-portable.zip" | Select-Object -First 1
-          if (-not $zip) { throw "Portable zip not found" }
-          node scripts/make-update-manifest.mjs $version $zip.FullName
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            archive="dist/OpenBridge-$version-win-x64-portable.zip"
+          else
+            archive="dist/OpenBridge-$version-linux-x64-portable.tar.gz"
+          fi
+          node scripts/make-update-manifest.mjs "$version" "$archive"
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-${{ runner.os }}
+          path: |
+            dist/OpenBridge-*-portable.zip
+            dist/OpenBridge-*-portable.tar.gz
+            latest*.json
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/OpenBridge-*-win-x64-portable.zip
-            latest.json
+            release/dist/OpenBridge-*-win-x64-portable.zip
+            release/dist/OpenBridge-*-linux-x64-portable.tar.gz
+            release/latest.json
+            release/latest-linux-x64.json
+          fail_on_unmatched_files: true
           generate_release_notes: true

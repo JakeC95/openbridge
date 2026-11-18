@@ -2,7 +2,7 @@
 
 ## Project
 
-OpenBridge is a public, open-source Windows x64 app for browsing, downloading and managing a local
+OpenBridge is a public, open-source Windows and Linux x64 app for browsing, downloading and managing a local
 content library. Its first provider is Quixel Megascans; Poliigon catalogue browsing is implemented
 as a second provider (auth/downloads still in progress). It is an Electron 45 + React 19 + TypeScript
 application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution model.
@@ -12,7 +12,7 @@ application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution 
 - Current app version: `1.6.2`
 - Latest published release: `v1.6.2`
 - Repo visibility: public
-- Distribution: portable ZIP only; no installer, Linux or macOS build
+- Distribution: Windows portable ZIP and Linux portable tar.gz
 - The repository owner/name is discovered at build time and must not be hard-coded
 
 Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new work is ready to publish.
@@ -518,10 +518,9 @@ Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new wor
 
 ## Mandatory checks
 
-Run from the repository root in PowerShell:
+Run from the repository root with Node.js 24 or newer:
 
-```powershell
-$env:Path = "$PWD\tools\node-v24.22.1-win-x64;$env:Path"
+```sh
 npm run check
 npm run build
 npm run check:public
@@ -536,8 +535,8 @@ For packaging:
 npm run dist:portable
 ```
 
-GitHub Actions `Quality` runs typecheck + public check on pushes, pull requests and manual dispatch.
-The release workflow runs only on `v*` tags and publishes the portable ZIP plus `latest.json`.
+GitHub Actions `Quality` checks Windows and Linux. The release workflow runs on `v*` tags and
+publishes the portable archives and platform update manifests.
 
 There is no unit-test suite. Verification is typecheck, build, public check, portable packaging and
 the manual checklist in `docs/TESTING.md`.

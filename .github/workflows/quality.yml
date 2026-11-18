@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   check:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -23,7 +26,15 @@ jobs:
       - run: npm run typecheck
       - run: npm run check:public
       - run: npm run test:browsing
-      - run: npm run test:network
+      - if: runner.os == 'Windows'
+        run: npm run test:network
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:network
       - run: npm run test:providers
       - run: npm run build
-      - run: npm run test:browsing:ui
+      - if: runner.os == 'Windows'
+        run: npm run test:browsing:ui
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a -s '-screen 0 1920x1080x24' npm run test:browsing:ui
+        env:
+          OPENBRIDGE_UI_SOFTWARE_GL: '1'

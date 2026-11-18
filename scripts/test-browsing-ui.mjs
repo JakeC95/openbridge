@@ -473,7 +473,28 @@ app.whenReady().then(async()=>{
        win.setSize(Math.min(requestedWidth,area.width),Math.min(1080,area.height));
        await win.webContents.executeJavaScript(\`document.querySelectorAll('.nav-item')[0].click();window.fixtureDownloading();\`);
        await new Promise(resolve=>setTimeout(resolve,200));
-       await win.webContents.executeJavaScript(\`document.querySelector('.discover .asset-area').scrollTop=500;document.querySelector('.discover .asset-card').click();\`);
+       await win.webContents.executeJavaScript(\`(async () => {
+         const until = async (ready, message) => {
+           const deadline = Date.now() + 4000;
+           while (!ready()) {
+             if (Date.now() > deadline) throw new Error(message);
+             await new Promise(resolve => setTimeout(resolve, 40));
+           }
+         };
+         const area = () => document.querySelector('.discover .asset-area');
+         await until(() => area() && area().scrollHeight > area().clientHeight, 'Catalogue did not become scrollable');
+         // Wait for the view's two-frame scroll restoration, then scroll the active grid.
+         const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+         for (let index = 0; index < 4; index++) await frame();
+         area().scrollTop = 500;
+         await frame();
+         await frame();
+         if (!area().scrollTop) throw new Error('Catalogue did not hold its scroll position before opening the drawer');
+         const top = area().getBoundingClientRect().top;
+         const card = [...area().querySelectorAll('.asset-card')].find(node => node.getBoundingClientRect().bottom > top);
+         if (!card) throw new Error('Scrolled catalogue had no visible card');
+         card.click();
+       })()\`);
        await new Promise(resolve=>setTimeout(resolve,350));
        const fit=await win.webContents.executeJavaScript(\`(()=>{
          const drawer=document.querySelector('.drawer').getBoundingClientRect();
@@ -486,7 +507,7 @@ app.whenReady().then(async()=>{
        })()\`);
        assert.equal(fit.footer,true,'Sticky footer outside viewport at '+requestedWidth);
        assert.equal(fit.aligned,true,'Drawer is not aligned with the topbar at '+requestedWidth);
-       assert.ok(fit.cards>0&&fit.scrolled,'Reflow blanked or reset scrolled grid at '+requestedWidth);
+       assert.ok(fit.cards>0&&fit.scrolled,'Reflow blanked or reset scrolled grid at '+requestedWidth+': '+JSON.stringify(fit));
        if(fit.docked)assert.equal(fit.overlap,false,'Drawer covers grid at '+requestedWidth);
        if(output)await writeFile(join(output,'workspace-drawer-'+requestedWidth+'.png'),(await win.webContents.capturePage()).toPNG());
        await win.webContents.executeJavaScript(\`[...document.querySelectorAll('.inspector-tabs button')].find(b=>b.textContent==='Overview').click();document.querySelector('.asset-scale-panel').scrollIntoView({block:'center'});\`);
@@ -934,8 +955,12 @@ try {
   await writeFile(join(directory, "main.cjs"), main);
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn(require("electron"), [join(directory, "main.cjs")], { env, stdio: "inherit" });
-  const timeout = setTimeout(() => { child.kill(); }, 60_000);
+  const softwareGl = process.env.OPENBRIDGE_UI_SOFTWARE_GL === "1";
+  const graphicsFlags = softwareGl
+    ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+    : [];
+  const child = spawn(require("electron"), [...graphicsFlags, join(directory, "main.cjs")], { env, stdio: "inherit" });
+  const timeout = setTimeout(() => { child.kill(); }, softwareGl ? 120_000 : 60_000);
   const code = await new Promise((resolve, reject) => {
     child.on("error", reject); child.on("exit", code => resolve(code ?? 1));
   });

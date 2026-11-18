@@ -5,7 +5,7 @@ local absolute paths or downloaded asset files.
 
 ## Automated checks
 
-```powershell
+```sh
 npm ci
 npm run typecheck
 npm run check:public
@@ -16,8 +16,15 @@ npm run dist:portable
 `check:public` fails if tracked files contain personal paths, email addresses, hard-coded account
 names, machine-specific details or likely secrets.
 
-GitHub Actions `Quality` runs type checking and `check:public` on pushes, pull requests and manual
-workflow dispatch. The check only reads tracked files, so stage new files before relying on it.
+GitHub Actions `Quality` runs on Windows and Linux. The public-repository check reads tracked
+files, so stage new files before relying on it.
+
+Run the Electron UI fixture with `npm run test:browsing:ui` on a desktop.
+For a Linux runner without a GPU, use a virtual display and software WebGL for the fixture.
+
+```sh
+OPENBRIDGE_UI_SOFTWARE_GL=1 xvfb-run -a -s '-screen 0 1920x1080x24' npm run test:browsing:ui
+```
 
 ## Manual smoke test
 
@@ -170,10 +177,10 @@ Verify:
 ## Release verification
 
 - Confirm `npm run typecheck` and `npm run check:public` pass.
-- Confirm the portable ZIP starts and reports the tagged version.
-- Confirm the release contains the ZIP, `latest.json` and, when applicable,
-  `catalog-metadata.json.gz`.
-- Verify `latest.json` size and SHA-256 against the uploaded ZIP.
+- Extract each portable archive, launch OpenBridge, and confirm it reports the tagged version.
+- Confirm the release has the Windows ZIP and `latest.json`, the Linux tar.gz and
+  `latest-linux-x64.json`, and the optional `catalog-metadata.json.gz`.
+- Verify each manifest's byte size and SHA-256 against its uploaded archive.
 - Confirm the latest metadata-pack URL resolves when a pack is published.
 
 ## Destructive tests

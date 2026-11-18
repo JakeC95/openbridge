@@ -394,7 +394,7 @@ try {
       assert.deepEqual(await readFile(join(temp, "already.jpg")), body);
     } finally { manager.flushQueue(); manager.closeHistory(); globalThis.fixtureFetch = (...args) => fetch(...args); }
   });
-  await test("real Electron net.fetch streams and resumes correctly on Windows", async () => {
+  await test("real Electron net.fetch streams and resumes correctly", async () => {
     const target = await seed("/electron-range", 16384);
     const entry = join(directory, "electron-network.cjs");
     await build({ stdin: { resolveDir: process.cwd(), loader: "ts", contents: `

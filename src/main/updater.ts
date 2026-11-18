@@ -1,6 +1,7 @@
 import { app, net } from "electron";
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import type { UpdateInfo } from "../shared/types";
@@ -10,7 +11,7 @@ import type { Logger } from "./logger";
 
 const UPDATE_MANIFEST =
   process.env.OPENBRIDGE_UPDATE_MANIFEST?.trim() ||
-  releaseAssetUrl("latest.json");
+  releaseAssetUrl(process.platform === "linux" ? `latest-linux-${process.arch}.json` : "latest.json");
 
 function versionParts(version: string): number[] {
   return version
@@ -46,13 +47,13 @@ async function findFile(root: string, name: string): Promise<string | null> {
   return null;
 }
 
-function extractUpdateZip(zipPath: string, destination: string): Promise<void> {
+function extractUpdateArchive(archive: string, destination: string): Promise<void> {
   const tar =
     process.platform === "win32"
       ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
       : "tar";
   return new Promise((resolve, reject) => {
-    const child = spawn(tar, ["-xf", zipPath, "-C", destination], {
+    const child = spawn(tar, ["-xf", archive, "-C", destination], {
       windowsHide: true,
       stdio: ["ignore", "ignore", "pipe"]
     });
@@ -83,6 +84,8 @@ function extractUpdateZip(zipPath: string, destination: string): Promise<void> {
 }
 
 export class UpdateService {
+  private installing = false;
+
   constructor(private readonly logger: Logger) {}
 
   async check(): Promise<UpdateInfo> {
@@ -111,7 +114,7 @@ export class UpdateService {
         notes?: string;
         releaseNotes?: string;
       };
-      const latest = data.version ?? "";
+      const latest = typeof data.version === "string" && /^\d+\.\d+\.\d+$/.test(data.version) ? data.version : "";
       const info: UpdateInfo = {
         current,
         latest,
@@ -132,33 +135,81 @@ export class UpdateService {
   }
 
   async install(info: UpdateInfo): Promise<void> {
-    if (process.platform !== "win32") {
-      throw new Error("Automatic updates are currently supported on Windows only");
+    if (!app.isPackaged) throw new Error("Update this source checkout with Git, then rebuild OpenBridge.");
+    if (this.installing) throw new Error("An update is already being installed.");
+    this.installing = true;
+    try {
+      // Use the release manifest, rather than trusting package details supplied by the renderer.
+      const update = await this.check();
+      if (update.error) throw new Error(update.error);
+      if (!update.available || update.latest !== info.latest) {
+        throw new Error("The requested update is no longer available.");
+      }
+      if (!update.url || !Number.isSafeInteger(update.size) || (update.size ?? 0) <= 0 || !/^[a-f0-9]{64}$/i.test(update.sha256 ?? "")) {
+        throw new Error("The update manifest is missing package verification details.");
+      }
+      if (process.platform === "linux") await this.installLinux(update);
+      else if (process.platform === "win32") await this.installWindows(update);
+      else throw new Error("Portable updates are unavailable on this platform.");
+      app.quit();
+    } catch (error) {
+      this.installing = false;
+      throw error;
     }
-    if (!info.url) throw new Error("This update has no download URL");
+  }
 
-    const tempRoot = join(app.getPath("temp"), "openbridge-update");
-    const zipPath = join(tempRoot, "update.zip");
-    await rm(tempRoot, { recursive: true, force: true });
-    await mkdir(tempRoot, { recursive: true });
+  private async downloadAndExtract(info: UpdateInfo, tempRoot: string): Promise<string> {
+    const archive = join(tempRoot, "update.archive");
     this.logger.info("Downloading update", { version: info.latest, url: info.url });
-    await downloadFile(info.url, zipPath, undefined, 60);
+    await downloadFile(info.url!, archive, undefined, 60);
 
-    const file = await readFile(zipPath);
-    if (info.size && file.byteLength !== info.size) {
+    if ((await stat(archive)).size !== info.size) {
       throw new Error("Update size verification failed");
     }
-    if (info.sha256) {
-      const hash = createHash("sha256").update(file).digest("hex");
-      if (hash.toLowerCase() !== info.sha256.toLowerCase()) {
-        throw new Error("Update checksum verification failed");
-      }
+    const hash = createHash("sha256");
+    for await (const chunk of createReadStream(archive)) hash.update(chunk);
+    if (hash.digest("hex") !== info.sha256?.toLowerCase()) {
+      throw new Error("Update checksum verification failed");
     }
 
     const extracted = join(tempRoot, "extracted");
     await mkdir(extracted, { recursive: true });
-    this.logger.info("Extracting update", { zipPath });
-    await extractUpdateZip(zipPath, extracted);
+    await extractUpdateArchive(archive, extracted);
+    await rm(archive);
+    return extracted;
+  }
+
+  private async installLinux(info: UpdateInfo): Promise<void> {
+    const targetRoot = dirname(app.getPath("exe"));
+    const parent = dirname(targetRoot);
+    const stage = await mkdtemp(join(parent, ".openbridge-update-"));
+    try {
+      const extracted = await this.downloadAndExtract(info, stage);
+      const source = join(extracted, `OpenBridge-${info.latest}-linux-${process.arch}-portable`);
+      await access(join(source, "OpenBridge"), constants.X_OK);
+      await access(join(source, "resources", "app", "package.json"), constants.R_OK);
+      const backup = join(stage, "previous");
+      const script = [
+        'while kill -0 "$1" 2>/dev/null; do sleep 0.2; done',
+        'mv -T -- "$2" "$4" || exit 1',
+        'if ! mv -T -- "$3" "$2"; then mv -T -- "$4" "$2"; exit 1; fi',
+        'cd "$2" || exit 1',
+        'shift 4',
+        'exec "./OpenBridge" "$@"'
+      ].join("\n");
+      await this.launchInstaller("/bin/sh", [
+        "-c", script, "openbridge-update", String(process.pid), targetRoot, source, backup, ...process.argv.slice(1)
+      ], parent);
+      this.logger.info("Linux update installer started", { targetRoot, backup });
+    } catch (error) {
+      await rm(stage, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async installWindows(info: UpdateInfo): Promise<void> {
+    const tempRoot = await mkdtemp(join(app.getPath("temp"), "openbridge-update-"));
+    const extracted = await this.downloadAndExtract(info, tempRoot);
     const exe = await findFile(extracted, "OpenBridge.exe");
     if (!exe) throw new Error("Update package did not contain OpenBridge.exe");
     this.logger.info("Update extracted", { exe });
@@ -176,7 +227,7 @@ export class UpdateService {
     ].join("\r\n");
     await writeFile(scriptPath, script, "utf8");
 
-    const child = spawn(
+    await this.launchInstaller(
       "powershell.exe",
       [
         "-NoProfile",
@@ -190,10 +241,17 @@ export class UpdateService {
         sourceRoot,
         targetRoot
       ],
-      { detached: true, stdio: "ignore" }
+      tempRoot
     );
-    child.unref();
     this.logger.info("Update installer started", { sourceRoot, targetRoot });
-    app.quit();
+  }
+
+  private async launchInstaller(command: string, args: string[], cwd: string): Promise<void> {
+    const child = spawn(command, args, { cwd, detached: true, stdio: "ignore" });
+    await new Promise<void>((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    child.unref();
   }
 }

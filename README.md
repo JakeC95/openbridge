@@ -1,6 +1,6 @@
 # OpenBridge
 
-OpenBridge is an open-source, portable Windows desktop app for browsing, downloading and managing a
+OpenBridge is an open-source, portable desktop app for Windows and Linux for browsing, downloading and managing a
 local content library. It started as a clean-room reimplementation of the discontinued Megascans
 Bridge workflow and now also indexes the public Poliigon, Poly Haven, ambientCG, BlenderKit and
 OpenHDRI catalogues as additional providers. It ships with an independent interface and no bundled
@@ -13,12 +13,12 @@ binaries.
 
 ## Download
 
-Download the latest portable ZIP from the repository's **Releases** page, extract it, and run
-`OpenBridge.exe`. No installer or administrator access is required.
+Download the archive for your platform from **Releases**, extract it, and run
+`OpenBridge.exe` on Windows or `./OpenBridge` on Linux. If a release only has a Windows ZIP,
+you can build the Linux archive using the commands below.
 
-The portable package is the only supported distribution. Settings, the encrypted Epic session and
-the local index live in `%APPDATA%\openbridge`, so the app folder can be moved or replaced without
-losing user data.
+Settings, saved sessions and the local index live outside the portable folder. Windows uses
+`%APPDATA%\openbridge`. Linux uses `${XDG_CONFIG_HOME:-$HOME/.config}/OpenBridge`.
 
 ## Highlights
 
@@ -38,7 +38,7 @@ losing user data.
   textures, models and HDRIs), 332-category tree, local full-text search, free/credit badges, facets,
   previews, watermarked map previews and technical metadata. No Poliigon account or third-party
   search key is required for browsing.
-- **Poliigon account (1.6.2)** with browser sign-in, DPAPI-encrypted token storage, plan and
+- **Poliigon account (1.6.2)** with browser sign-in, system credential storage, plan and
   credit balance, owned-asset sync and owned badges. Password sign-in is hidden because Poliigon
   currently rejects addon password login.
 - **Poliigon downloads (1.6.2)** with resolution/map/LOD/renderer options, resumable file
@@ -85,8 +85,7 @@ losing user data.
   category tags no longer leak into weather results. HDRI filters are ordered by sky condition, and
   cards show the resolved weather and time for quick verification.
 - **Visual inspection** with expanded render/map previews, zoom/pan and offline JPG/PNG/WebP maps.
-- **Epic sign-in** via OAuth. Tokens are encrypted with Windows DPAPI (`safeStorage`); passwords are
-  never stored.
+- **Epic sign-in** via OAuth. OpenBridge uses the system credential store to save tokens.
 - **Download engine** with per-type presets, map/LOD/variation selection, resumable transfers, size
   verification, pause/resume, persistent queues and the original library folder layout.
 - **Transfer awareness (1.6.2)** with sidebar progress, a mini queue, session totals, volume
@@ -105,21 +104,22 @@ losing user data.
 
 ## Requirements
 
-- Windows 10 or Windows 11, x64
-- An Epic account with access to the assets you download
-- Node.js 24+ and npm for development only
+- Windows 10 or 11 x64, or a Linux x64 desktop. The Linux build was exercised on Rocky Linux 9.5.
+- A desktop keyring on Linux for saving credentials, and WebGL 2 for 3D and HDR previews.
+- Provider accounts where required. Public catalogue browsing works without an Epic account.
+- Node.js 24+ and npm when running from source or building a package.
 
 ## Getting started
 
-```powershell
+```sh
 npm ci
 npm run typecheck
 npm run start
 ```
 
-For a portable build:
+Build a portable archive for the current platform.
 
-```powershell
+```sh
 npm run dist:portable
 ```
 
@@ -128,8 +128,8 @@ metadata-pack details.
 
 ## Configuration
 
-Copy `config.local.example.json` to `config.local.json` and fill in the legacy service values needed
-for catalogue and authentication. The local file is git-ignored and must never be committed.
+For Megascans catalogue and sign-in, copy `config.local.example.json` to `config.local.json`
+and fill in the legacy service values. The local file is git-ignored and must never be committed.
 Equivalent environment overrides are documented in [docs/BUILD.md](docs/BUILD.md).
 
 The release and update URLs are derived from the build repository, so the source tree does not
@@ -138,9 +138,8 @@ outside a Git checkout.
 
 ## Project automation
 
-- `.github/workflows/quality.yml` runs type checking and the public-repository hygiene check on
-  pushes and pull requests.
-- `.github/workflows/release.yml` builds and publishes the portable ZIP and `latest.json` when a
+- `.github/workflows/quality.yml` runs checks on Windows and Linux on pushes and pull requests.
+- `.github/workflows/release.yml` publishes packages and update manifests for both platforms when a
   `v*` tag is pushed.
 - `npm run check:public` scans tracked text files for credentials, personal paths, account details
   and machine-specific data.
@@ -158,8 +157,7 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 
 ## Limitations
 
-- Windows x64 portable builds only.
-- No installer, Linux or macOS build.
+- Distribution is available as portable x64 builds for Windows and Linux.
 - Poliigon browsing, account sign-in, downloads and local-library indexing are available since
   1.6.2. Free assets still require sign-in. In-app purchases are intentionally
   not implemented; OpenBridge assumes you already have access through your subscription or owned

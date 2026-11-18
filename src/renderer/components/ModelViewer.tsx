@@ -990,6 +990,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   const [availableChannels, setAvailableChannels] = useState<ModelMapType[]>([]);
   const [decodedSizes, setDecodedSizes] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [graphicsRetry, setGraphicsRetry] = useState(0);
   const displayRef = useRef<DisplayOptions>({ mode: "pbr", map: null, singleSided: Boolean(manifest.surface), wireframe: false });
   const clickStart = useRef<{ x: number; y: number } | null>(null);
   const stateRef = useRef<ViewerState | null>(null);
@@ -1003,7 +1004,14 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     const scene = new THREE.Scene();
     scene.background = null;
     const camera = new THREE.PerspectiveCamera(42, 1, 0.01, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    } catch {
+      setError("This desktop session could not start WebGL 2. You can still use the render and map previews.");
+      setLoading(false);
+      return;
+    }
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1;
@@ -1163,7 +1171,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       framedAsset.current = "";
       surfaceGeometry.current.clear();
     };
-  }, [fullscreen]);
+  }, [fullscreen, graphicsRetry]);
 
   useEffect(() => {
     const state = stateRef.current;
@@ -1617,7 +1625,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       />
       {loading && <div className="model-viewer-status"><span className="spinner" /><strong>Loading {qualityLabel} textures…</strong><span>{meshLabel}</span></div>}
       {!loading && pendingLabel && <div className="model-viewer-status switch" role="status" aria-live="polite"><span className="spinner" /><strong>{pendingLabel}</strong><span>Downloading and preparing the selected files…</span></div>}
-      {error && <div className="model-viewer-status error" role="alert"><strong>3D preview unavailable</strong><span>{error}</span><button type="button" className="text-btn" onClick={() => { setError(""); setLoading(true); setReloadKey(value => value + 1); }}>Retry</button></div>}
+      {error && <div className="model-viewer-status error" role="alert"><strong>3D preview unavailable</strong><span>{error}</span><button type="button" className="text-btn" onClick={() => { setError(""); setLoading(true); if (stateRef.current) setReloadKey(value => value + 1); else { setGraphicsRetry(value => value + 1); setReloadKey(value => value + 1); } }}>Retry</button></div>}
       {fullscreen && <div className="model-viewer-chrome">
         <div className="model-viewer-chrome-head"><div><strong>{manifest.name}</strong><span>{meshLabel} · {manifest.surface ? decodedSizes || "Texture preview" : qualityLabel}</span></div><button type="button" className="icon-btn model-viewer-close" aria-label="Close 3D viewer" data-modal-autofocus onClick={onClose}><CloseIcon /></button></div>
         <div className="model-viewer-chrome-footer">

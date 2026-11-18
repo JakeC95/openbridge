@@ -16,9 +16,9 @@ function repositoryFromGit() {
 }
 
 const version = (process.argv[2] ?? "").replace(/^v/i, "");
-const zipPath = process.argv[3];
-if (!version || !zipPath) {
-  console.error("Usage: node scripts/make-update-manifest.mjs <version> <portable-zip>");
+const archivePath = process.argv[3];
+if (!version || !archivePath) {
+  console.error("Usage: node scripts/make-update-manifest.mjs <version> <portable-archive>");
   process.exit(1);
 }
 
@@ -33,15 +33,20 @@ if (!repository) {
   process.exit(1);
 }
 
-const file = await readFile(zipPath);
-const info = await stat(zipPath);
+const name = basename(archivePath);
+const linux = name === `OpenBridge-${version}-linux-x64-portable.tar.gz`;
+if (!linux && name !== `OpenBridge-${version}-win-x64-portable.zip`) {
+  throw new Error("The archive name must match the release version and a supported platform.");
+}
+const file = await readFile(archivePath);
+const info = await stat(archivePath);
 const manifest = {
   version,
-  url: `https://github.com/${repository}/releases/download/v${version}/${basename(zipPath)}`,
+  url: `https://github.com/${repository}/releases/download/v${version}/${name}`,
   size: info.size,
   sha256: createHash("sha256").update(file).digest("hex").toUpperCase(),
   notes: `OpenBridge ${version}`
 };
-const target = join(process.cwd(), "latest.json");
+const target = join(process.cwd(), linux ? "latest-linux-x64.json" : "latest.json");
 await writeFile(target, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 console.log(`Wrote ${target}`);

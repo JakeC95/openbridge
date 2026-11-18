@@ -783,7 +783,7 @@ export function LibraryView() {
 
                 {health.duplicates.length > 0 && <section className="duplicate-review">
                   <h3>Review duplicate IDs</h3>
-                  <p className="hint">No files are selected or deleted. Open each folder and verify which copy you want to keep before using Windows to remove anything.</p>
+                  <p className="hint">No files are selected or deleted. Open each folder and verify which copy you want to keep before deleting it in your file manager.</p>
                   {health.duplicates.map(duplicate => <div className="duplicate-group" key={duplicate.assetId}>
                     <strong>{duplicate.assetId}</strong>
                     {duplicate.paths.map(path => <div key={path} className="duplicate-path"><code>{path}</code>

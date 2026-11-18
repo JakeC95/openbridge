@@ -284,7 +284,7 @@ export function SettingsView() {
 
         <section className="settings-section">
           <h2>BlenderKit account</h2>
-          <p className="hint">Browsing is public. Downloads require your own API key and any applicable plan. Your key is encrypted with Windows secure storage; it is never sent to other providers.</p>
+          <p className="hint">Browsing is public. Downloads require your own API key and any applicable plan. Saving the key on Linux requires an unlocked desktop keyring.</p>
           <p className="hint">{blenderKeySaved ? "API key saved. Use Test to verify it with BlenderKit." : "No API key saved."}</p>
           <div className="form-row"><label>API key</label><input type="password" autoComplete="off" aria-label="BlenderKit API key" placeholder="BlenderKit API key" value={blenderKey} onChange={event => setBlenderKey(event.target.value)} /></div>
           <div className="button-row horizontal">
@@ -348,8 +348,8 @@ export function SettingsView() {
                 </button>
               </div>
               <p className="hint">
-                OpenBridge stores only the Poliigon access token, encrypted with Windows DPAPI. Your
-                password is never stored. Owned assets are used only for badges and download checks.
+                OpenBridge uses your system credential store to save the Poliigon access token.
+                Without a Linux keyring, you stay signed in until you close OpenBridge.
               </p>
             </>
           ) : (
@@ -885,7 +885,7 @@ export function SettingsView() {
             </button>
           </div>
           <p className="hint">
-            Updates download, install and restart OpenBridge automatically. No feed URL needed.
+            Portable builds download and install updates automatically, then restart OpenBridge.
           </p>
         </section>
 

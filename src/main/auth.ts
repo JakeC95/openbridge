@@ -1,3 +1,4 @@
+import { hasSecureCredentialStorage } from "./credential-storage";
 import { app, BrowserWindow, safeStorage } from "electron";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -102,9 +103,9 @@ export class AuthService {
   async load(): Promise<AuthState> {
     try {
       let json = "";
-      if (existsSync(this.authFile) && safeStorage.isEncryptionAvailable()) {
+      if (existsSync(this.authFile) && hasSecureCredentialStorage()) {
         json = safeStorage.decryptString(readFileSync(this.authFile));
-      } else if (existsSync(this.legacyFile)) {
+      } else if (process.platform === "win32" && existsSync(this.legacyFile)) {
         json = readFileSync(this.legacyFile, "utf8");
       }
       if (json) {
@@ -292,12 +293,14 @@ export class AuthService {
     if (!this.record) return;
     const json = JSON.stringify(this.record);
     try {
-      if (safeStorage.isEncryptionAvailable()) {
+      if (hasSecureCredentialStorage()) {
         writeFileSync(this.authFile, safeStorage.encryptString(json));
         if (existsSync(this.legacyFile)) rmSync(this.legacyFile);
-      } else {
+      } else if (process.platform === "win32") {
         mkdirSync(dirname(this.legacyFile), { recursive: true });
         writeFileSync(this.legacyFile, json, "utf8");
+      } else {
+        this.logger.warn("Secure credential storage is unavailable. This session will last until the app closes.");
       }
     } catch (error) {
       this.logger.error("Could not persist auth", { error });

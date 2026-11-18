@@ -79,7 +79,7 @@ export function PoliigonLoginDialog() {
         {error && <div className="error-box small" role="alert">{error}</div>}
 
         <p className="hint">
-          OpenBridge stores only the access token, encrypted with Windows DPAPI.
+          OpenBridge uses your system credential store to save the access token.
         </p>
       </div>
     </div>

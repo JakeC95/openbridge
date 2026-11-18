@@ -20,4 +20,5 @@ config.local.*.json
 *.sqlite-*
 catalog-metadata*.json.gz
 latest.json
+latest-linux-*.json
 .opencode/

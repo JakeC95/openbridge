@@ -1,3 +1,4 @@
+import { hasSecureCredentialStorage } from "../credential-storage";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { safeStorage } from "electron";
@@ -19,7 +20,7 @@ export class BlenderKitAuthService {
   private load(): void {
     try {
       const buffer = readFileSync(this.filePath);
-      if (safeStorage.isEncryptionAvailable()) {
+      if (hasSecureCredentialStorage()) {
         this.key = safeStorage.decryptString(buffer).trim();
       }
     } catch {
@@ -55,7 +56,7 @@ export class BlenderKitAuthService {
     const key = value.trim();
     if (!key) return this.clear();
     try {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure credential storage is unavailable; the API key was not saved.");
+      if (!hasSecureCredentialStorage()) throw new Error("Unlock your desktop keyring before saving a BlenderKit API key.");
       const payload = safeStorage.encryptString(key);
       writeFileSync(this.filePath, payload);
       this.key = key;
