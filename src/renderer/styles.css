@@ -608,6 +608,16 @@ code {
 .image-viewer-canvas img { max-width: 100%; max-height: 100%; object-fit: contain; flex: none; }
 .image-viewer-canvas .hdr-canvas, .image-viewer-canvas .pano-canvas { width: 100%; height: 100%; flex: none; display: block; }
 .image-viewer-toolbar .btn.active { background: var(--blue); color: #001823; }
+.preview-mode-switch {
+  display: inline-flex; gap: 2px; padding: 2px; border-radius: 20px; background: #222;
+}
+.preview-mode-switch button {
+  min-height: 30px; padding: 4px 11px; border: 0; border-radius: 18px;
+  background: transparent; color: var(--muted); font-size: 12px; font-weight: 700;
+}
+.preview-mode-switch button:hover { color: var(--text); }
+.preview-mode-switch button.active { background: var(--panel-2); color: var(--text); }
+.model-viewer-quality-bar .preview-mode-switch { margin-right: 4px; }
 .preview-loading, .preview-load-error {
   position: absolute; z-index: 1; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 12px; padding: 16px 20px;

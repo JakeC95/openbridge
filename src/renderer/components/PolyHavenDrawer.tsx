@@ -576,6 +576,7 @@ export function PolyHavenDrawer() {
               type="models"
               isPlant={/plant|foliage|leaf|tree/i.test(`${summary.name} ${summary.tags.join(" ")}`)}
               startFullscreen
+              onMode={mode => { if (mode !== "3d") setModelOpen(false); setMode(mode === "maps" ? "maps" : "renders"); }}
             />}
 
             {mode === "sphere" && summary.type === "textures" ? (
@@ -593,6 +594,7 @@ export function PolyHavenDrawer() {
                     resolveTier={map => map.type
                       ? window.openbridge.polyhaven.highResolutionMapPreview(summary.id, map.type).then(result => result?.url ?? null)
                       : Promise.resolve(null)}
+                    onMode={mode => setMode(mode === "maps" ? "maps" : "renders")}
                   />
                 </div>
               ) : (
@@ -719,6 +721,19 @@ export function PolyHavenDrawer() {
               onClose={() => setViewerOpen(false)}
               loadHighResolution={loadHighResolution}
               loadHdrSource={loadHdrSource}
+              modes={[
+                { id: "render", label: "Render" },
+                { id: "maps", label: "Maps" },
+                ...(summary.type === "textures" ? [{ id: "sphere", label: "Sphere" }] : []),
+                ...(summary.type === "models" ? [{ id: "3d", label: "3D" }] : [])
+              ]}
+              mode={mode === "renders" ? "render" : mode}
+              onMode={id => {
+                setViewerOpen(false);
+                if (id === "sphere") { setMode("sphere"); return; }
+                if (id === "3d") { setModelOpen(true); return; }
+                setMode(id === "maps" ? "maps" : "renders");
+              }}
             />
           )}
 

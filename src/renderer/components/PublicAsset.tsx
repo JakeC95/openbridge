@@ -413,6 +413,7 @@ export function PublicDrawer() {
           path={local?.path}
           type={asset?.type ?? local?.type}
           isPlant={is3dAssetType(asset?.type ?? local?.type) && /plant|foliage|leaf/i.test(`${asset?.type ?? ""} ${asset?.name ?? ""} ${local?.type ?? ""} ${local?.name ?? ""}`)}
+          onMode={mode => { setMode(mode === "maps" ? "maps" : mode === "render" ? "renders" : "3d"); }}
         />
       </div> : mode === "sphere" && canSurface ? <div className="drawer-preview model-drawer-preview">
         {previewSet?.maps.length ? <SurfacePreviewPanel
@@ -423,6 +424,7 @@ export function PublicDrawer() {
           source={local ? "local" : "provider"}
           maxTier={asset?.maxResolution}
           resolveTier={map => map.source ? loadHighResolution(map.source).then(result => result?.url ?? null) : Promise.resolve(null)}
+          onMode={mode => setMode(mode === "maps" ? "maps" : "renders")}
         /> : <span className="map-preview-status">{previewLoading ? "Preparing maps for the sphere preview…" : previewSet?.note || "No browser-readable maps are available for a sphere preview."}</span>}
       </div> : <>
         {image && mode !== "sphere" && <div className="drawer-preview"><button className="expand-preview" type="button" onClick={() => { if (/^(hdr|hdri|hdri-element)$/.test(asset?.type ?? "") && previewSet?.maps.length) { setMode("maps"); setIndex(0); } setViewer(true); }}><SmartThumbImage source={image} direct={drawerDirect} crop={drawerProvider === "openhdri" && (local || !previewSet) ? "top-2-1" : undefined} alt={asset?.name ?? local?.name} /></button></div>}
@@ -440,7 +442,20 @@ export function PublicDrawer() {
           </div>
         </div>}
       </>}
-      {viewer && previews.length > 0 && <ImageViewer items={previews} index={index} onIndex={setIndex} loadHighResolution={provider ? loadHighResolution : undefined} loadHdrSource={provider && previewSet?.hdrAvailable ? loadHdr : undefined} onClose={() => setViewer(false)} />}
+      {viewer && previews.length > 0 && <ImageViewer items={previews} index={index}
+        modes={[
+          { id: "render", label: "Render" },
+          { id: "maps", label: "Maps" },
+          ...(canSurface ? [{ id: "sphere", label: "Sphere" }] : []),
+          ...(canModel ? [{ id: "3d", label: "3D" }] : [])
+        ]}
+        mode={mode === "renders" ? "render" : mode}
+        onMode={id => {
+          if (id === "sphere") { setViewer(false); setMode("sphere"); return; }
+          if (id === "3d") { setViewer(false); setMode("3d"); return; }
+          setMode(id === "maps" ? "maps" : "renders");
+        }}
+        onIndex={setIndex} loadHighResolution={provider ? loadHighResolution : undefined} loadHdrSource={provider && previewSet?.hdrAvailable ? loadHdr : undefined} onClose={() => setViewer(false)} />}
       <h2 className="drawer-title">{asset?.name ?? local?.name}</h2><p className="drawer-id">{key}</p>
       <div className="inspector-tabs">{["overview", "technical", "download", ...(local ? [] : ["related"])].map(value => <button type="button" key={value} className={section === value ? "active" : ""} onClick={() => setSection(value)}>{value === "download" ? (local ? "Files" : "Download") : value[0].toUpperCase() + value.slice(1)}</button>)}</div>
       {detailError && <div className="error-box" role="alert">{detailError}<button type="button" className="text-btn" onClick={() => selection && void usePublicStore.getState().open(selection)}>Retry</button></div>}

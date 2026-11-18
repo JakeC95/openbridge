@@ -88,7 +88,9 @@ Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new wor
   full-screen focus handling, and is available for local Megascans maps plus ambientCG, BlenderKit,
   Poly Haven and Poliigon texture previews. Wireframe displaces the actual sphere geometry on the
   CPU, then rebuilds the lines, so it shows the generated surface shape rather than the smooth base
-  sphere. HDRIs stay on their panorama viewer.
+  sphere. HDRIs stay on their panorama viewer. The Render/Maps/Sphere switch remains available inside
+  full-screen image and sphere viewers, and the equivalent Render/Maps/3D switch stays inside the 3D
+  full-screen viewer, so changing mode no longer requires closing full screen first.
 - Catalog preview downloads are cache-only under `userData/model-previews`, use the provider's
   signed/entitled endpoints, and are pruned as a rolling 2 GB LRU. Megascans now requests the
   selected 1K–8K/LOD tier through the account's `v1/downloads` signing path, exposing LOD0–5 for

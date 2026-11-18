@@ -588,6 +588,10 @@ export function AssetDrawer() {
               path={local?.path}
               type={assetType}
               isPlant={/3dplant|plant|foliage/i.test(`${assetType} ${hit?.name ?? local?.name ?? ""}`)}
+              onMode={mode => {
+                if (mode === "maps") { void openMaps(); return; }
+                setPreviewMode(mode === "render" ? "render" : "3d");
+              }}
             /> : previewMode === "sphere" && surfacePreview ? (
               availableMaps.length > 0 ? <SurfacePreviewPanel
                 maps={availableMaps.map(map => ({ url: map.url, type: map.type, label: map.label, resolution: map.resolution, source: map }))}
@@ -597,6 +601,10 @@ export function AssetDrawer() {
                 source={local ? "local" : "provider"}
                 maxTier={maxResolution}
                 resolveTier={(map) => map.source ? loadHighResolution(map.source).then(result => result?.url ?? null) : Promise.resolve(null)}
+                onMode={mode => {
+                  if (mode === "maps") { void openMaps(); return; }
+                  setPreviewMode("render");
+                }}
               /> : <span className="map-preview-status">
                 {mapsLoading ? "Preparing maps for the sphere preview…" : mapsError || "No browser-readable maps are available for a sphere preview."}
               </span>
@@ -694,6 +702,19 @@ export function AssetDrawer() {
           {viewerOpen && previewItems.length > 0 && <ImageViewer items={previewItems}
             index={previewMode === "maps" ? mapIndex : renderIndex}
             loadHighResolution={loadHighResolution}
+            modes={[
+              { id: "render", label: "Render" },
+              { id: "maps", label: "Maps" },
+              ...(surfacePreview ? [{ id: "sphere", label: "Sphere" }] : []),
+              ...(threeD ? [{ id: "3d", label: "3D" }] : [])
+            ]}
+            mode={previewMode}
+            onMode={id => {
+              if (id === "sphere") { setViewerOpen(false); void openSphere(); return; }
+              if (id === "3d") { setViewerOpen(false); setPreviewMode("3d"); return; }
+              if (id === "maps") { void openMaps(); return; }
+              setPreviewMode("render");
+            }}
             onIndex={previewMode === "maps" ? setMapIndex : setRenderIndex} onClose={() => setViewerOpen(false)} />}
 
           <h2 className="drawer-title" title={name}>{name}</h2>

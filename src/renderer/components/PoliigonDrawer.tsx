@@ -690,6 +690,7 @@ export function PoliigonDrawer() {
               type="Models"
               isPlant={/plant|foliage|leaf|tree/i.test(`${selection.summary.name} ${selection.summary.tags.join(" ")}`)}
               startFullscreen
+              onMode={mode => { if (mode !== "3d") setModelOpen(false); setMode(mode === "maps" ? "maps" : "renders"); }}
             />}
 
             {mode === "sphere" && ["Textures", "Brushes"].includes(selection.summary.type) ? (
@@ -707,6 +708,7 @@ export function PoliigonDrawer() {
                     resolveTier={map => map.type
                       ? window.openbridge.poliigon.highResolutionMapPreview(selection.summary.id, map.type).then(result => result?.url ?? null)
                       : Promise.resolve(null)}
+                    onMode={mode => setMode(mode === "maps" ? "maps" : "renders")}
                   />
                 </div>
               ) : (
@@ -881,6 +883,19 @@ export function PoliigonDrawer() {
               onClose={() => setViewerOpen(false)}
               loadHighResolution={loadHighResolution}
               loadHdrSource={loadHdrSource}
+              modes={[
+                { id: "render", label: "Render" },
+                { id: "maps", label: "Maps" },
+                ...(["Textures", "Brushes"].includes(selection.summary.type) ? [{ id: "sphere", label: "Sphere" }] : []),
+                ...(selection.summary.type === "Models" ? [{ id: "3d", label: "3D" }] : [])
+              ]}
+              mode={mode === "renders" ? "render" : mode}
+              onMode={id => {
+                setViewerOpen(false);
+                if (id === "sphere") { setMode("sphere"); return; }
+                if (id === "3d") { setModelOpen(true); return; }
+                setMode(id === "maps" ? "maps" : "renders");
+              }}
             />
           )}
 

@@ -1596,10 +1596,11 @@ export interface SurfacePreviewPanelProps {
   /** Highest provider-published map tier, used for on-demand quality options. */
   maxTier?: number | null;
   resolveTier?: (map: SurfacePreviewMap, tier: number) => Promise<string | null>;
+  onMode?: (mode: "render" | "maps") => void;
 }
 
 /** Wrap a 2D surface map set around a sphere using the 3D viewer pipeline. */
-export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "provider", className = "", maxTier, resolveTier }: SurfacePreviewPanelProps) {
+export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "provider", className = "", maxTier, resolveTier, onMode }: SurfacePreviewPanelProps) {
   const [tierMaps, setTierMaps] = useState<SurfacePreviewMap[] | null>(null);
   const [tierLoading, setTierLoading] = useState(false);
   const [quality, setQuality] = useState(1024);
@@ -1659,6 +1660,11 @@ export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "p
           <div className="model-viewer-fullscreen-card">
             <ModelViewer fullscreen manifest={manifest} quality={appliedQuality} lod="lowest" onClose={close} />
             <div className="model-viewer-quality-bar">
+              {onMode && <div className="preview-mode-switch" role="group" aria-label="Preview mode">
+                <button type="button" onClick={() => { setFullscreen(false); onMode("render"); }}>Render</button>
+                <button type="button" onClick={() => { setFullscreen(false); onMode("maps"); }}>Maps</button>
+                <button type="button" className="active" aria-pressed="true">Sphere</button>
+              </div>}
               <label>Textures <select className="native-select" value={appliedQuality} disabled={tierLoading} onChange={event => void selectQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
               <span className="model-viewer-quality-note">{tierLoading ? `Loading ${modelQualityLabel(appliedQuality)} maps…` : "Sphere surface preview"}</span>
             </div>
@@ -1680,9 +1686,10 @@ export interface ModelPreviewPanelProps {
   className?: string;
   /** Open the full-screen viewer as soon as the inline manifest is ready. */
   startFullscreen?: boolean;
+  onMode?: (mode: "render" | "maps" | "3d") => void;
 }
 
-export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant = false, className = "", startFullscreen = false }: ModelPreviewPanelProps) {
+export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant = false, className = "", startFullscreen = false, onMode }: ModelPreviewPanelProps) {
   const [manifest, setManifest] = useState<ModelManifest | null>(null);
   // Applied values drive the live viewer. Choice values drive the selects and
   // update immediately, while the old preview remains visible until the new
@@ -1873,6 +1880,11 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
           <div className="model-viewer-fullscreen-card">
             {fullscreenManifest ? <ModelViewer fullscreen manifest={fullscreenManifest} quality={fullscreenQuality} lod={fullscreenLod} onClose={closeFullscreen} pendingLabel={pendingSwitch?.target === "fullscreen" && pendingSwitch.visible ? pendingSwitch.label : ""} /> : <div className="model-preview-empty"><span className="spinner" /><strong>Preparing full-screen 3D preview…</strong></div>}
             {fullscreenManifest && <div className="model-viewer-quality-bar">
+              {onMode && <div className="preview-mode-switch" role="group" aria-label="Preview mode">
+                <button type="button" onClick={() => { closeFullscreen(); onMode("render"); }}>Render</button>
+                <button type="button" onClick={() => { closeFullscreen(); onMode("maps"); }}>Maps</button>
+                <button type="button" className="active" aria-pressed="true">3D</button>
+              </div>}
               <label>Textures <select className="native-select" value={switchError?.target === "fullscreen" ? fullscreenQuality : fullscreenQualityChoice} onChange={event => { const value = Number(event.target.value); setAutoQualityNote(""); setFullscreenQualityChoice(value); void request(value, fullscreenLod, "fullscreen", textureSwitchLabel(value)); }}>{qualityOptions.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
               {lods.length > 1 && <label>Mesh <select className="native-select" value={String(switchError?.target === "fullscreen" ? fullscreenLod : fullscreenLodChoice)} onChange={event => { const raw = event.target.value; const value: ModelLodMode = raw === "lowest" || raw === "highest" ? raw : Number(raw); setFullscreenLodChoice(value); void request(fullscreenQuality, value, "fullscreen", meshSwitchLabel(value)); }}><option value="lowest">Lowest</option><option value="highest">Highest</option>{lods.map(value => <option key={value} value={String(value)}>{modelLodLabel(value)}</option>)}</select></label>}
               {autoQualityNote && <span className="model-viewer-quality-note">{autoQualityNote}</span>}

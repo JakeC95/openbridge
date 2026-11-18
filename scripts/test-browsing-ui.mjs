@@ -701,6 +701,11 @@ app.whenReady().then(async()=>{
       assert(document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced==='true','Displacement update dropped the displaced wireframe');
       wire.click(); await wait(80);
       assert(!document.querySelector('.model-viewer-overlay .model-viewer-canvas')?.dataset.surfaceDisplaced,'Wireframe-off did not restore the base sphere');
+      const modeSwitch=document.querySelector('.model-viewer-overlay .preview-mode-switch');
+      assert(modeSwitch && ['Render','Maps','Sphere'].every(label=>[...modeSwitch.querySelectorAll('button')].some(button=>button.textContent===label)),'Fullscreen mode switch is incomplete');
+      [...modeSwitch.querySelectorAll('button')].find(button=>button.textContent==='Maps').click();
+      await until(()=>!document.querySelector('.model-viewer-overlay'),'Fullscreen Maps mode did not close the overlay');
+      assert(surfaceDrawer.querySelector('.preview-switch button.active')?.textContent==='Maps','Fullscreen Maps mode did not switch the drawer');
       document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
       await until(()=>!document.querySelector('.model-viewer-overlay'),'Escape did not close the sphere fullscreen');
       window.fixtureSurface(false);
