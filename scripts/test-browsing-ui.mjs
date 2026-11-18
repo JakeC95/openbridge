@@ -783,23 +783,35 @@ app.whenReady().then(async()=>{
       await wait(150); await window.fixtureSurfaceScreenshot('pbr');
       const normalDetail=[...viewerOverlay.querySelectorAll('label')].find(label=>label.textContent.includes('Normal map detail')).querySelector('input');
       const strength=viewerOverlay.querySelector('input[aria-label="Surface displacement strength"]');
-      const setDisplacement=async (value,capture='camera')=>{
+      const captureChange=async (previous,message,mode='camera')=>{
+        const deadline=performance.now()+5000;
+        do {
+          const capture=await window.fixtureSurfaceScreenshot(mode);
+          if(capture!==previous) return capture;
+          await wait(80);
+        } while(performance.now()<deadline);
+        throw new Error(message);
+      };
+      const setDisplacement=async value=>{
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(strength,String(value));
         strength.dispatchEvent(new Event('input',{bubbles:true}));
         await until(()=>strength.parentElement.querySelector('strong')?.textContent===value+'%','Displacement slider did not commit '+value);
-        await wait(180);
-        return window.fixtureSurfaceScreenshot(capture);
+        await until(()=>Boolean(viewerOverlay.querySelector('.model-viewer-canvas').dataset.surfaceDisplaced)===(value>0),
+          'Sphere geometry did not apply displacement '+value);
       };
       const withNormal=await window.fixtureSurfaceScreenshot('camera');
-      const flatWithNormal=await setDisplacement(0);
-      assert(flatWithNormal!==withNormal,'Displacement changed no rendered pixels with normal detail on');
-      assert(await setDisplacement(60)!==flatWithNormal,'Raising displacement did not work with normal detail on');
-      normalDetail.click(); await wait(150);
-      assert(withNormal!==await window.fixtureSurfaceScreenshot('camera'),'Normal-map diagnostic did not change PBR');
+      await setDisplacement(0);
+      const flatWithNormal=await captureChange(withNormal,'Displacement changed no rendered pixels with normal detail on');
+      await setDisplacement(60);
+      const displacedWithNormal=await captureChange(flatWithNormal,'Raising displacement did not work with normal detail on');
+      normalDetail.click();
+      const displacedWithoutNormal=await captureChange(displacedWithNormal,'Normal-map diagnostic did not change PBR');
       assert(viewerOverlay.querySelector('.model-viewer-canvas').dataset.surfaceDisplaced==='true','Disabling normal detail also disabled displacement');
       await window.fixtureSurfaceScreenshot('normals-off');
-      const flatWithoutNormal=await setDisplacement(0);
-      assert(await setDisplacement(60)!==flatWithoutNormal,'Displacement changed no rendered pixels with normal detail off');
+      await setDisplacement(0);
+      const flatWithoutNormal=await captureChange(displacedWithoutNormal,'Flattening displacement did not work with normal detail off');
+      await setDisplacement(60);
+      await captureChange(flatWithoutNormal,'Displacement changed no rendered pixels with normal detail off');
       normalDetail.click();
       const glPrototype=WebGL2RenderingContext.prototype;
       const drawElements=glPrototype.drawElements;
@@ -816,7 +828,8 @@ app.whenReady().then(async()=>{
       }
       await wait(100); await window.fixtureSurfaceScreenshot('wireframe');
       const fineWire=await window.fixtureSurfaceScreenshot('silhouette');
-      assert(await setDisplacement(150,'silhouette')!==fineWire,'Displacement did not update the wireframe');
+      await setDisplacement(150);
+      await captureChange(fineWire,'Displacement did not update the wireframe','silhouette');
       for(let i=0;i<6;i++) viewerOverlay.querySelector('.model-viewer-canvas')
         .dispatchEvent(new WheelEvent('wheel',{deltaY:-1400,bubbles:true,cancelable:true}));
       await wait(150); await window.fixtureSurfaceScreenshot('wireframe-zoomed');
