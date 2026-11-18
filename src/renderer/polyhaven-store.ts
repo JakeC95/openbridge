@@ -9,6 +9,7 @@ import type {
   PolyHavenFacets,
   PolyHavenSort
 } from "../shared/types";
+import { isPolyHavenHdriCategoryPath } from "./all-sources";
 
 const PAGE_SIZE = 120;
 const FAVORITES_KEY = "openbridge.polyhavenFavorites";
@@ -370,7 +371,7 @@ export const usePolyHavenStore = create<PolyHavenState>((set, get) => ({
     set({
       loading: true,
       error: null,
-      ...(reset ? { hits: [], total: 0, hasMore: false } : {})
+      ...(reset ? { hasMore: false } : {})
     });
     try {
       const result = await window.openbridge.polyhaven.search(queryFrom(current, offset));
@@ -405,17 +406,24 @@ export const usePolyHavenStore = create<PolyHavenState>((set, get) => ({
       type,
       categoryPaths: [],
       attributeFilters: {},
-      ...(type === "hdris" ? { mapTypes: [], timeStart: null, timeEnd: null } : { timeStart: null, timeEnd: null }),
+      ...(type === "hdris"
+        ? { mapTypes: [], categoriesFilter: [], timeStart: null, timeEnd: null }
+        : { timeStart: null, timeEnd: null }),
       ...(type === "models" ? {} : { minSize: null, maxSize: null })
     });
     void get().search(true);
   },
   setCategoryPaths(categoryPaths) {
-    set({ categoryPaths, type: "" });
+    const root = categoryPaths[categoryPaths.length - 1] ?? "";
+    set({ categoryPaths, type: isPolyHavenHdriCategoryPath(root) ? "hdris" : "" });
     void get().search(true);
   },
   setCategoryByPath(path) {
-    set({ categoryPaths: path.length > 0 ? [path[path.length - 1]] : [], type: "" });
+    const categoryPaths = path.length > 0 ? [path[path.length - 1]] : [];
+    set({
+      categoryPaths,
+      type: isPolyHavenHdriCategoryPath(categoryPaths[0]) ? "hdris" : ""
+    });
     void get().search(true);
   },
   setCategoriesFilter(categoriesFilter) {

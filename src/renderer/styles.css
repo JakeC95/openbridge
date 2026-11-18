@@ -22,6 +22,7 @@
   font-display: swap;
 }
 :root {
+  color-scheme: dark;
   --bg: #1a1a1a;
   --bg-deep: #141414;
   --panel: #242424;
@@ -38,6 +39,7 @@
   --green: #8bc24a;
   --red: #ff6a6a;
   --sidebar: 273px;
+  --workspace-topbar-height: 72px;
   --drawer: 535px;
 }
 
@@ -778,6 +780,24 @@ code {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   white-space: nowrap;
+}
+
+.result-updating {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.result-updating .spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+  margin: 0;
 }
 
 .login-banner {
@@ -2560,7 +2580,7 @@ body {
 }
 
 .topbar {
-  height: 72px;
+  height: var(--workspace-topbar-height);
   padding: 0 16px;
   gap: 12px;
   background: #2f2f2f;
@@ -2586,7 +2606,7 @@ body {
 }
 
 .catalog-search input:focus {
-  border-color: #2a2a2a;
+  border-color: var(--blue);
   background: #1a1a1a;
 }
 
@@ -2596,6 +2616,204 @@ body {
 
 .catalog-search .search-clear {
   right: 12px;
+}
+
+.global-search-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid #383838;
+  border-radius: 10px;
+  background: #17191d;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .55);
+  color: var(--text);
+}
+
+.global-search-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.global-search-head .spinner {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  border-width: 2px;
+}
+
+.global-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.global-search-item:hover,
+.global-search-item.active,
+.global-search-action:hover,
+.global-search-action.active {
+  background: rgba(38, 187, 255, .12);
+}
+
+.preview-unavailable {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.asset-thumb .preview-unavailable { position: absolute; inset: 0; }
+
+.global-search-thumb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #262a30;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.global-search-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.global-search-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.global-search-copy strong,
+.global-search-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.global-search-copy small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.global-search-item em {
+  flex: none;
+  color: var(--green);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.global-search-empty {
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.global-search-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px;
+  border: 0;
+  border-top: 1px solid #2f3338;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.global-search-action span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search-action kbd {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid #3b3f45;
+  border-radius: 4px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+}
+
+.global-search-section {
+  padding: 2px 0;
+}
+
+.global-search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+.global-search-chips button {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 5px 9px;
+  border: 1px solid #383838;
+  border-radius: 999px;
+  background: #202226;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.global-search-chips button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
 }
 
 .topbar-catalog .sync-button {
@@ -2637,7 +2855,7 @@ body {
 
 .brand {
   flex: none;
-  height: 72px;
+  height: var(--workspace-topbar-height);
   padding: 0 16px;
   gap: 10px;
 }
@@ -2971,6 +3189,16 @@ body {
   object-fit: contain;
 }
 
+/* OpenHDRI serves a 4:3 render with material balls below the real 2:1
+   environment. Crop to the top 2:1 immediately, before the smart crop returns. */
+.asset-thumb img.openhdri-thumb {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+
 .asset-card:hover .asset-thumb img {
   transform: scale(1.1);
 }
@@ -3029,15 +3257,13 @@ body {
   z-index: 2;
   padding: 34px 12px 10px;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.88));
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms;
 }
 
-.asset-card:hover .asset-meta,
-.asset-card:focus-visible .asset-meta,
-.asset-card.selected .asset-meta {
-  opacity: 1;
+/* Asset names need to be scannable without hovering. Keep the overlay
+   compact by revealing the supporting details on hover, focus or selection. */
+.asset-card:not(:hover, :focus-within, .selected, .skeleton) .asset-meta > :not(strong) {
+  display: none;
 }
 
 .asset-meta strong {
@@ -3170,12 +3396,7 @@ body {
 
 @media (max-width: 1180px) {
   :root {
-    --sidebar: 275px;
     --drawer: 484px;
-  }
-
-  .catalog-toolbar .filter-select {
-    width: 150px;
   }
 
   .asset-grid {
@@ -4488,15 +4709,6 @@ body {
 .queue-filters label { display: flex; align-items: center; gap: 8px; }
 .queue-filters > span { color: #aaa; font-size: 13px; }
 .auto-load-toggle { display: inline-flex; align-items: center; gap: 7px; margin-left: 12px; color: #bbb; font-size: 13px; }
-.view-mode {
-  position: sticky;
-  top: 12px;
-  z-index: 30;
-  display: flex;
-  width: max-content;
-  margin: 0 0 14px auto;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-}
 .asset-list-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; color: #bbb; }
 .asset-list-scroll, .asset-compare { overflow-x: auto; margin-bottom: 14px; }
 .asset-list, .asset-compare table { width: 100%; border-collapse: collapse; background: #292929; font-size: 14px; }
@@ -4594,7 +4806,7 @@ body {
 .scale-box-key { border: 1px solid #49c6ff; background: #26bbff18; }
 .asset-scale-panel .hint { margin: 12px 0 0; color: #a6adb1; font-size: 12px; line-height: 1.5; }
 .content { transition: padding-right 150ms ease; }
-.drawer { top: 72px; }
+.drawer { top: var(--workspace-topbar-height); }
 @media (min-width: 1181px) {
   .drawer-open .content { padding-right: var(--drawer); }
   .drawer-backdrop { display: none; }
@@ -4770,6 +4982,11 @@ body {
   color: var(--text);
 }
 
+/* Seven sources: let a final odd item use the full row instead of leaving a gap. */
+.provider-switch button:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .provider-switch button.provider-poliigon.active {
   background: rgba(254, 155, 7, 0.16);
   color: var(--orange);
@@ -4778,6 +4995,56 @@ body {
 .provider-switch button.provider-polyhaven.active {
   background: rgba(72, 214, 189, 0.16);
   color: #48d6bd;
+}
+
+.provider-switch button.provider-ambientcg.active {
+  background: rgba(224, 168, 58, 0.16);
+  color: #e8bd63;
+}
+
+.provider-switch button.provider-blenderkit.active {
+  background: rgba(43, 92, 255, 0.18);
+  color: #8da5ff;
+}
+
+.provider-switch button.provider-openhdri.active {
+  background: rgba(46, 184, 156, 0.16);
+  color: #55d7bd;
+}
+
+/* Reclaim workspace on laptops without hiding navigation or provider names. */
+@media (max-width: 1180px) {
+  :root {
+    --sidebar: 224px;
+    --workspace-topbar-height: 62px;
+  }
+
+  .brand, .nav-item, .sidebar-footer { padding-inline: 12px; }
+  .brand-text strong { font-size: 18px; }
+  .nav-item { height: 42px; gap: 10px; font-size: 16px; }
+  .nav-item.nav-downloading { height: auto; padding-block: 8px; row-gap: 7px; }
+  .nav-item svg { width: 20px; height: 20px; }
+  .sidebar-footer { padding-block: 10px; }
+  .provider-switch { margin: 0 12px 8px; gap: 3px; }
+  .provider-switch button { min-height: 30px; padding: 4px 3px; font-size: 12px; letter-spacing: 0; }
+
+  .topbar { padding-inline: 12px; }
+  .catalog-search input { height: 42px; font-size: 16px; }
+  .view-header { gap: 10px; padding: 14px 16px 0; }
+  .discover-toolbar { gap: 0; padding: 0; }
+  .view-body { padding-inline: 16px; }
+  .asset-area { padding: 16px 16px 40px; }
+  .catalog-toolbar { min-height: 40px; padding-inline: 12px; }
+  .catalog-toolbar .filter-select { width: 150px; height: 40px; }
+  .catalog-toolbar .filter-select .dropdown-trigger { padding-inline: 10px; font-size: 14px; }
+  .catalog-toolbar .filter-action { height: 40px; padding-inline: 10px; font-size: 14px; }
+  .catalog-toolbar .result-count { padding-left: 10px; font-size: 13px; }
+  .library .filter-row { gap: 6px 10px; }
+}
+
+@media (max-width: 1060px) {
+  :root { --sidebar: 208px; }
+  .catalog-toolbar .filter-select { width: 136px; }
 }
 
 .asset-flag.credit {
@@ -5515,6 +5782,18 @@ body {
 }
 .provider-logo.megascans { padding: 0; background: transparent; border-radius: 4px; overflow: hidden; }
 .provider-logo.polyhaven { padding: 1px; background: #fff; border-radius: 4px; }
+.provider-logo > span {
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.provider-logo.ambientcg { background: #e0a83a; color: #1a1a1a; }
+.provider-logo.blenderkit { background: #2b5cff; color: #fff; }
+.provider-logo.openhdri { background: #2eb89c; color: #06231e; }
+.provider-tag.ambientcg { color: #e8bd63; }
+.provider-tag.blenderkit { color: #7b9bff; }
+.provider-tag.openhdri { color: #55d7bd; }
 .drawer-provider-mark {
   width: 22px;
   height: 22px;

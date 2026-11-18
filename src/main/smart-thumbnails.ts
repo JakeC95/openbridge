@@ -182,8 +182,8 @@ function contentBounds(bitmap: Buffer, width: number, height: number): {
   return background ? { ...background, transparent: false } : alpha;
 }
 
-function unchanged(source: string): string {
-  memory.set(source, source);
+function unchanged(key: string, source = key): string {
+  memory.set(key, source);
   return source;
 }
 
@@ -192,39 +192,52 @@ function unchanged(source: string): string {
  * real subject uses the available tile. Opaque, gradient and already-full
  * images are returned unchanged. Results are cached by source identity.
  */
-export async function smartThumbnail(source: string): Promise<string> {
+export type ThumbnailCrop = "top-2-1";
+
+export async function smartThumbnail(source: string, crop?: ThumbnailCrop): Promise<string> {
   if (!source || !/^(?:https?|file):/i.test(source)) return source;
-  const cached = memory.get(source);
+  const cacheKey = crop ? `${source}\u0001${crop}` : source;
+  const cached = memory.get(cacheKey);
   if (cached) return cached;
-  const pending = inflight.get(source);
+  const pending = inflight.get(cacheKey);
   if (pending) return pending;
   const promise = schedule(async () => {
-    let keySource = source;
+    let keySource = cacheKey;
     const local = sourcePath(source);
     if (local) {
       const info = await stat(local).catch(() => null);
-      if (info) keySource = `${source}:${info.size}:${Math.trunc(info.mtimeMs)}`;
+      if (info) keySource = `${cacheKey}:${info.size}:${Math.trunc(info.mtimeMs)}`;
     }
     const key = createHash("sha256").update(keySource).digest("hex");
     const destination = join(CACHE_DIR(), `${key}.png`);
     const existing = await stat(destination).catch(() => null);
     if (existing?.isFile()) {
       const url = pathToFileURL(destination).href;
-      memory.set(source, url);
+      memory.set(cacheKey, url);
       return url;
     }
     const buffer = await readSource(source);
     const image = nativeImage.createFromBuffer(buffer);
-    if (image.isEmpty()) return unchanged(source);
+    if (image.isEmpty()) return unchanged(cacheKey, source);
     const size = image.getSize();
-    if (size.width <= 0 || size.height <= 0) return unchanged(source);
+    if (size.width <= 0 || size.height <= 0) return unchanged(cacheKey, source);
+    if (crop === "top-2-1") {
+      const height = Math.min(size.height, Math.round(size.width / 2));
+      const cropped = image.crop({ x: 0, y: 0, width: size.width, height });
+      if (cropped.isEmpty()) return unchanged(cacheKey, source);
+      await mkdir(CACHE_DIR(), { recursive: true });
+      await writeFile(destination, cropped.toPNG());
+      const url = pathToFileURL(destination).href;
+      memory.set(cacheKey, url);
+      return url;
+    }
     const bounds = contentBounds(image.toBitmap(), size.width, size.height);
-    if (!bounds) return unchanged(source);
+    if (!bounds) return unchanged(cacheKey, source);
     const coverage = Math.max(bounds.width / size.width, bounds.height / size.height);
     // A little transparent padding is normal; only re-crop when it is material.
     if (coverage >= CROP_THRESHOLD && bounds.width / size.width >= CROP_THRESHOLD
       && bounds.height / size.height >= CROP_THRESHOLD) {
-      return unchanged(source);
+      return unchanged(cacheKey, source);
     }
     const padding = Math.round(Math.max(size.width, size.height) * 0.015);
     const x = Math.max(0, bounds.x - padding);
@@ -232,13 +245,13 @@ export async function smartThumbnail(source: string): Promise<string> {
     const width = Math.min(size.width - x, bounds.width + padding * 2);
     const height = Math.min(size.height - y, bounds.height + padding * 2);
     const cropped = image.crop({ x, y, width, height });
-    if (cropped.isEmpty()) return unchanged(source);
+    if (cropped.isEmpty()) return unchanged(cacheKey, source);
     await mkdir(CACHE_DIR(), { recursive: true });
     await writeFile(destination, cropped.toPNG());
     const url = pathToFileURL(destination).href;
-    memory.set(source, url);
+    memory.set(cacheKey, url);
     return url;
-  }).catch(() => source).finally(() => inflight.delete(source));
-  inflight.set(source, promise);
+  }).catch(() => source).finally(() => inflight.delete(cacheKey));
+  inflight.set(cacheKey, promise);
   return promise;
 }

@@ -15,6 +15,7 @@ import { LoadMore } from "../components/LoadMore";
 import { AssetList } from "../components/AssetList";
 import { SmartThumbImage } from "../components/SmartThumbImage";
 import { ProviderLogo } from "../components/ProviderLogo";
+import { isPublicProviderId, publicProviderLabel } from "../../shared/public-providers";
 
 const REPOS: Array<{ value: "all" | RepoKind; label: string }> = [
   { value: "all", label: "All" },
@@ -328,7 +329,7 @@ export function LibraryView() {
       options.splice(options.length - 1, 0,
         { value: "triangles", label: "Triangles · most first" },
         { value: "lods", label: "LODs · most first" },
-        ...(localProvider === "poliigon" || localProvider === "polyhaven"
+        ...(localProvider !== "all" && localProvider !== "megascans"
           ? []
           : [{ value: "variations" as LibrarySort, label: "Variations · most first" }])
       );
@@ -364,13 +365,19 @@ export function LibraryView() {
 
   const megascansTypes = ["3d", "3dplant", "surface", "atlas", "brush", "decal", "imperfection", "displacement"];
   const poliigonTypes = ["texture", "model", "hdri"];
-  const typeOptions = localProvider === "poliigon" || localProvider === "polyhaven"
+  const publicTypeOptions = localProvider === "ambientcg"
+    ? ["hdri", "surface", "3d", "atlas", "decal", "brush"]
+    : localProvider === "blenderkit"
+      ? ["3d", "surface", "hdri", "brush"]
+      : ["hdri"];
+  const providerTotal = localProvider === "all" ? allTotal : counts[localProvider] ?? 0;
+  const typeOptions = isPublicProviderId(localProvider) ? publicTypeOptions : localProvider === "poliigon" || localProvider === "polyhaven"
     ? poliigonTypes
     : localProvider === "megascans"
       ? megascansTypes
       : [...megascansTypes, ...poliigonTypes];
 
-  const libraryPath = localProvider === "poliigon"
+  const libraryPath = isPublicProviderId(localProvider) ? settings?.[`${localProvider}LibraryPath`] : localProvider === "poliigon"
     ? settings?.poliigonLibraryPath
     : localProvider === "polyhaven"
       ? settings?.polyhavenLibraryPath
@@ -393,7 +400,7 @@ export function LibraryView() {
             >
               {selectMode ? "Done" : "Select"}
             </button>
-            {localProvider !== "poliigon" && localProvider !== "polyhaven" && (
+            {(localProvider === "all" || localProvider === "megascans") && (
               <>
                 <button type="button" className="btn btn-ghost" onClick={() => void importFolder()}>
                   <UploadIcon /> Import folder
@@ -420,7 +427,10 @@ export function LibraryView() {
               { value: "all", label: "All sources" },
               { value: "megascans", label: "Megascans" },
               { value: "poliigon", label: "Poliigon" },
-              { value: "polyhaven", label: "Poly Haven" }
+              { value: "polyhaven", label: "Poly Haven" },
+              { value: "ambientcg", label: "ambientCG" },
+              { value: "blenderkit", label: "BlenderKit" },
+              { value: "openhdri", label: "OpenHDRI" }
             ]} />
           <Dropdown className="filter-select" value={localType || "all"} ariaLabel="Local asset type"
             onChange={value => useStore.getState().setLocalType(value === "all" ? "" : value)}
@@ -440,14 +450,15 @@ export function LibraryView() {
               {refineFilterCount > 0 && <span className="filter-count">{refineFilterCount}</span>}
             </button>
           )}
-          {localProvider !== "poliigon" && localProvider !== "polyhaven" && <button type="button" className={localFavoritesOnly ? "chip active" : "chip"}
+          {(localProvider === "all" || localProvider === "megascans") && <button type="button" className={localFavoritesOnly ? "chip active" : "chip"}
             disabled={!auth.loggedIn} aria-pressed={localFavoritesOnly}
             onClick={() => useStore.getState().setLocalFavoritesOnly(!localFavoritesOnly)}>Favorites</button>}
           <DensityControl />
-          {localProvider !== "poliigon" && localProvider !== "polyhaven" && <PackBrowser packs={localPacks} local />}
+          {assets.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
+          {(localProvider === "all" || localProvider === "megascans") && <PackBrowser packs={localPacks} local />}
           <RecentBrowsing />
           <div className="chips">
-            {localProvider !== "poliigon" && localProvider !== "polyhaven" && REPOS.map(item => (
+            {(localProvider === "all" || localProvider === "megascans") && REPOS.map(item => (
               <button
                 type="button"
                 key={item.value}
@@ -560,7 +571,6 @@ export function LibraryView() {
       </div>
 
       <div className="view-body" ref={bodyRef}>
-        {assets.length > 0 && !selectMode && <button type="button" className="btn btn-ghost view-mode" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
         {assets.length > 0 && listView && <AssetList key={selectMode ? "bulk" : "browse"}
           selectedKeys={selectMode ? new Set(assets.filter(asset => selectedIds.has(asset.id)).map(asset => asset.path)) : undefined}
           totalSelected={selectMode ? selectedIds.size : undefined} initialCompare={selectMode && selectedIds.size >= 2}
@@ -600,7 +610,7 @@ export function LibraryView() {
                   }}
                   onContextMenu={event => {
                     event.preventDefault();
-                    if (asset.provider === "poliigon" || asset.provider === "polyhaven") return;
+                    if (asset.provider && asset.provider !== "megascans") return;
                     void window.openbridge.contextMenu.asset({
                       assetId: asset.id,
                       localPath: asset.path
@@ -612,9 +622,10 @@ export function LibraryView() {
                     {asset.preview ? (
                       <SmartThumbImage
                         source={window.openbridge.toFileUrl(asset.preview)}
-                        direct={typeLabel(asset.type) === "HDRI"}
+                        direct={typeLabel(asset.type) === "HDRI" && asset.provider !== "openhdri"}
+                        crop={asset.provider === "openhdri" ? "top-2-1" : undefined}
                         alt=""
-                        className={typeLabel(asset.type) === "HDRI" ? "asset-thumb-img hdri-panorama" : "asset-thumb-img"}
+                        className={`${typeLabel(asset.type) === "HDRI" ? "asset-thumb-img hdri-panorama" : "asset-thumb-img"}${asset.provider === "openhdri" ? " openhdri-thumb" : ""}`}
                       />
                     ) : (
                       <span className="asset-placeholder">{typeLabel(asset.type)}</span>
@@ -627,7 +638,7 @@ export function LibraryView() {
                       />
                     )}
                     <span className="asset-flag owned">LOCAL</span>
-                    {!selectMode && auth.loggedIn && asset.provider !== "poliigon" && asset.provider !== "polyhaven" && <button type="button" className={favorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
+                    {!selectMode && auth.loggedIn && (!asset.provider || asset.provider === "megascans") && <button type="button" className={favorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
                       aria-label={favorites.includes(asset.id) ? "Remove favorite" : "Add favorite"}
                       onClick={event => { event.stopPropagation(); void useStore.getState().toggleFavorite(asset.id); }}>
                       {favorites.includes(asset.id) ? "♥" : "♡"}
@@ -652,7 +663,7 @@ export function LibraryView() {
                   <div className="asset-meta">
                     <strong>{asset.name}</strong>
                     <span>{asset.id}</span>
-                    <em>{asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>
+                    <em>{isPublicProviderId(asset.provider) ? publicProviderLabel(asset.provider) : asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>
                     {facts && <span className="asset-facts">{facts}</span>}
                   </div>
                 </div>
@@ -667,20 +678,22 @@ export function LibraryView() {
 
         {!loading && assets.length === 0 && (
           <div className="empty">
-            <h2>{allTotal === 0 ? "No local assets" : "No matching assets"}</h2>
+            <h2>{providerTotal === 0 ? "No local assets" : "No matching assets"}</h2>
             <p>
-              {allTotal === 0
+              {providerTotal === 0
                 ? localProvider === "poliigon"
                   ? "No Poliigon assets are indexed yet. Download an asset or check the Poliigon library path in Settings."
                   : localProvider === "polyhaven"
                     ? "No Poly Haven assets are indexed yet. Download an asset or check the Poly Haven library path in Settings."
-                    : "Point OpenBridge at an existing Megascans, Poliigon or Poly Haven library, or import a custom asset folder/zip."
+                    : isPublicProviderId(localProvider)
+                      ? `No ${publicProviderLabel(localProvider)} assets are indexed yet. Only OpenBridge-managed downloads with an openbridge-${localProvider}.json sidecar are indexed. Download an asset or check its library path in Settings.`
+                      : "Point OpenBridge at an existing Megascans, Poliigon, Poly Haven, ambientCG, BlenderKit or OpenHDRI library, or import a custom asset folder/zip."
                 : "Try a different search or source filter."}
             </p>
-            {allTotal === 0 ? (
-              localProvider === "poliigon" || localProvider === "polyhaven" ? (
+            {providerTotal === 0 ? (
+              localProvider === "poliigon" || localProvider === "polyhaven" || isPublicProviderId(localProvider) ? (
                 <button type="button" className="btn btn-primary" onClick={() => useStore.getState().setView("settings")}>
-                  Check {localProvider === "poliigon" ? "Poliigon" : "Poly Haven"} library path
+                  Check {localProvider === "poliigon" ? "Poliigon" : localProvider === "polyhaven" ? "Poly Haven" : isPublicProviderId(localProvider) ? publicProviderLabel(localProvider) : ""} library path
                 </button>
               ) : (
                 <button type="button" className="btn btn-primary" onClick={() => void importFolder()}>
@@ -692,7 +705,7 @@ export function LibraryView() {
                 Clear search and filters
               </button>
             )}
-            {allTotal === 0 && <button type="button" className="btn btn-ghost" onClick={() => useStore.getState().setView("settings")}>Choose an existing library</button>}
+            {providerTotal === 0 && <button type="button" className="btn btn-ghost" onClick={() => useStore.getState().setView("settings")}>Choose an existing library</button>}
           </div>
         )}
 
@@ -711,6 +724,9 @@ export function LibraryView() {
                   {health?.libraryPath ?? settings?.libraryPath}
                   {health?.poliigonLibraryPath ? ` + ${health.poliigonLibraryPath}` : ""}
                   {health?.polyhavenLibraryPath ? ` + ${health.polyhavenLibraryPath}` : ""}
+                  {health?.ambientcgLibraryPath ? ` + ${health.ambientcgLibraryPath}` : ""}
+                  {health?.blenderkitLibraryPath ? ` + ${health.blenderkitLibraryPath}` : ""}
+                  {health?.openhdriLibraryPath ? ` + ${health.openhdriLibraryPath}` : ""}
                 </p>
               </div>
               <button

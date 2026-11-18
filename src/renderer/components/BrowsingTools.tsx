@@ -2,6 +2,8 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { useStore } from "../store";
 import { usePoliigonStore } from "../poliigon-store";
 import { usePolyHavenStore } from "../polyhaven-store";
+import { usePublicStore } from "../public-store";
+import { PUBLIC_PROVIDER_IDS, publicProviderLabel } from "../../shared/public-providers";
 import { Dropdown } from "./Dropdown";
 import type { PackSummary } from "../../shared/types";
 import { CheckIcon, ChevronDownIcon, CloseIcon, SearchIcon } from "../icons";
@@ -57,6 +59,7 @@ export function RecentBrowsing() {
   const assets = useStore(state => state.recentlyViewed);
   const poliigonAssets = usePoliigonStore(state => state.recentlyViewed);
   const polyhavenAssets = usePolyHavenStore(state => state.recentlyViewed);
+  const publicAssets = usePublicStore(state => state.recentlyViewed);
   const toast = useStore(state => state.toast);
   return <BrowsingMenu label="Recent">
       <div className="browse-menu-heading"><strong>Recent searches</strong>
@@ -64,6 +67,8 @@ export function RecentBrowsing() {
           useStore.getState().clearRecent();
           usePoliigonStore.getState().clearRecentlyViewed();
           usePolyHavenStore.getState().clearRecentlyViewed();
+          usePublicStore.getState().clearRecentlyViewed();
+          for (const provider of PUBLIC_PROVIDER_IDS) usePublicStore.getState().clearRecent(provider);
         }}>Clear history</button></div>
       {searches.length === 0 && <p className="hint">Searches you submit appear here.</p>}
       {searches.map(query => <button type="button" className="browse-list-item" key={query}
@@ -79,7 +84,7 @@ export function RecentBrowsing() {
           event.currentTarget.closest("details")?.removeAttribute("open");
         }}>{query}</button>)}
       <strong>Recently viewed</strong>
-      {assets.length === 0 && poliigonAssets.length === 0 && polyhavenAssets.length === 0 && <p className="hint">Open an asset to start your history.</p>}
+      {assets.length === 0 && poliigonAssets.length === 0 && polyhavenAssets.length === 0 && publicAssets.length === 0 && <p className="hint">Open an asset to start your history.</p>}
       {assets.map(asset => <button type="button" className="browse-list-item" key={`${asset.source}:${asset.id}`}
         onClick={event => {
           usePoliigonStore.getState().closeAsset();
@@ -100,6 +105,14 @@ export function RecentBrowsing() {
           void usePolyHavenStore.getState().openRecent(asset.id).catch(error => toast(String(error), true));
           event.currentTarget.closest("details")?.removeAttribute("open");
         }}>{asset.name}<small>Poly Haven</small></button>)}
+      {publicAssets.map(asset => <button type="button" className="browse-list-item" key={`${asset.provider}:${asset.id}`}
+        onClick={event => {
+          useStore.getState().closeSelection();
+          usePoliigonStore.getState().closeAsset();
+          usePolyHavenStore.getState().closeAsset();
+          void usePublicStore.getState().openRecent(asset.provider, asset.id).catch(error => toast(String(error), true));
+          event.currentTarget.closest("details")?.removeAttribute("open");
+        }}>{asset.name}<small>{publicProviderLabel(asset.provider)}</small></button>)}
   </BrowsingMenu>;
 }
 
@@ -232,6 +245,8 @@ export interface FilterGroup {
   labels?: Record<string, string>;
   /** Canonical value order; equal or unknown values fall back to count. */
   compare?(a: string, b: string): number;
+  /** Override the workbench count display for sampled/non-global facets. */
+  showCounts?: boolean;
 }
 
 export function FilterWorkbench({ groups, showCounts = true, activeGroup, onActiveGroup }: {
@@ -249,7 +264,7 @@ export function FilterWorkbench({ groups, showCounts = true, activeGroup, onActi
         <span>{group.label}</span>{group.selected.length > 0 && <em>{group.selected.length}</em>}
       </button>)}
     </nav>
-    <div className="facet-pane">{groups.map(({ key, ...group }) => <FacetGroup key={key} group={key}
-      {...group} hidden={current !== key} showCounts={showCounts} />)}</div>
+    <div className="facet-pane">{groups.map(({ key, showCounts: groupShowCounts, ...group }) => <FacetGroup key={key} group={key}
+      {...group} hidden={current !== key} showCounts={groupShowCounts ?? showCounts} />)}</div>
   </div>;
 }

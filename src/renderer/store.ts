@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { shallow } from "zustand/shallow";
 import { sizeBounds, type SizeFilter } from "./size-filter";
 import type {
   AppSettings,
@@ -29,6 +30,9 @@ import { catalogFilterQuery, libraryFilterQuery, readPreference, writePreference
 import { recordDownloadProgress } from "./download-history";
 import { usePoliigonStore } from "./poliigon-store";
 import { usePolyHavenStore } from "./polyhaven-store";
+import { usePublicStore } from "./public-store";
+import { isPublicProviderId, PUBLIC_PROVIDER_IDS } from "../shared/public-providers";
+import { normalizePublicQuery } from "./public-preferences";
 import {
   allSourceCategory,
   isAllSort,
@@ -260,7 +264,7 @@ function readBrowsingRestore(authenticated: boolean): Partial<State> {
     for (const [key, value] of Object.entries(data.facetFilters)) if (["biome", "region", "resolution", "color", "environment", "theme"].includes(key) && Array.isArray(value))
       facets[key] = value.filter((v): v is string => typeof v === "string").slice(0, 30);
   }
-  const localProvider = ["megascans", "poliigon", "polyhaven"].includes(text("localProvider"))
+  const localProvider = ["megascans", "poliigon", "polyhaven", "ambientcg", "blenderkit", "openhdri"].includes(text("localProvider"))
     ? text("localProvider") as AssetProvider
     : "all";
   let localType = text("localType");
@@ -303,14 +307,14 @@ export const useStore = create<State>((set, get) => ({
         return "all";
       }
       const stored = localStorage.getItem("openbridge.provider");
-      return stored === "megascans" || stored === "poliigon" || stored === "polyhaven" ? stored : "all";
+      return stored === "megascans" || stored === "poliigon" || stored === "polyhaven" || stored === "ambientcg" || stored === "blenderkit" || stored === "openhdri" ? stored : "all";
     } catch {
       return "all";
     }
   })(),
   setProvider(value) {
     const previous = get().provider;
-    const focusedQuery = previous === "poliigon"
+    const focusedQuery = isPublicProviderId(previous) ? usePublicStore.getState().providers[previous].query.query ?? "" : previous === "poliigon"
       ? usePoliigonStore.getState().query
       : previous === "polyhaven"
         ? usePolyHavenStore.getState().query
@@ -367,9 +371,20 @@ export const useStore = create<State>((set, get) => ({
   })(),
   setAllType(value) {
     const option = allSourceCategory(value);
+    const previousOption = allSourceCategory(get().allType);
     const previousRoot = get().allType.split(":")[0];
     const nextRoot = option.value.split(":")[0];
-    set({ allType: option.value });
+    // A curated sky preset can carry a time window (for example Clear / Sunny
+    // Day). Moving to a sibling sky condition without that preset must not keep
+    // the preset window, otherwise "Clear Skies" would silently stay daytime.
+    if (previousOption.poliigonTimeStart != null && option.poliigonTimeStart == null) {
+      usePoliigonStore.setState({ timeStart: null, timeEnd: null });
+      usePolyHavenStore.setState({ timeStart: null, timeEnd: null });
+    }
+    set({
+      allType: option.value,
+      ...(option.value.startsWith("hdri") ? { facetFilters: {} } : {})
+    });
     writePreference("allType", option.value);
     if (previousRoot !== nextRoot) {
       usePolyHavenStore.setState({ attributeFilters: {} });
@@ -403,6 +418,9 @@ export const useStore = create<State>((set, get) => ({
   },
   syncAllSources() {
     const option = allSourceCategory(get().allType);
+    if (option.value.startsWith("hdri") && Object.keys(get().facetFilters).length > 0) {
+      set({ facetFilters: {} });
+    }
     const stateFilter = get().allStateFilter;
     const bounds = sizeBounds(get().sizeFilter);
     set({
@@ -433,9 +451,18 @@ export const useStore = create<State>((set, get) => ({
       downloadedOnly: stateFilter === "downloaded",
       minSize: bounds.minSize,
       maxSize: bounds.maxSize,
-      ...(poliigonType === "HDRS" ? { creationMethods: [], mapTypes: [] } : {})
+      ...(poliigonType === "HDRS"
+        ? { creationMethods: [], mapTypes: [] }
+        : { weather: [] }),
+      ...((option.poliigonWeather?.length ?? 0) > 0 ? { weather: option.poliigonWeather } : {}),
+      ...(option.poliigonTimeStart != null && option.poliigonTimeEnd != null
+        ? { timeStart: option.poliigonTimeStart, timeEnd: option.poliigonTimeEnd }
+        : {})
     });
-    const polyMapped = option.polyhavenType !== undefined || (option.polyhavenCategories?.length ?? 0) > 0;
+    const polyMapped =
+      option.polyhavenType !== undefined ||
+      (option.polyhavenCategories?.length ?? 0) > 0 ||
+      (option.polyhavenCategoryPaths?.length ?? 0) > 0;
     const polyType = option.value === ""
       ? ""
       : option.polyhavenType === NONE_TYPE
@@ -444,14 +471,20 @@ export const useStore = create<State>((set, get) => ({
     usePolyHavenStore.setState({
       query: get().query,
       type: polyType,
-      categoryPaths: [],
+      categoryPaths: option.polyhavenCategoryPaths ?? [],
       categoriesFilter: option.polyhavenCategories ?? [],
+      attributeFilters: (option.polyhavenWeather?.length ?? 0) > 0
+        ? { ...usePolyHavenStore.getState().attributeFilters, weather: option.polyhavenWeather ?? [] }
+        : usePolyHavenStore.getState().attributeFilters,
       collections: [],
       favoritesOnly: stateFilter === "favorites",
       downloadedOnly: stateFilter === "downloaded",
       minSize: bounds.minSize,
       maxSize: bounds.maxSize,
-      ...(polyType === "hdris" ? { mapTypes: [] } : {})
+      ...(polyType === "hdris" ? { mapTypes: [] } : {}),
+      ...(option.polyhavenTimeStart != null && option.polyhavenTimeEnd != null
+        ? { timeStart: option.polyhavenTimeStart, timeEnd: option.polyhavenTimeEnd }
+        : {})
     });
     void get().search(true);
     void usePoliigonStore.getState().search(true);
@@ -500,6 +533,9 @@ export const useStore = create<State>((set, get) => ({
       timeStart: null,
       timeEnd: null
     });
+    for (const provider of PUBLIC_PROVIDER_IDS) {
+      void usePublicStore.getState().search(provider, true, normalizePublicQuery(provider, {}));
+    }
     void get().search(true);
     void usePoliigonStore.getState().search(true);
     void usePolyHavenStore.getState().search(true);
@@ -523,7 +559,10 @@ export const useStore = create<State>((set, get) => ({
   })(),
   localFavoritesOnly: false,
   setLocalType(localType) { set({ localType, localCategoryPath: [] }); },
-  setLocalProvider(localProvider) { set({ localProvider, localType: "", localCategoryPath: [] }); },
+  setLocalProvider(localProvider) {
+    if (get().localProvider === localProvider) return;
+    set({ localProvider, localType: "", localCategoryPath: [], localRepo: "all", localFavoritesOnly: false, localPack: null, localReady: [], localMaxTris: null, localColor: "", localState: "", localInterior: "" });
+  },
   setLocalCategoryPath(localCategoryPath) { set({ localCategoryPath, localType: "" }); },
   setLocalSort(localSort) { set({ localSort }); writePreference("localSort", localSort); },
   setLocalFavoritesOnly(localFavoritesOnly) { set({ localFavoritesOnly }); },
@@ -628,7 +667,7 @@ export const useStore = create<State>((set, get) => ({
   catalogFacetWarning: false,
   localRefs: [],
   libraryAssets: [],
-  libraryCounts: { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, downloaded: 0, custom: 0, dhi: 0 },
+  libraryCounts: { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, ambientcg: 0, blenderkit: 0, openhdri: 0, downloaded: 0, custom: 0, dhi: 0 },
   libraryTotal: 0,
   libraryFilteredTotal: 0,
   libraryLoading: false,
@@ -702,10 +741,14 @@ export const useStore = create<State>((set, get) => ({
       void get().search(true);
       void get().refreshPacks();
       restoreSubscription?.();
-      let previous = JSON.stringify(browsingSnapshot(get()));
+      let snapshot = browsingSnapshot(get());
+      let previous = JSON.stringify(snapshot);
       restoreSubscription = useStore.subscribe(state => {
-        const current = JSON.stringify(browsingSnapshot(state));
-        if (current !== previous) { previous = current; writePreference("browsingSession", browsingSnapshot(state)); }
+        const next = browsingSnapshot(state);
+        if (shallow(snapshot, next)) return;
+        snapshot = next;
+        const current = JSON.stringify(next);
+        if (current !== previous) { previous = current; writePreference("browsingSession", next); }
       });
 
       unsubscribers = [
@@ -752,7 +795,7 @@ export const useStore = create<State>((set, get) => ({
           }
           if (progress.status === "complete") {
             get().toast(`${progress.name ?? progress.assetId} downloaded`);
-            void get().refreshLibrary(true);
+            // Main batches completed writes across providers and broadcasts the new index.
           }
           if (progress.status === "error" && progress.message) {
             get().toast(progress.message, true);
@@ -882,7 +925,9 @@ export const useStore = create<State>((set, get) => ({
     const requestId = ++catalogRequest;
     const page = reset ? 0 : get().page + 1;
     if (reset) {
-      set({ hits: [], page: -1, nextCursor: null, hasMore: false, nbHits: 0, nbPages: 0 });
+      // Keep the previous page visible while the new query resolves. The
+      // result count switches to an updating state instead of flashing empty.
+      set({ page: -1, nextCursor: null, hasMore: false });
     }
     set({ catalogLoading: true, catalogError: null });
     try {
@@ -1054,6 +1099,11 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async openLocal(asset) {
+    if (isPublicProviderId(asset.provider)) {
+      get().closeSelection();
+      await usePublicStore.getState().openLocal(asset);
+      return;
+    }
     if (asset.provider === "poliigon") {
       set({ selection: null, selectionHistory: [] });
       usePolyHavenStore.getState().closeAsset();
@@ -1078,6 +1128,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   closeSelection() {
+    usePublicStore.getState().close();
     set({ selection: null, selectionHistory: [] });
     void window.openbridge.catalog.cancel("drawer").catch(() => undefined);
     void window.openbridge.catalog.cancel("related").catch(() => undefined);
@@ -1192,7 +1243,7 @@ export const useStore = create<State>((set, get) => ({
       const settings = await window.openbridge.updateSettings(patch);
       set({ settings });
       get().toast("Settings saved");
-      if (patch.libraryPath !== undefined || patch.poliigonLibraryPath !== undefined || patch.polyhavenLibraryPath !== undefined) {
+      if (patch.libraryPath !== undefined || patch.libraryRoot !== undefined || patch.poliigonLibraryPath !== undefined || patch.polyhavenLibraryPath !== undefined || patch.ambientcgLibraryPath !== undefined || patch.blenderkitLibraryPath !== undefined || patch.openhdriLibraryPath !== undefined) {
         await get().refreshLibrary(true);
       }
     } catch (error) {

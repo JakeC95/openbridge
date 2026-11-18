@@ -29,7 +29,8 @@ const checks = [
   { label: "hard-coded personal repository", pattern: new RegExp(`github\\.com/${ownerName}`, "i") }
 ];
 
-const tracked = execFileSync("git", ["ls-files", "-z"], {
+const includeUntracked = process.argv.includes("--include-untracked");
+const tracked = execFileSync("git", ["ls-files", "-z", ...(includeUntracked ? ["--cached", "--others", "--exclude-standard"] : [])], {
   cwd: root,
   encoding: "utf8",
   maxBuffer: 16 * 1024 * 1024
@@ -62,4 +63,4 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-console.log(`Public-repository hygiene check passed (${tracked.length} tracked files).`);
+console.log(`Public-repository hygiene check passed (${tracked.length} ${includeUntracked ? "tracked and untracked" : "tracked"} files).`);

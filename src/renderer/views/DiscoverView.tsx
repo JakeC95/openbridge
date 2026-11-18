@@ -582,6 +582,7 @@ export function DiscoverView() {
               : assetCountLabel(nbHits)}
           </span>
           <DensityControl />
+          {hits.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
           <PackBrowser packs={packs} />
           <RecentBrowsing />
           <BrowsingMenu label={`Saved searches${savedSearches.length ? ` (${savedSearches.length})` : ""}`}>
@@ -773,7 +774,6 @@ export function DiscoverView() {
           <div className="asset-heading">
               {catalogPack ? `Pack: ${catalogPack.name}` : query ? "Search results" : categoryPath.length > 0 ? selectedCategoryLabel : "Catalogue"}
           </div>
-          {hits.length > 0 && !selectMode && <button type="button" className="btn btn-ghost view-mode" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
 
           {hits.length > 0 && listView && <AssetList key={selectMode ? "bulk" : "browse"}
             selectedKeys={selectMode ? selectedIds : undefined}

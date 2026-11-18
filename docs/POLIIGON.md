@@ -765,8 +765,9 @@ Catalogue tests should use a small fixture, never the full 43 MB response.
   `Displacement`, `Metalness`, `Gloss`, `Reflection`). The catalogue now canonicalises both into
   one code per map during indexing (`src/shared/poliigon-maps.ts`), so facets no longer show
   duplicate labels and a map filter matches every asset that exposes that map.
-- Catalogue schema is v9. Existing `poliigon-catalog.sqlite` files rebuild automatically; the
-  published record count is unchanged (7,448 at the time of the audit).
+- Catalogue schema is v10. v9 files migrate in place: the `weather` column is added and every HDRI
+  is backfilled from its public name, tags and category paths without a network rebuild. The live
+  published record count is 7,554.
 - Filter facets show friendly labels and canonical order: Base Color, Normal, Roughness,
   Metalness, Gloss, Reflection, ORM, Ambient Occlusion, Displacement, Bump, Opacity, Mask, …
   Legacy values still resolve through the same canonicaliser.
@@ -774,6 +775,21 @@ Catalogue tests should use a small fixture, never the full 43 MB response.
   for HDRIs; the shared presets are `Up to 50 cm`, `50 cm – 2 m`, `2 – 5 m`, `5 m and larger`.
 - Resolution facets sort numerically, map facets sort canonically, and the focused view uses the
   shared searchable filter workbench with independent scrolling for the group rail and values.
+
+### 12.6 HDRI sky-condition normalisation (1.5.10)
+
+- Poliigon's `HDRIS / Sky / Clear`, `Partly Cloudy` and `Overcast` categories overlap and a few
+  clear-tagged captures are visibly cloudy. HDRI browsing now derives one canonical `weather`
+  value from the published name first, then tags, then category path
+  (`src/shared/sky-conditions.ts`): clear, partly cloudy, overcast, fog/haze, rain/storm or snow.
+  Ground snow under a clear sky remains clear; explicit snow/rain/fog sky language wins.
+- The derived value is stored in `poliigon-catalog.sqlite` schema v10 and exposed as
+  `PoliigonAssetSummary.weather`, a query filter and a facet. Poliigon's raw Sky weather branches
+  are hidden in the focused HDRI category tree; the normalised **Sky condition** facet replaces
+  them. The All-sources tree maps the same values into the unified weather branches.
+- Live distribution: 342 HDRIs (Clear 130, Partly Cloudy 111, Overcast 42, Fog & Haze 23,
+  Rain & Storm 1). Sampling and all facet/query combinations were verified against the live
+  catalogue.
 
 ### 12.3 Live verification (2026-11-05)
 

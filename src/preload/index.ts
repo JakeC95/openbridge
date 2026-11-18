@@ -68,7 +68,10 @@ const api: OpenBridgeApi = {
   openPath: target => ipcRenderer.invoke("app:openPath", target) as Promise<void>,
   openExternal: url => ipcRenderer.invoke("app:openExternal", url) as Promise<void>,
   openLogs: () => ipcRenderer.invoke("app:openLogs") as Promise<void>,
-  smartThumbnail: source => ipcRenderer.invoke("thumb:smart", source) as Promise<string>,
+  smartThumbnail: (source, crop) => ipcRenderer.invoke("thumb:smart", source, crop) as Promise<string>,
+  model: {
+    manifest: request => ipcRenderer.invoke("model:manifest", request)
+  },
   sendExport: (port, data: ExportAsset[]) =>
     ipcRenderer.invoke("export:send", port, data) as Promise<void>,
   writeExport: (folder, data: ExportAsset[]) =>
@@ -220,6 +223,34 @@ const api: OpenBridgeApi = {
       const listener = (_event: unknown, status: PolyHavenCatalogStatus): void => callback(status);
       ipcRenderer.on("polyhaven:status", listener);
       return () => ipcRenderer.removeListener("polyhaven:status", listener);
+    }
+  },
+  public: {
+    status: provider => ipcRenderer.invoke("public:status", provider),
+    refresh: provider => ipcRenderer.invoke("public:refresh", provider),
+    categories: provider => ipcRenderer.invoke("public:categories", provider),
+    search: query => ipcRenderer.invoke("public:search", query),
+    ids: query => ipcRenderer.invoke("public:ids", query),
+    extended: (provider, id) => ipcRenderer.invoke("public:extended", provider, id),
+    previews: (provider, id) => ipcRenderer.invoke("public:previews", provider, id),
+    highResolutionPreview: (provider, id, type) => ipcRenderer.invoke("public:highResolutionPreview", provider, id, type),
+    hdrPreview: (provider, id) => ipcRenderer.invoke("public:hdrPreview", provider, id),
+    cancelPreviews: (provider, id) => ipcRenderer.invoke("public:cancelPreviews", provider, id),
+    onStatus: (provider, callback) => {
+      const listener = (_event: unknown, status: import("../shared/public-providers").PublicCatalogStatus): void => callback(status);
+      ipcRenderer.on(`public:${provider}:status`, listener);
+      return () => ipcRenderer.removeListener(`public:${provider}:status`, listener);
+    }
+  },
+  blenderkitAuth: {
+    state: () => ipcRenderer.invoke("blenderkit:auth:state"),
+    setKey: key => ipcRenderer.invoke("blenderkit:auth:setKey", key),
+    test: () => ipcRenderer.invoke("blenderkit:auth:test"),
+    clear: () => ipcRenderer.invoke("blenderkit:auth:clear"),
+    onChanged: callback => {
+      const listener = (_event: unknown, state: import("../shared/public-providers").BlenderKitAuthState): void => callback(state);
+      ipcRenderer.on("blenderkit:auth:changed", listener);
+      return () => ipcRenderer.removeListener("blenderkit:auth:changed", listener);
     }
   },
   downloads: {

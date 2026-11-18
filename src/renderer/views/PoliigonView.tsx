@@ -10,6 +10,7 @@ import { ChevronDownIcon, CloseIcon, UserIcon } from "../icons";
 import { TimeOfDaySlider } from "../components/TimeOfDaySlider";
 import { FilterWorkbench, type FilterGroup } from "../components/BrowsingTools";
 import { formatClockValue } from "../../shared/hdri-time";
+import { skyConditionLabel, skyConditionRank } from "../../shared/sky-conditions";
 import { SIZE_FILTER_OPTIONS, sizeBounds, sizeFilterFromBounds, type SizeFilter } from "../size-filter";
 import { assetCountLabel, sortBucketsBy, sortResolutionBuckets, resolutionFacetValue } from "../catalog-utils";
 import { assetTypeLabel } from "../asset-visuals";
@@ -62,6 +63,8 @@ export function PoliigonView() {
   const resolutions = usePoliigonStore(state => state.resolutions);
   const creationMethods = usePoliigonStore(state => state.creationMethods);
   const mapTypes = usePoliigonStore(state => state.mapTypes);
+  const weather = usePoliigonStore(state => state.weather);
+  const toggleWeather = usePoliigonStore(state => state.toggleWeather);
   const minSize = usePoliigonStore(state => state.minSize);
   const maxSize = usePoliigonStore(state => state.maxSize);
   const setSizeRange = usePoliigonStore(state => state.setSizeRange);
@@ -132,6 +135,7 @@ export function PoliigonView() {
     resolutions.length +
     creationMethods.length +
     mapTypes.length +
+    weather.length +
     (minSize != null || maxSize != null ? 1 : 0) +
     (type === "HDRS" && timeStart != null && timeEnd != null ? 1 : 0);
 
@@ -172,6 +176,22 @@ export function PoliigonView() {
         compare: (a, b) => resolutionFacetValue(a) - resolutionFacetValue(b)
       });
     }
+    if (isHdri) {
+      const weatherFacet = [...(facets?.weather ?? [])].sort(
+        (a, b) => skyConditionRank(a.value) - skyConditionRank(b.value)
+      );
+      if (weatherFacet.length > 0 || weather.length > 0) {
+        groups.push({
+          key: "weather",
+          label: "Sky condition",
+          values: bucketRecord(weatherFacet),
+          selected: weather,
+          toggle: toggleWeather,
+          labels: Object.fromEntries(weatherFacet.map(bucket => [bucket.value, skyConditionLabel(bucket.value)])),
+          compare: (a, b) => skyConditionRank(a) - skyConditionRank(b)
+        });
+      }
+    }
     if (!isHdri) {
       const methodFacet = facets?.creationMethods ?? [];
       if (methodFacet.length > 0 || creationMethods.length > 0) {
@@ -197,16 +217,20 @@ export function PoliigonView() {
         });
       }
     }
-    return groups;
+    return isHdri
+      ? [...groups].sort((a, b) => (a.key === "weather" ? 0 : 1) - (b.key === "weather" ? 0 : 1))
+      : groups;
   }, [
     facets,
     isHdri,
     resolutions,
     creationMethods,
     mapTypes,
+    weather,
     toggleResolution,
     toggleCreationMethod,
-    toggleMapType
+    toggleMapType,
+    toggleWeather
   ]);
 
   const ready = status?.state === "ready";
@@ -216,7 +240,7 @@ export function PoliigonView() {
   useEffect(() => {
     setSelectedIds(new Set());
     anchorIndex.current = null;
-  }, [query, type, categoryIds, freeOnly, favoritesOnly, downloadedOnly, resolutions, creationMethods, mapTypes, sort]);
+  }, [query, type, categoryIds, freeOnly, favoritesOnly, downloadedOnly, resolutions, creationMethods, mapTypes, weather, sort]);
 
   useEffect(() => {
     if (filterGroups.length === 0 && activeCount === 0 && filtersOpen) setFiltersOpen(false);
@@ -400,6 +424,12 @@ export function PoliigonView() {
                 ? "Searching…"
                 : assetCountLabel(total)}
           </span>
+          {loading && hits.length > 0 && (
+            <span className="result-updating" role="status" aria-live="polite">
+              <span className="spinner" aria-hidden="true" />Updating
+            </span>
+          )}
+          {hits.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
 
           <button
             type="button"
@@ -461,6 +491,13 @@ export function PoliigonView() {
               <em aria-hidden="true">×</em>
             </button>
           )}
+          {isHdri && weather.map(value => (
+            <button type="button" key={`weather:${value}`} className="facet-chip active" onClick={() => toggleWeather(value)}>
+              <span>Sky condition</span>
+              <strong>{skyConditionLabel(value)}</strong>
+              <em aria-hidden="true">×</em>
+            </button>
+          ))}
           {!isHdri && creationMethods.map(value => (
             <button type="button" key={`method:${value}`} className="facet-chip active" onClick={() => toggleCreationMethod(value)}>
               <span>Method</span>
@@ -487,7 +524,7 @@ export function PoliigonView() {
             <div className="facet-panel-head">
               <div className="facet-panel-heading">
                 <strong>Refine Poliigon</strong>
-                <span>Filters apply instantly</span>
+                <span>{isHdri ? "Sky condition is normalised from public metadata" : "Filters apply instantly"}</span>
               </div>
               <div className="facet-panel-actions">
                 <button type="button" className="text-btn" onClick={clearFilters} disabled={activeCount === 0}>
@@ -605,15 +642,6 @@ export function PoliigonView() {
           <div className="asset-heading">
             {query ? "Search results" : categoryIds.length > 0 ? selectedCategoryLabel || "Category" : "Poliigon catalogue"}
           </div>
-          {hits.length > 0 && !selectMode && (
-            <button
-              type="button"
-              className="btn btn-ghost view-mode"
-              onClick={() => setListView(value => !value)}
-            >
-              {listView ? "Grid view" : "List / compare view"}
-            </button>
-          )}
 
           {hits.length > 0 && listView && !selectMode && (
             <AssetList

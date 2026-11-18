@@ -535,8 +535,13 @@ export class PolyHavenCatalog {
   }
 
   private rebuildFts(): void {
+    // assets_fts is a contentless FTS5 table, which rejects DELETE. Recreate it
+    // as part of the refresh transaction instead.
     this.db.exec(`
-      DELETE FROM assets_fts;
+      DROP TABLE IF EXISTS assets_fts;
+      CREATE VIRTUAL TABLE assets_fts USING fts5(
+        name, tags, categories, category, description, content=''
+      );
       INSERT INTO assets_fts (rowid, name, tags, categories, category, description)
       SELECT rowid, name, id || ' ' || tags, categories, category, description FROM assets;
     `);
@@ -738,7 +743,12 @@ export class PolyHavenCatalog {
       where.push("a.map_codes LIKE ?");
       params.push(`%"${mapType}"%`);
     }
-    for (const [key, values] of Object.entries(query.attributes ?? {})) {
+    const attributes = { ...(query.attributes ?? {}) };
+    // Weather only describes the sky. Poly Haven tags some interior captures
+    // with clear/overcast too, so a sky-condition filter always adds an outdoor
+    // constraint; an explicit indoor filter then correctly produces no results.
+    const weatherRequested = query.type === "hdris" && (attributes.weather?.length ?? 0) > 0;
+    for (const [key, values] of Object.entries(attributes)) {
       if (!/^[a-z0-9_]+$/i.test(key) || values.length === 0) continue;
       const path = `$.${key}`;
       where.push(`
@@ -757,6 +767,19 @@ export class PolyHavenCatalog {
         )
       `);
       params.push(path, path, path, ...values.map(value => value.toLowerCase()));
+    }
+    if (weatherRequested) {
+      where.push(`
+        EXISTS (
+          SELECT 1 FROM json_each(
+            CASE WHEN json_type(a.attributes, '$.environment') = 'array'
+              THEN json_extract(a.attributes, '$.environment')
+              ELSE json_array(json_extract(a.attributes, '$.environment'))
+            END
+          ) e
+          WHERE lower(CAST(e.value AS TEXT)) = 'outdoor'
+        )
+      `);
     }
     if (
       query.type === "hdris" &&
@@ -835,6 +858,11 @@ export class PolyHavenCatalog {
       .prepare(`SELECT a.* ${from} ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as Dict[];
     const hits = rows.map(row => this.summaryFromRow(row));
+    if (query.includeFacets === false) return {
+      hits, total, offset, limit, hasMore: offset + hits.length < total,
+      tookMs: performance.now() - started,
+      facets: { types: [], resolutions: [], mapTypes: [], categories: [], collections: [], attributes: {} }
+    };
 
     const facetFilter = this.buildWhere({ ...query, resolutions: [], mapTypes: [], attributes: {} });
     const facetRows = this.db
@@ -862,7 +890,11 @@ export class PolyHavenCatalog {
       mapTypes.push(...stringList(JSON.parse(text(row.map_codes) || "[]")));
       categories.push(...stringList(JSON.parse(text(row.categories) || "[]")));
       collections.push(...stringList(JSON.parse(text(row.collections) || "[]")));
-      for (const [key, rawValue] of Object.entries(dict(JSON.parse(text(row.attributes) || "{}")))) {
+      const attributes = dict(JSON.parse(text(row.attributes) || "{}"));
+      const outdoor = text(attributes.environment) === "outdoor";
+      for (const [key, rawValue] of Object.entries(attributes)) {
+        // Match the query invariant: weather buckets describe outdoor sky.
+        if (key === "weather" && !outdoor) continue;
         const values = Array.isArray(rawValue) ? rawValue : [rawValue];
         for (const value of values) {
           if (typeof value === "boolean") addAttribute(key, value ? "yes" : "no");

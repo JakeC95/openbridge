@@ -1,7 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { PolyHavenAssetSummary } from "../../shared/types";
 import { formatHdriTime } from "../../shared/hdri-time";
-import { polyHavenPrimaryPreview } from "../../shared/polyhaven";
+import { polyHavenAttributeValue, polyHavenPrimaryPreview } from "../../shared/polyhaven";
 import { assetTypeClass } from "../asset-visuals";
 import { ProviderLogo } from "./ProviderLogo";
 import { SmartThumbImage } from "./SmartThumbImage";
@@ -25,6 +25,7 @@ function facts(hit: PolyHavenAssetSummary): string[] {
   const output: string[] = [];
   if (hit.maxResolution) output.push(`${Math.round(hit.maxResolution / 1024)}K`);
   if (hit.type === "hdris") {
+    if (hit.attributes.weather) output.push(polyHavenAttributeValue(hit.attributes.weather));
     output.push(formatHdriTime(hit.timeOfDay));
   } else if (hit.type === "models") {
     if (hit.polycount) output.push(`${hit.polycount.toLocaleString()} tris`);

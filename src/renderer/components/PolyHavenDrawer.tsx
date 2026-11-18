@@ -5,6 +5,7 @@ import { CheckIcon, CloseIcon, DownloadIcon } from "../icons";
 import { AssetScaleDiagram } from "./AssetScaleDiagram";
 import { Dropdown } from "./Dropdown";
 import { ImageViewer } from "./ImageViewer";
+import { ModelPreviewPanel } from "./ModelViewer";
 import { TransferStatus } from "./TransferStatus";
 import { usePolyHavenStore } from "../polyhaven-store";
 import { polyHavenTechnical } from "../polyhaven-technical";
@@ -117,6 +118,7 @@ export function PolyHavenDrawer() {
   const settings = useStore(state => state.settings);
   const [section, setSection] = useState<"overview" | "download" | "technical" | "related">("overview");
   const [mode, setMode] = useState<"renders" | "maps">("renders");
+  const [modelOpen, setModelOpen] = useState(false);
   const [renderIndex, setRenderIndex] = useState(0);
   const [mapIndex, setMapIndex] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -275,6 +277,7 @@ export function PolyHavenDrawer() {
     if (mapsAttempted && !mapsLoading) {
       setViewerPending(false);
       setMode("renders");
+      setModelOpen(false);
       setRenderIndex(0);
       if (selection?.localPreview || selection?.summary.thumbnail) setViewerOpen(true);
     }
@@ -561,7 +564,17 @@ export function PolyHavenDrawer() {
               <button type="button" className={mode === "maps" ? "active" : ""} onClick={() => setMode("maps")}>
                 Maps
               </button>
+              {summary.type === "models" && <button type="button" className={modelOpen ? "active" : ""} onClick={() => setModelOpen(value => !value)}>3D</button>}
             </div>
+            {modelOpen && summary.type === "models" && <ModelPreviewPanel
+              assetId={summary.id}
+              provider="polyhaven"
+              name={summary.name}
+              path={localPath ?? undefined}
+              type="models"
+              isPlant={/plant|foliage|leaf|tree/i.test(`${summary.name} ${summary.tags.join(" ")}`)}
+              startFullscreen
+            />}
 
             {mode === "maps" && genuineLoading ? (
               <div className="poliigon-map-empty">

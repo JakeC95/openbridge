@@ -96,7 +96,7 @@ Still open:
 Still open:
 
 - GitHub Support must purge old unreachable commit objects that remain accessible by SHA.
-- Publish the unreleased maintenance changes as the next patch release.
+- Publish the 1.6.2 maintenance and provider changes as the next patch release.
 
 ## Browsing productivity (implemented, unreleased)
 
@@ -279,12 +279,28 @@ See [POLYHAVEN.md](POLYHAVEN.md).
   and sorts are hidden where the provider publishes no dimensions.
 - Poliigon map codes are canonicalised during indexing, merging legacy tokens (`COL`, `NRM`,
   `METALNESS`) with current PascalCase names (`BaseColor`, `Normal`, `Metalness`). The catalogue
-  schema is v9; existing indexes rebuild automatically. Facet labels and order are friendly and
-  stable, and legacy filter values still resolve.
+  schema is v10; v9 indexes migrate in place and backfill HDRI weather. Facet labels and order are
+  friendly and stable, and legacy filter values still resolve.
 - Resolution and texture-map facets sort canonically instead of by count, and Megascans facet values
   are humanised (`temperate-forest` → `Temperate Forest`).
 - Hidden filters reset when switching type or provider, and focused provider views clear size
   bounds that do not apply to the newly selected type.
+
+## HDRI category and sky-condition pass (1.5.10, unreleased)
+
+- Poly Haven's live three-level HDRI environment taxonomy is attached to the combined Discover
+  tree at runtime, grouped under Skies & Skyboxes, Nature & Landscapes, Urban & Built, Interiors,
+  Studio and General Environments. Poliigon environment categories map into the matching branches,
+  and focused provider category trees stay HDRI-only while browsing HDRIs.
+- HDRI weather is a canonical cross-provider filter instead of overlapping provider category tags:
+  Clear, Partly cloudy, Overcast, Fog & haze, Rain & storm and Snow. Poly Haven uses published
+  weather attributes and is always outdoor-only; Poliigon derives the value from public names,
+  tags and categories during indexing (schema v10). Clear / Sunny Day adds a 07:00–17:00 preset,
+  while Clear Skies shows all clear times.
+- Contradictory `clear`/`overcast`/`fog` tag checkboxes are hidden for HDRIs, Megascans groups are
+  hidden, sky-condition groups lead the filter rail, cards show resolved weather and time, and the
+  type control stays at HDRIs while the category tree/chip carries the subcategory. The Poly Haven
+  FTS refresh was also fixed to recreate its contentless table.
 
 ## Non-goals
 

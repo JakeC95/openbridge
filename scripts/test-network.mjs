@@ -329,6 +329,15 @@ try {
     await downloadFile(`${origin}/gzip`, target, undefined, 1, undefined, body.length);
     assert.deepEqual(await readFile(target), body);
   });
+  await test("preview budgets reject oversized descriptors, HTTP bodies and decoded compressed streams", async () => {
+    await assert.rejects(() => downloadFile(`${origin}/budget`, join(directory, "budget-header"), undefined, 1, undefined, undefined, undefined, 1024), /budget/);
+    assert.equal(await stat(join(directory, "budget-header")).catch(() => null), null);
+    await assert.rejects(() => downloadFile(`${origin}/gzip`, join(directory, "budget-compressed"), undefined, 1, undefined, undefined, undefined, 1024), /budget/);
+    assert.ok((await stat(join(directory, "budget-compressed.part")).catch(() => ({ size: 0 }))).size <= 1024);
+    await assert.rejects(() => downloadFile(`${origin}/budget`, join(directory, "budget-descriptor"), undefined, 1, undefined, body.length, undefined, 1024), /budget/);
+    await downloadFile(`${origin}/budget`, join(directory, "budget-valid"), undefined, 1, undefined, body.length, undefined, body.length);
+    assert.equal((await stat(join(directory, "budget-valid"))).size, body.length);
+  });
   await test("transfer permission errors do not retry and stalled bodies have a finite timeout", async () => {
     const before = seen.length;
     await assert.rejects(() => downloadFile(`${origin}/denied?Signature=fixture-secret`, join(directory, "denied")), error => error.status === 403 && !error.message.includes("fixture-secret"));

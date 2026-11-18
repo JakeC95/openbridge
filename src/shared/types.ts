@@ -1,8 +1,23 @@
+import type {
+  BlenderKitAuthState,
+  BlenderKitKeyTest,
+  PublicAssetDetail,
+  PublicCatalogQuery,
+  PublicCatalogStatus,
+  PublicDownloadOptions,
+  PublicProviderId,
+  PublicQueryResult
+} from "./public-providers";
+
 export type TextureFormat = "jpg" | "exr";
 export type MeshFormat = "fbx" | "abc";
 export type DownloadMapFormat = "image/jpeg" | "image/x-exr" | "jpeg+exr";
 export type AssetDefaultsKind = "3d" | "3dplant" | "surface" | "other";
-export type AssetProvider = "megascans" | "poliigon" | "polyhaven";
+export type AssetProvider =
+  | "megascans"
+  | "poliigon"
+  | "polyhaven"
+  | PublicProviderId;
 export type ProviderScope = AssetProvider | "all";
 
 export interface DownloadPreset {
@@ -24,6 +39,9 @@ export interface AppSettings {
   libraryPath: string;
   poliigonLibraryPath: string;
   polyhavenLibraryPath: string;
+  ambientcgLibraryPath: string;
+  blenderkitLibraryPath: string;
+  openhdriLibraryPath: string;
   poliigonConfirmPurchases: boolean;
   apiPort: number;
   discoveryPort: number;
@@ -352,6 +370,7 @@ export interface MapPreview {
   assetId?: number | string;
   map?: MapPreviewRequest;
   exposure?: { assetId: number | string; mapType?: string };
+  panorama?: boolean;
 }
 
 export interface MapPreviewRequest {
@@ -397,7 +416,11 @@ export interface PoliigonDownloadOptions {
   software?: string;
 }
 
-export type AnyDownloadOptions = Partial<DownloadOptions> | Partial<PoliigonDownloadOptions> | Partial<PolyHavenDownloadOptions>;
+export type AnyDownloadOptions =
+  | Partial<DownloadOptions>
+  | Partial<PoliigonDownloadOptions>
+  | Partial<PolyHavenDownloadOptions>
+  | Partial<PublicDownloadOptions>;
 
 export interface DownloadProgress {
   assetId: string;
@@ -548,6 +571,9 @@ export interface ScanResult {
   libraryPath: string;
   poliigonLibraryPath?: string;
   polyhavenLibraryPath?: string;
+  ambientcgLibraryPath?: string;
+  blenderkitLibraryPath?: string;
+  openhdriLibraryPath?: string;
 }
 
 export interface LibraryRef {
@@ -560,6 +586,9 @@ export interface LibraryCounts {
   megascans: number;
   poliigon: number;
   polyhaven: number;
+  ambientcg: number;
+  blenderkit: number;
+  openhdri: number;
   downloaded: number;
   custom: number;
   dhi: number;
@@ -577,6 +606,7 @@ export interface PackSummary extends PackRef {
 }
 
 export interface LibraryQuery {
+  includeFacets?: boolean;
   query?: string;
   provider?: AssetProvider | "all";
   repo?: RepoKind | "all";
@@ -615,6 +645,9 @@ export interface LibrarySnapshot {
   libraryPath: string;
   poliigonLibraryPath?: string;
   polyhavenLibraryPath?: string;
+  ambientcgLibraryPath?: string;
+  blenderkitLibraryPath?: string;
+  openhdriLibraryPath?: string;
 }
 
 export type LibraryIssueKind =
@@ -651,6 +684,9 @@ export interface LibraryHealthReport {
   libraryPath: string;
   poliigonLibraryPath?: string;
   polyhavenLibraryPath?: string;
+  ambientcgLibraryPath?: string;
+  blenderkitLibraryPath?: string;
+  openhdriLibraryPath?: string;
   scannedAt: number;
   assets: number;
   files: number;
@@ -712,6 +748,8 @@ export interface PoliigonAssetSummary {
   software: string[];
   /** Estimated hour of day (0..24) for HDRIs, if known. */
   timeOfDay?: number | null;
+  /** Canonical HDRI sky condition derived from public metadata. */
+  weather: string | null;
 }
 
 export interface PoliigonAssetDetail extends PoliigonAssetSummary {
@@ -756,6 +794,7 @@ export type PoliigonSort =
   | "credit";
 
 export interface PoliigonCatalogQuery {
+  includeFacets?: boolean;
   query?: string;
   type?: string;
   ids?: number[];
@@ -766,6 +805,8 @@ export interface PoliigonCatalogQuery {
   resolutions?: string[];
   creationMethods?: string[];
   mapTypes?: string[];
+  /** Canonical HDRI sky conditions (clear, partly_cloudy, overcast, fog, rain, snow). */
+  weather?: string[];
   /** Start of the HDRI time-of-day falloff window, in hours (0..24). */
   timeStart?: number;
   /** End of the HDRI time-of-day falloff window; may be lower than start to cross midnight. */
@@ -785,6 +826,7 @@ export interface PoliigonFacets {
   resolutions: PoliigonFacetBucket[];
   creationMethods: PoliigonFacetBucket[];
   mapTypes: PoliigonFacetBucket[];
+  weather: PoliigonFacetBucket[];
   free: number;
 }
 
@@ -866,6 +908,7 @@ export interface PolyHavenDownloadOptions {
 }
 
 export interface PolyHavenCatalogQuery {
+  includeFacets?: boolean;
   query?: string;
   type?: PolyHavenAssetType | string;
   ids?: string[];
@@ -964,7 +1007,10 @@ export interface OpenBridgeApi {
   openPath(target: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   openLogs(): Promise<void>;
-  smartThumbnail(source: string): Promise<string>;
+  smartThumbnail(source: string, crop?: "top-2-1"): Promise<string>;
+  model: {
+    manifest(request: import("./model-preview").ModelManifestRequest): Promise<import("./model-preview").ModelManifest>;
+  };
   sendExport(port: number, data: ExportAsset[]): Promise<void>;
   writeExport(folder: string, data: ExportAsset[]): Promise<string>;
   exportAssetToFolder(assetId: string, folder: string): Promise<string>;
@@ -1047,6 +1093,26 @@ export interface OpenBridgeApi {
     highResolutionMapPreview(assetId: string, mapType: string): Promise<PolyHavenMapPreview>;
     hdrPreview(assetId: string): Promise<PoliigonHdrData>;
     onStatus(callback: (status: PolyHavenCatalogStatus) => void): () => void;
+  };
+  public: {
+    status(provider: PublicProviderId): Promise<PublicCatalogStatus>;
+    refresh(provider: PublicProviderId): Promise<PublicCatalogStatus>;
+    categories(provider: PublicProviderId): Promise<CategoryNode[]>;
+    search(query: PublicCatalogQuery): Promise<PublicQueryResult>;
+    ids(query: PublicCatalogQuery): Promise<string[]>;
+    extended(provider: PublicProviderId, assetId: string): Promise<PublicAssetDetail>;
+    previews(provider: PublicProviderId, assetId: string): Promise<import("./public-providers").PublicPreviewSet>;
+    highResolutionPreview(provider: PublicProviderId, assetId: string, mapType: string): Promise<MapPreview>;
+    hdrPreview(provider: PublicProviderId, assetId: string): Promise<PoliigonHdrData>;
+    cancelPreviews(provider: PublicProviderId, assetId: string): Promise<void>;
+    onStatus(provider: PublicProviderId, callback: (status: PublicCatalogStatus) => void): () => void;
+  };
+  blenderkitAuth: {
+    state(): Promise<BlenderKitAuthState>;
+    setKey(apiKey: string): Promise<BlenderKitAuthState>;
+    test(): Promise<BlenderKitKeyTest>;
+    clear(): Promise<BlenderKitAuthState>;
+    onChanged(callback: (state: BlenderKitAuthState) => void): () => void;
   };
   downloads: {
     start(

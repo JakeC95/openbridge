@@ -169,7 +169,7 @@ export function polyHavenCollectionLabel(value: string): string {
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
   time_of_day: "Time of day",
-  weather: "Weather",
+  weather: "Sky condition",
   light_type: "Lighting",
   contrast: "Contrast",
   environment: "Environment",

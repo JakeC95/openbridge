@@ -37,7 +37,11 @@ const GROUP_DEFS: Array<{ title: string; keys: string[] }> = [
   },
   {
     title: "Delivery",
-    keys: ["resolutions", "maxResolution", "defaultResolution", "layoutConvention"]
+    keys: ["resolutions", "maxResolution", "defaultResolution", "downloadSize", "layoutConvention"]
+  },
+  {
+    title: "Source",
+    keys: ["creator", "license", "rating", "verification", "version", "sourceApp", "downloadStats"]
   },
   {
     title: "Metadata",
@@ -45,6 +49,7 @@ const GROUP_DEFS: Array<{ title: string; keys: string[] }> = [
       "pack",
       "creationMethod",
       "releaseStatus",
+      "weather",
       "timeOfDay",
       "attributes",
       "dateTaken",
@@ -57,6 +62,8 @@ const GROUP_DEFS: Array<{ title: string; keys: string[] }> = [
       "filesHash",
       "displacementHeight",
       "sunPosition",
+      "fileFormat",
+      "colorChecker",
       "catalogueId",
       "published",
       "updated",

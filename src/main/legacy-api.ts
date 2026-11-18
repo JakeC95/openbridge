@@ -476,8 +476,8 @@ function buildAlgoliaParams(  params: CatalogQuery,
   });
   if (attributesToRetrieve?.length) {
     query.set("attributesToRetrieve", attributesToRetrieve.join(","));
-  } else {
-    query.set("facets", params.facets?.length ? params.facets.join(",") : "*");
+  } else if (params.facets?.length) {
+    query.set("facets", params.facets.join(","));
     query.set("maxValuesPerFacet", "1000");
   }
 

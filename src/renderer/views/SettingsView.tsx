@@ -15,6 +15,8 @@ import { Dropdown } from "../components/Dropdown";
 import { mapTypeLabel } from "../download-options";
 import { usePoliigonStore } from "../poliigon-store";
 import { usePolyHavenStore } from "../polyhaven-store";
+import { PUBLIC_PROVIDER_IDS, publicProviderLabel } from "../../shared/public-providers";
+import { usePublicStore } from "../public-store";
 
 const PRESET_SECTIONS: Array<{
   kind: AssetDefaultsKind;
@@ -97,9 +99,16 @@ export function SettingsView() {
   const syncPoliigonOwned = usePoliigonStore(state => state.syncOwned);
   const polyhavenStatus = usePolyHavenStore(state => state.status);
   const refreshPolyHavenCatalogue = usePolyHavenStore(state => state.refresh);
+  const publicProviderStates = usePublicStore(state => state.providers);
 
   const [draft, setDraft] = useState<AppSettings | null>(settings);
   const [saving, setSaving] = useState(false);
+  const [blenderKey, setBlenderKey] = useState("");
+  const [blenderKeySaved, setBlenderKeySaved] = useState(false);
+  const [blenderKeyError, setBlenderKeyError] = useState("");
+  const [blenderKeyStatus, setBlenderKeyStatus] = useState("");
+  const [blenderKeyTesting, setBlenderKeyTesting] = useState(false);
+  useEffect(() => { void window.openbridge.blenderkitAuth?.state().then(state => setBlenderKeySaved(state.hasKey)); }, []);
   const [uiScale, setUiScale] = useState(() => {
     const saved = Number(localStorage.getItem("openbridge.uiScale") ?? "100");
     return [100, 115, 130, 150].includes(saved) ? saved : 100;
@@ -111,6 +120,9 @@ export function SettingsView() {
 
   useEffect(() => {
     void usePoliigonStore.getState().init();
+    for (const provider of PUBLIC_PROVIDER_IDS) {
+      void window.openbridge.public.status(provider).then(status => usePublicStore.getState().patch(provider, { status })).catch(() => undefined);
+    }
   }, []);
 
   if (!draft) {
@@ -140,7 +152,10 @@ export function SettingsView() {
       libraryRoot: folder,
       libraryPath: `${base}\\Megascans`,
       poliigonLibraryPath: `${base}\\Poliigon`,
-      polyhavenLibraryPath: `${base}\\PolyHaven`
+      polyhavenLibraryPath: `${base}\\PolyHaven`,
+      ambientcgLibraryPath: `${base}\\ambientCG`,
+      blenderkitLibraryPath: `${base}\\BlenderKit`,
+      openhdriLibraryPath: `${base}\\OpenHDRI`
     });
   }
 
@@ -251,6 +266,12 @@ export function SettingsView() {
             Poly Haven assets are public CC0 files. OpenBridge writes a self-contained folder plus an
             OpenBridge metadata record so the local Library keeps working offline.
           </p>
+          {PUBLIC_PROVIDER_IDS.map(provider => <div className="form-row" key={provider}><label>{publicProviderLabel(provider)} library</label><div className="path-input"><input value={draft[`${provider}LibraryPath`] ?? ""} readOnly /><button type="button" className="btn btn-ghost" onClick={() => void window.openbridge.chooseDirectory().then(folder => { if (folder) patch({ [`${provider}LibraryPath`]: folder }); })}><FolderIcon /> Change...</button></div></div>)}
+          <p className="hint">
+            ambientCG, BlenderKit and OpenHDRI libraries index OpenBridge-managed downloads
+            containing an <code>openbridge-&lt;provider&gt;.json</code> sidecar. Existing folders from
+            other tools are not imported automatically for these providers.
+          </p>
           <label className="check-row">
             <input
               type="checkbox"
@@ -261,6 +282,38 @@ export function SettingsView() {
           </label>
         </section>
 
+        <section className="settings-section">
+          <h2>BlenderKit account</h2>
+          <p className="hint">Browsing is public. Downloads require your own API key and any applicable plan. Your key is encrypted with Windows secure storage; it is never sent to other providers.</p>
+          <p className="hint">{blenderKeySaved ? "API key saved. Use Test to verify it with BlenderKit." : "No API key saved."}</p>
+          <div className="form-row"><label>API key</label><input type="password" autoComplete="off" aria-label="BlenderKit API key" placeholder="BlenderKit API key" value={blenderKey} onChange={event => setBlenderKey(event.target.value)} /></div>
+          <div className="button-row horizontal">
+          <button type="button" className="btn btn-ghost" disabled={!blenderKey.trim()} onClick={() => void window.openbridge.blenderkitAuth.setKey(blenderKey).then(async state => {
+            setBlenderKeySaved(state.hasKey); setBlenderKey(""); setBlenderKeyError(""); setBlenderKeyStatus("");
+            if (state.hasKey) {
+              setBlenderKeyTesting(true);
+              try {
+                const result = await window.openbridge.blenderkitAuth.test();
+                setBlenderKeyStatus(result.ok ? `Verified as ${result.userName}${result.plan ? ` · ${result.plan}` : ""}.` : "");
+                if (!result.ok) setBlenderKeyError(result.error ?? "BlenderKit rejected this key.");
+              } catch (error) { setBlenderKeyError(String(error)); }
+              finally { setBlenderKeyTesting(false); }
+            }
+          }).catch(error => setBlenderKeyError(String(error)))}>Save &amp; test</button>
+          <button type="button" className="btn btn-ghost" disabled={!blenderKeySaved || blenderKeyTesting} onClick={() => void (async () => {
+            setBlenderKeyTesting(true); setBlenderKeyError(""); setBlenderKeyStatus("");
+            try {
+              const result = await window.openbridge.blenderkitAuth.test();
+              setBlenderKeyStatus(result.ok ? `Verified as ${result.userName}${result.plan ? ` · ${result.plan}` : ""}.` : "");
+              if (!result.ok) setBlenderKeyError(result.error ?? "BlenderKit rejected this key.");
+            } catch (error) { setBlenderKeyError(String(error)); }
+            finally { setBlenderKeyTesting(false); }
+          })()}>{blenderKeyTesting ? "Testing…" : "Test key"}</button>
+          <button type="button" className="text-btn" onClick={() => void window.openbridge.blenderkitAuth.clear().then(() => { setBlenderKeySaved(false); setBlenderKey(""); setBlenderKeyStatus(""); setBlenderKeyError(""); })}>Remove key</button>
+          </div>
+          {blenderKeyStatus && <p className="hint" role="status">{blenderKeyStatus}</p>}
+          {blenderKeyError && <p className="error-box" role="alert">{blenderKeyError}</p>}
+        </section>
         <section className="settings-section">
           <h2>Poliigon account</h2>
           {poliigonAuth.loggedIn ? (
@@ -384,6 +437,28 @@ export function SettingsView() {
             asset list is cached locally and the per-asset file metadata is filled in and
             refreshed in the background.
           </p>
+        </section>
+
+        <section className="settings-section">
+          <h2>Additional provider catalogues</h2>
+          <p className="hint">
+            ambientCG and OpenHDRI are cached locally and refresh when their local index is twelve
+            hours old. BlenderKit searches its live catalogue online. Refresh is on demand below.
+          </p>
+          <div className="provider-catalog-status">
+            {PUBLIC_PROVIDER_IDS.map(provider => {
+              const status = publicProviderStates[provider].status;
+              const searching = publicProviderStates[provider].loading;
+              return <div className="provider-catalog-card" key={provider}>
+                <strong>{publicProviderLabel(provider)}</strong>
+                <span>{provider === "blenderkit" ? "Online search" : searching ? "Searching…" : status?.state === "refreshing" ? "Indexing…" : status?.state === "ready" ? "Indexed" : status?.state === "error" ? "Error" : "Not loaded"}</span>
+                <span>{status?.count ? `${status.count.toLocaleString()} indexed assets` : provider === "blenderkit" ? "Asset searches are live" : "—"}</span>
+                <span>{status?.refreshedAt ? `Refreshed ${new Date(status.refreshedAt).toLocaleString()}` : provider === "blenderkit" ? "Categories cached on demand" : "Never refreshed"}</span>
+                {status?.error && <span className="provider-catalog-error">{status.error}</span>}
+                <button type="button" className="btn btn-ghost" disabled={status?.state === "refreshing"} onClick={() => void window.openbridge.public.refresh(provider).then(() => usePublicStore.getState().init(provider)).catch(error => useStore.getState().toast(String(error), true))}>{provider === "blenderkit" ? "Refresh categories" : "Refresh catalogue"}</button>
+              </div>;
+            })}
+          </div>
         </section>
 
         <section className="settings-section">

@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from "react";
+import "./public-providers.css";
 import { useStore } from "./store";
 import { Sidebar } from "./components/Sidebar";
 import { CatalogSearch } from "./components/CatalogSearch";
@@ -20,6 +21,10 @@ import { PolyHavenDrawer } from "./components/PolyHavenDrawer";
 import { PoliigonLoginDialog } from "./components/PoliigonLoginDialog";
 import { usePoliigonStore } from "./poliigon-store";
 import { usePolyHavenStore } from "./polyhaven-store";
+import { isPublicProviderId, PUBLIC_PROVIDER_IDS, publicProviderLabel } from "../shared/public-providers";
+import { PublicSearch, PublicView } from "./views/PublicView";
+import { PublicDrawer } from "./components/PublicAsset";
+import { publicCategoryQuery, usePublicStore } from "./public-store";
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   discover: { title: "Discover", subtitle: "Megascans catalogue" },
@@ -48,7 +53,8 @@ export function App() {
   const polyHavenSelection = usePolyHavenStore(state => state.selection);
   const poliigonAuth = usePoliigonStore(state => state.auth);
   const openPoliigonLogin = usePoliigonStore(state => state.openLogin);
-  const drawerOpen = Boolean(selection) || Boolean(poliigonSelection) || Boolean(polyHavenSelection);
+  const publicSelection = usePublicStore(state => state.selection ?? state.local);
+  const drawerOpen = Boolean(selection) || Boolean(poliigonSelection) || Boolean(polyHavenSelection) || Boolean(publicSelection);
   const poliigonView = view === "discover" && provider === "poliigon";
   const polyHavenView = view === "discover" && provider === "polyhaven";
   const [showGuide, setShowGuide] = useState(() => localStorage.getItem("openbridge.guideDismissed") !== "true");
@@ -58,6 +64,30 @@ export function App() {
     void init();
     return () => dispose();
   }, [dispose, init]);
+  useEffect(() => {
+    if (!window.openbridge.blenderkitAuth) return;
+    void window.openbridge.blenderkitAuth.state().then(state => usePublicStore.getState().setBlenderkitAuth(state));
+    return window.openbridge.blenderkitAuth.onChanged(state => {
+      usePublicStore.getState().setBlenderkitAuth(state);
+      const current = useStore.getState();
+      if (current.provider === "blenderkit" || current.provider === "all") void usePublicStore.getState().search("blenderkit", true, {});
+    });
+  }, []);
+  useEffect(() => {
+    if (!window.openbridge.public?.onStatus) return;
+    const subscriptions = PUBLIC_PROVIDER_IDS.map(id => window.openbridge.public.onStatus(id, status => {
+      const previous = usePublicStore.getState().providers[id].status;
+      usePublicStore.getState().patch(id, { status });
+      if (status.state === "ready" && status.refreshedAt !== previous?.refreshedAt) {
+        void window.openbridge.public.categories(id).then(categories => {
+          usePublicStore.getState().patch(id, { categories, metadataReady: true });
+          const current = useStore.getState();
+          if (current.provider === "all" || current.provider === id) void usePublicStore.getState().search(id, true, current.provider === "all" ? publicCategoryQuery(id, current.allType, categories) : {});
+        }).catch(error => usePublicStore.getState().patch(id, { error: String(error) }));
+      }
+    }));
+    return () => subscriptions.forEach(dispose => dispose());
+  }, []);
 
   useEffect(() => {
     void initPoliigon();
@@ -70,6 +100,7 @@ export function App() {
   }, [initPolyHaven]);
 
   useEffect(() => {
+    usePublicStore.getState().close();
     if (provider === "poliigon") {
       useStore.getState().closeSelection();
       usePolyHavenStore.getState().closeAsset();
@@ -104,9 +135,11 @@ export function App() {
     ? { title: "Discover", subtitle: "Poliigon catalogue" }
     : view === "discover" && provider === "polyhaven"
       ? { title: "Discover", subtitle: "Poly Haven catalogue" }
-      : view === "discover" && provider === "all"
-        ? { title: "Discover", subtitle: "All asset sources" }
-        : TITLES[view] ?? TITLES.discover;
+      : view === "discover" && isPublicProviderId(provider)
+        ? { title: "Discover", subtitle: `${publicProviderLabel(provider)} catalogue` }
+        : view === "discover" && provider === "all"
+          ? { title: "Discover", subtitle: "All asset sources" }
+          : TITLES[view] ?? TITLES.discover;
 
   return (
     <div className={`shell${drawerOpen ? " drawer-open" : ""}${shiftHeld && view === "discover" && provider !== "poliigon" && provider !== "polyhaven" ? " shift-selecting" : ""}`}>
@@ -114,7 +147,7 @@ export function App() {
 
       <main className="main">
         <header className={view === "discover" || view === "library" ? "topbar topbar-catalog" : "topbar"}>
-          {view === "discover" && provider === "poliigon" ? (
+          {view === "discover" && isPublicProviderId(provider) ? <PublicSearch provider={provider} /> : view === "discover" && provider === "poliigon" ? (
             <PoliigonSearch />
           ) : view === "discover" && provider === "polyhaven" ? (
             <PolyHavenSearch />
@@ -135,7 +168,7 @@ export function App() {
                 <p>Left / Right — next asset or map when not typing</p>
                 <button type="button" className="text-btn" onClick={() => { setShowGuide(true); localStorage.removeItem("openbridge.guideDismissed"); }}>Show getting started</button></div>
             </details>
-            {!poliigonView && !polyHavenView && auth.loggedIn && (
+            {!poliigonView && !polyHavenView && !isPublicProviderId(provider) && auth.loggedIn && (
               <button
                 type="button"
                 className="sync-button"
@@ -161,7 +194,7 @@ export function App() {
               </button>
             )}
 
-            {polyHavenView ? (
+            {view === "discover" && isPublicProviderId(provider) ? <div className="user-pill"><div className="avatar small">{provider === "ambientcg" ? "a" : provider === "blenderkit" ? "B" : "O"}</div><div><strong>{provider === "ambientcg" ? "ambientCG" : provider === "blenderkit" ? "BlenderKit" : "OpenHDRI"}</strong><span>{provider === "blenderkit" ? "Account required for downloads" : "CC0 · no account"}</span></div></div> : polyHavenView ? (
               <div className="user-pill" title="Poly Haven assets are free under CC0. No account is required.">
                 <div className="avatar small">P</div>
                 <div>
@@ -224,6 +257,7 @@ export function App() {
           if (state.view === "library") state.resetLocalFilters();
           else if (state.provider === "poliigon") usePoliigonStore.getState().clearFilters();
           else if (state.provider === "polyhaven") usePolyHavenStore.getState().clearFilters();
+          else if (isPublicProviderId(state.provider)) void usePublicStore.getState().reset(state.provider);
           else if (state.provider === "all") {
             state.clearAllFilters();
             usePoliigonStore.setState({ query: "" });
@@ -232,13 +266,14 @@ export function App() {
             void state.search(true);
             void usePoliigonStore.getState().search(true);
             void usePolyHavenStore.getState().search(true);
+            for (const source of PUBLIC_PROVIDER_IDS) void usePublicStore.getState().reset(source);
           }
           else { state.setQuery(""); state.clearFilters(); }
         }}>Start fresh</button>}
 
         <div className="content">
           <div className="view-slot" hidden={view !== "discover"}>
-            {provider === "all" ? <AllView /> : provider === "megascans" ? <DiscoverView /> : provider === "poliigon" ? <PoliigonView /> : <PolyHavenView />}
+            {isPublicProviderId(provider) ? <PublicView provider={provider} /> : provider === "all" ? <AllView /> : provider === "megascans" ? <DiscoverView /> : provider === "poliigon" ? <PoliigonView /> : <PolyHavenView />}
           </div>
           <div className="view-slot" hidden={view !== "library"}><LibraryView /></div>
           {view === "downloads" && <DownloadsView />}
@@ -246,9 +281,9 @@ export function App() {
         </div>
       </main>
 
-      {polyHavenSelection || provider === "polyhaven" ? (
+      {publicSelection ? <PublicDrawer /> : polyHavenSelection ? (
         <PolyHavenDrawer />
-      ) : provider === "poliigon" || poliigonSelection ? (
+      ) : poliigonSelection ? (
         <PoliigonDrawer />
       ) : (
         <AssetDrawer />

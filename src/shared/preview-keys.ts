@@ -11,5 +11,8 @@ export const previewProgressKey = {
   polyMaps: (assetId: string): string => `polyhaven-preview:${assetId}:maps`,
   polyMap: (assetId: string, mapType: string): string =>
     `polyhaven-preview:${assetId}:map:${mapType.trim().toLowerCase()}`,
-  polyHdr: (assetId: string): string => `polyhaven-preview:${assetId}:hdr`
+  polyHdr: (assetId: string): string => `polyhaven-preview:${assetId}:hdr`,
+  publicMaps: (assetId: string): string => `public-preview:${assetId}:maps`,
+  publicMap: (assetId: string, mapType: string): string => `public-preview:${assetId}:map:${mapType.trim().toLowerCase()}`,
+  publicHdr: (assetId: string): string => `public-preview:${assetId}:hdr`
 };

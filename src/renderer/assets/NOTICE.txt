@@ -1,0 +1,4 @@
+﻿monochrome_studio_02_1k.hdr
+Source: Poly Haven (https://polyhaven.com/a/monochrome_studio_02)
+License: CC0 1.0 Universal (public domain dedication)
+Used as the neutral studio environment for the OpenBridge 3D model viewer.

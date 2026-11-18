@@ -1,8 +1,12 @@
+import { useMemo } from "react";
 import { useStore } from "../store";
 import { usePoliigonStore } from "../poliigon-store";
 import { usePolyHavenStore } from "../polyhaven-store";
+import { usePublicStore } from "../public-store";
+import { publicTypeForCategory } from "../public-taxonomy";
+import { PUBLIC_PROVIDER_IDS, isPublicProviderId, publicProviderLabel } from "../../shared/public-providers";
 import type { CategoryNode } from "../../shared/types";
-import { allCategoryNodes, allSourcePath } from "../all-sources";
+import { allCategoryNodes, allSourcePath, polyHavenHdriCategoryRoots } from "../all-sources";
 import {
   DiscoverIcon,
   DownloadIcon,
@@ -13,7 +17,42 @@ import {
 import { CategoryTree } from "./CategoryTree";
 import { formatTransferBytes, summarizeDownloads } from "../download-summary";
 
-function categoryPathFor(nodes: CategoryNode[], id: number | undefined): string[] {
+/**
+ * Poliigon's provider Sky > Clear/Partly Cloudy/Overcast buckets are not
+ * reliable weather filters. Hide those entry points; the curated Sky condition
+ * facet and the unified Discover tree use normalised data instead.
+ */
+function poliigonCategoryLabel(label: string): string {
+  const lower = label.trim().toLowerCase();
+  if (lower === "hdris") return "HDRIs";
+  if (lower === "fields") return "Fields";
+  return label;
+}
+
+function formatPoliigonCategories(nodes: CategoryNode[]): CategoryNode[] {
+  return nodes.map(node => ({
+    ...node,
+    label: poliigonCategoryLabel(node.label),
+    children: formatPoliigonCategories(node.children)
+  }));
+}
+
+function poliigonHdriCategoryRoot(root: CategoryNode): CategoryNode {
+  const hiddenWeather = new Set(["clear", "partly cloudy", "overcast"]);
+  return {
+    ...root,
+    children: root.children
+      .filter(node => node.label.trim().toLowerCase() !== "free")
+      .map(node => node.label.trim().toLowerCase() === "sky"
+        ? {
+            ...node,
+            children: node.children.filter(child => !hiddenWeather.has(child.label.trim().toLowerCase()))
+          }
+        : node)
+  };
+}
+
+function categoryPathFor(nodes: CategoryNode[], id: number | string | undefined): string[] {
   if (id === undefined) return [];
   const visit = (list: CategoryNode[], trail: string[]): string[] | null => {
     for (const node of list) {
@@ -31,6 +70,7 @@ export function Sidebar() {
   const view = useStore(state => state.view);
   const setView = useStore(state => state.setView);
   const provider = useStore(state => state.provider);
+  const publicStates = usePublicStore(state => state.providers);
   const setProvider = useStore(state => state.setProvider);
   const allType = useStore(state => state.allType);
   const setAllType = useStore(state => state.setAllType);
@@ -51,16 +91,40 @@ export function Sidebar() {
   const localCategoryPath = useStore(state => state.localCategoryPath);
   const setLocalCategoryPath = useStore(state => state.setLocalCategoryPath);
   const poliigonCategories = usePoliigonStore(state => state.categories);
+  const poliigonType = usePoliigonStore(state => state.type);
   const poliigonCategoryIds = usePoliigonStore(state => state.categoryIds);
   const setPoliigonCategoryIds = usePoliigonStore(state => state.setCategoryIds);
   const polyHavenCategories = usePolyHavenStore(state => state.categories);
+  const polyHavenType = usePolyHavenStore(state => state.type);
   const polyHavenCategoryPaths = usePolyHavenStore(state => state.categoryPaths);
   const setPolyHavenCategoryPaths = usePolyHavenStore(state => state.setCategoryPaths);
   const openLogs = window.openbridge.openLogs;
-  const allTypeNodes = allCategoryNodes();
+  const allTypeNodes = useMemo(() => allCategoryNodes(polyHavenCategories), [polyHavenCategories]);
+  const poliigonHdriRoot = useMemo(
+    () => poliigonCategories.find(node => node.label.trim().toLowerCase() === "hdris"),
+    [poliigonCategories]
+  );
+  const poliigonHdriScope = poliigonType === "HDRS";
+  const visiblePoliigonCategories = useMemo(
+    () => poliigonHdriScope && poliigonHdriRoot
+      ? formatPoliigonCategories([poliigonHdriCategoryRoot(poliigonHdriRoot)])
+      : formatPoliigonCategories(poliigonCategories),
+    [poliigonHdriScope, poliigonHdriRoot, poliigonCategories]
+  );
+  const polyHavenHdriRoots = useMemo(
+    () => polyHavenHdriCategoryRoots(polyHavenCategories),
+    [polyHavenCategories]
+  );
+  const selectedPolyHavenRoot = polyHavenCategoryPaths[0]?.split("/")[0] ?? "";
+  const polyHavenHdriScope = polyHavenType === "hdris" ||
+    polyHavenHdriRoots.some(root => root.key === selectedPolyHavenRoot);
+  const visiblePolyHavenCategories = polyHavenHdriScope
+    ? polyHavenHdriRoots
+    : polyHavenCategories;
+  const hdriScope = allType === "hdri" || allType.startsWith("hdri:");
   const discoverCount = provider === "all"
-    ? nbHits + poliigonTotal + polyHavenTotal
-    : provider === "poliigon"
+    ? nbHits + poliigonTotal + polyHavenTotal + PUBLIC_PROVIDER_IDS.reduce((sum, id) => sum + publicStates[id].total, 0)
+    : isPublicProviderId(provider) ? publicStates[provider].total : provider === "poliigon"
       ? poliigonTotal
       : provider === "polyhaven"
         ? polyHavenTotal
@@ -135,6 +199,7 @@ export function Sidebar() {
           >
             Poly Haven
           </button>
+          {PUBLIC_PROVIDER_IDS.map(id => <button key={id} type="button" className={`provider-${id}${provider === id ? " active" : ""}`} aria-pressed={provider === id} onClick={() => setProvider(id)}>{publicProviderLabel(id)}</button>)}
         </div>
       )}
 
@@ -163,7 +228,7 @@ export function Sidebar() {
 
         {view === "discover" && provider === "all" && (
           <div className="sidebar-categories">
-            <div className="sidebar-section-title">All categories</div>
+            <div className="sidebar-section-title">{hdriScope ? "HDRI categories" : "All categories"}</div>
             <CategoryTree
               nodes={allTypeNodes}
               selectedPath={allSourcePath(allType)}
@@ -185,22 +250,29 @@ export function Sidebar() {
         )}
         {view === "discover" && provider === "poliigon" && (
           <div className="sidebar-categories">
-            <div className="sidebar-section-title">Poliigon categories</div>
+            <div className="sidebar-section-title">
+              {poliigonHdriScope ? "Poliigon HDRI categories" : "Poliigon categories"}
+            </div>
             <CategoryTree
-              nodes={poliigonCategories}
+              nodes={visiblePoliigonCategories}
               selectedPath={categoryPathFor(poliigonCategories, poliigonCategoryIds[0])}
               onSelect={path => {
                 const id = path.length > 0 ? Number(path[path.length - 1]) : NaN;
                 setPoliigonCategoryIds(Number.isFinite(id) ? [id] : []);
               }}
             />
+            {poliigonHdriScope && (
+              <p className="hint">Use Filters → Sky condition for clear, cloudy and overcast.</p>
+            )}
           </div>
         )}
         {view === "discover" && provider === "polyhaven" && (
           <div className="sidebar-categories">
-            <div className="sidebar-section-title">Poly Haven categories</div>
+            <div className="sidebar-section-title">
+              {polyHavenHdriScope ? "Poly Haven HDRI categories" : "Poly Haven categories"}
+            </div>
             <CategoryTree
-              nodes={polyHavenCategories}
+              nodes={visiblePolyHavenCategories}
               selectedPath={polyHavenCategoryPaths}
               onSelect={path => setPolyHavenCategoryPaths(path)}
             />
@@ -211,6 +283,20 @@ export function Sidebar() {
             <div className="sidebar-section-title">Local categories</div>
             <CategoryTree nodes={localCategories} selectedPath={localCategoryPath}
               onSelect={setLocalCategoryPath} />
+          </div>
+        )}
+        {view === "discover" && isPublicProviderId(provider) && (
+          <div className="sidebar-categories">
+            <div className="sidebar-section-title">{publicProviderLabel(provider)} categories</div>
+            <CategoryTree
+              nodes={publicStates[provider].categories}
+              selectedPath={categoryPathFor(publicStates[provider].categories, publicStates[provider].query.categoryPaths?.[0])}
+              onSelect={path => {
+                const category = path.at(-1) ?? "";
+                const type = category ? publicTypeForCategory(provider, category) : null;
+                void usePublicStore.getState().search(provider, true, { categoryPaths: category ? [category] : [], ...(type ? { types: [type] } : {}) });
+              }}
+            />
           </div>
         )}
       </div>

@@ -36,7 +36,7 @@ export function PoliigonSearch() {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (draft !== usePoliigonStore.getState().query) setQuery(draft);
-    }, 350);
+    }, 140);
     return () => clearTimeout(timer);
   }, [draft, setQuery]);
 

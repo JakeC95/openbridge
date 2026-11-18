@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -22,8 +22,9 @@ import type { Logger } from "../logger";
 import type { PoliigonAuthService } from "./auth";
 import type { PoliigonCatalog } from "./catalog";
 import { buildPoliigonDownloadPayload } from "./payload";
-import { decodeRadianceHdr, rgbaToHalfRgba, rgbToHalfRgba, type HdrTexture } from "./hdr";
-import { decodeExrRgba } from "@bb-studio/exr";
+import type { HdrTexture } from "./hdr";
+import { decodeHdrFile } from "../hdr-decode";
+import { hdrLimitsFor } from "../public/preview-data";
 
 const PREFIX = "poliigon:";
 const FILE_CONCURRENCY = 6;
@@ -56,6 +57,13 @@ interface ManifestFile {
 interface DynamicFile {
   name: string;
   contents: string;
+}
+
+export interface PoliigonModelPreviewManifest {
+  resolution: string;
+  lod: string;
+  files: ManifestFile[];
+  dynamicFiles: DynamicFile[];
 }
 
 interface Manifest {
@@ -354,7 +362,7 @@ export class PoliigonDownloadManager {
     private readonly getLibraryPath: () => string,
     private readonly notify: (message: string, error?: boolean) => void,
     private readonly transfer: typeof downloadFile = downloadFile,
-    private readonly onLibraryChanged: () => void = () => undefined
+    private readonly onLibraryChanged: (path: string) => void = () => undefined
   ) {
     try {
       this.completions = new DownloadCompletions(join(app.getPath("userData"), "download-history.sqlite"));
@@ -413,6 +421,43 @@ export class PoliigonDownloadManager {
   closeHistory(): void {
     this.completions?.close();
     this.completions = undefined;
+  }
+
+  /**
+   * Request a cache-only Generic runtime package for the 3D viewer. This goes
+   * through the normal entitlement-checked manifest endpoint, so free, owned
+   * and plan-included models behave exactly like a download request.
+   */
+  async modelPreview(assetId: number, resolution: string, lod?: string): Promise<PoliigonModelPreviewManifest> {
+    if (!this.auth.state().loggedIn) throw new Error("Sign in to Poliigon to preview 3D models.");
+    const detail = this.catalog.extended(assetId);
+    if (detail.type !== "Models") throw new Error("This Poliigon asset is not a 3D model.");
+    const available = [...detail.resolutions].sort((a, b) => resolutionValue(a) - resolutionValue(b));
+    const chosen = available.includes(resolution)
+      ? resolution
+      : available.find(value => resolutionValue(value) >= resolutionValue(resolution))
+        ?? available.at(-1)
+        ?? "1K";
+    const selectedLod = lod && detail.lods.includes(lod) ? lod : detail.lods[0];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 75_000);
+    try {
+      const manifest = await this.requestManifest(
+        detail,
+        chosen,
+        { nativeMesh: false, ...(selectedLod ? { lods: [selectedLod] } : {}) },
+        controller.signal,
+        true
+      );
+      return {
+        resolution: chosen,
+        lod: selectedLod ?? "",
+        files: manifest.files,
+        dynamicFiles: manifest.dynamicFiles
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async previewMaps(assetId: number): Promise<PoliigonMapPreview[]> {
@@ -606,11 +651,13 @@ export class PoliigonDownloadManager {
   }
 
   private async loadHdrSource(assetId: number, detail: PoliigonAssetDetail): Promise<HdrTexture> {
-    // HDR exposure is served at the highest published resolution so it matches
-    // the maximum-resolution JPG/PNG default; lower tiers are only fallbacks.
+    // Exposure uses the highest tier within the live-viewer budget, not the
+    // highest download-only original. The worker also validates actual pixel dimensions.
+    const limits = hdrLimitsFor("poliigon");
     const resolutions = [...new Set(detail.resolutions)]
-      .filter(value => resolutionValue(value) > 0)
+      .filter(value => resolutionValue(value) > 0 && resolutionValue(value) <= limits.maxWidth)
       .sort((a, b) => resolutionValue(b) - resolutionValue(a));
+    if (!resolutions.length) throw new Error("No published HDR tier fits the 8K live-preview budget. Use the tone-mapped panorama or download the original.");
     const transfer = this.previewTransfer(previewProgressKey.hdr(assetId), `${detail.name} · HDR`);
     transfer.begin("Requesting HDR source");
     const controller = new AbortController();
@@ -666,25 +713,9 @@ export class PoliigonDownloadManager {
             transfer.update(file.name, file.bytes);
           }
           transfer.status("extracting", `Decoding ${resolution} HDR source`);
-          const buffer = await readFile(sourceFile);
-          let hdr: HdrTexture;
-          if (radianceFile) {
-            const decoded = decodeRadianceHdr(buffer);
-            hdr = {
-              width: decoded.width,
-              height: decoded.height,
-              resolution,
-              data: rgbToHalfRgba(decoded.data)
-            };
-          } else {
-            const decoded = decodeExrRgba(buffer);
-            hdr = {
-              width: decoded.width,
-              height: decoded.height,
-              resolution,
-              data: rgbaToHalfRgba(decoded.rgba)
-            };
-          }
+          const decoded = await decodeHdrFile(sourceFile, limits, controller.signal);
+          controller.signal.throwIfAborted();
+          const hdr = { ...decoded, resolution };
           this.hdrCache.clear();
           this.hdrCache.set(cacheKey, hdr);
           this.logger.info("Poliigon HDR source ready", {
@@ -697,7 +728,7 @@ export class PoliigonDownloadManager {
           transfer.finish(`${resolution} HDR source ready`);
           return hdr;
         } catch (error) {
-          if (isProviderWideFailure(error)) throw error;
+          if (controller.signal.aborted || isProviderWideFailure(error)) throw error;
           lastError = error;
         }
       }
@@ -989,7 +1020,7 @@ export class PoliigonDownloadManager {
       this.sessionCompleted += 1;
       this.setStatus(job, "complete", "Download complete");
       this.notify(`Downloaded ${job.name ?? job.assetId} from Poliigon`);
-      this.onLibraryChanged();
+      this.onLibraryChanged(dirAsset);
     } catch (error) {
       if (job.cancelled) {
         this.setStatus(job, "cancelled", "Cancelled");

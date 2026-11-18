@@ -11,6 +11,8 @@ export interface AssetListItem {
   type: string;
   id?: string;
   image?: string | null;
+  crop?: "top-2-1";
+  direct?: boolean;
   technical?: AssetTechnicalSummary;
   dimensions?: string | null;
   resolution?: string | null;
@@ -51,7 +53,7 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
           const isSurface = /surface|atlas|decal|imperfection|displacement|brush/i.test(item.type);
           const max = bounds ? Math.max(bounds.height, 1.78) : 1.78;
           return <article className="comparison-card" key={item.key}>
-            <div className="comparison-preview">{item.image ? <SmartThumbImage source={item.image} alt="" /> : <span>No preview available</span>}
+            <div className="comparison-preview">{item.image ? <SmartThumbImage source={item.image} crop={item.crop} direct={item.direct} alt="" /> : <span>No preview available</span>}
               <span className="comparison-status">{item.status || "Unknown status"}</span></div>
             <div className="comparison-card-body"><div className="comparison-title"><div><span>{item.type || "Asset"}</span><h3 title={item.name}>{item.name}</h3></div>
               <button type="button" className="icon-btn" onClick={() => toggle(item.key)} aria-label={`Remove ${item.name} from comparison`}>×</button></div>

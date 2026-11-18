@@ -5,11 +5,13 @@ import { CheckIcon, CloseIcon, DownloadIcon } from "../icons";
 import { AssetScaleDiagram } from "./AssetScaleDiagram";
 import { Dropdown } from "./Dropdown";
 import { ImageViewer } from "./ImageViewer";
+import { ModelPreviewPanel } from "./ModelViewer";
 import { TransferStatus } from "./TransferStatus";
 import { usePoliigonStore } from "../poliigon-store";
 import { poliigonScaleDimensions, poliigonTechnical } from "../poliigon-technical";
 import { assetTypeLabel } from "../asset-visuals";
 import { formatClock, formatHdriTime } from "../../shared/hdri-time";
+import { skyConditionLabel } from "../../shared/sky-conditions";
 import { ProviderLogo } from "./ProviderLogo";
 import { groupTechnicalFacts, type TechnicalFact } from "../technical-order";
 import { useStore } from "../store";
@@ -124,6 +126,7 @@ export function PoliigonDrawer() {
   const settings = useStore(state => state.settings);
   const [section, setSection] = useState<"overview" | "download" | "technical" | "related">("overview");
   const [mode, setMode] = useState<"renders" | "maps">("renders");
+  const [modelOpen, setModelOpen] = useState(false);
   const [renderIndex, setRenderIndex] = useState(0);
   const [mapIndex, setMapIndex] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -189,6 +192,7 @@ export function PoliigonDrawer() {
     if (!selection) return;
     setSection("overview");
     setMode(selection.summary.type === "HDRS" ? "maps" : "renders");
+    setModelOpen(false);
     setRenderIndex(0);
     setMapIndex(0);
     setViewerOpen(false);
@@ -572,6 +576,9 @@ export function PoliigonDrawer() {
   }
   if (summary.creationMethod) technicalFacts.push(["creationMethod", "Creation method", summary.creationMethod]);
   if (summary.releaseStatus) technicalFacts.push(["releaseStatus", "Release status", summary.releaseStatus]);
+  if (summary.type === "HDRS" && summary.weather) {
+    technicalFacts.push(["weather", "Sky condition", skyConditionLabel(summary.weather)]);
+  }
   if (summary.type === "HDRS" && summary.timeOfDay != null) {
     technicalFacts.push([
       "timeOfDay",
@@ -671,7 +678,17 @@ export function PoliigonDrawer() {
               >
                 Maps
               </button>
+              {selection.summary.type === "Models" && <button type="button" className={modelOpen ? "active" : ""} onClick={() => setModelOpen(value => !value)}>3D</button>}
             </div>
+            {modelOpen && selection.summary.type === "Models" && <ModelPreviewPanel
+              assetId={String(selection.summary.id)}
+              provider="poliigon"
+              name={selection.summary.name}
+              path={localPath ?? undefined}
+              type="Models"
+              isPlant={/plant|foliage|leaf|tree/i.test(`${selection.summary.name} ${selection.summary.tags.join(" ")}`)}
+              startFullscreen
+            />}
 
             {mode === "maps" && genuineLoading ? (
               <div className="poliigon-map-empty">

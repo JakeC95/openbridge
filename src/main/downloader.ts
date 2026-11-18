@@ -22,11 +22,12 @@ export async function downloadFile(
   timeoutSec = 30,
   signal?: AbortSignal,
   expectedBytes?: number,
-  telemetry?: (sample: TransferTelemetry) => void
+  telemetry?: (sample: TransferTelemetry) => void,
+  maxBytes = Number.POSITIVE_INFINITY
 ): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt++) {
     signal?.throwIfAborted();
-    try { return await downloadAttempt(url, destination, onProgress, timeoutSec, signal, expectedBytes, telemetry); }
+    try { return await downloadAttempt(url, destination, onProgress, timeoutSec, signal, expectedBytes, telemetry, maxBytes); }
     catch (error) {
       signal?.throwIfAborted();
       if (attempt === 2 || !isRetryable(error)) throw error;
@@ -43,7 +44,7 @@ interface PartialInfo { resource: string; etag?: string; modified?: string }
 
 async function downloadAttempt(url: string, destination: string, onProgress: ((progress: DownloadProgress) => void) | undefined,
   timeoutSec: number, signal?: AbortSignal, expectedBytes?: number,
-  telemetry?: (sample: TransferTelemetry) => void): Promise<string> {
+  telemetry?: (sample: TransferTelemetry) => void, maxBytes = Number.POSITIVE_INFINITY): Promise<string> {
   signal?.throwIfAborted();
   await mkdir(dirname(destination), { recursive: true });
   const part = `${destination}.part`, metadata = `${part}.meta.json`;
@@ -58,6 +59,7 @@ async function downloadAttempt(url: string, destination: string, onProgress: ((p
   const existing = await stat(part).catch(() => null);
   const validator = info?.etag && !info.etag.startsWith("W/") ? info.etag : info?.modified;
   const offset = info?.resource === resource && validator && existing?.isFile() ? existing.size : 0;
+  if (offset > maxBytes || (expectedBytes !== undefined && expectedBytes > maxBytes)) throw new Error("Preview exceeds the safe transfer budget");
   const headers: Record<string, string> = { "Accept-Encoding": "identity" };
   if (offset > 0) { headers.Range = `bytes=${offset}-`; headers["If-Range"] = validator!; }
   const controller = new AbortController();
@@ -114,6 +116,7 @@ async function downloadAttempt(url: string, destination: string, onProgress: ((p
         throw new TypeError("Asset changed during resume; restarting download");
       }
     }
+    if (total > maxBytes) throw new Error("Preview exceeds the safe transfer budget");
     if (expectedBytes !== undefined && total > 0 && total !== expectedBytes) throw new Error("Asset transfer size does not match its signed descriptor. Refresh download URLs.");
     if (!response.body) throw new TypeError("Asset transfer returned an empty body");
     if (telemetry) {
@@ -128,6 +131,7 @@ async function downloadAttempt(url: string, destination: string, onProgress: ((p
     const counter = new Transform({ transform(chunk: Buffer, _encoding, callback) {
       lastActivity = Date.now(); received += chunk.length;
       receiveBytes += chunk.length;
+      if (received > maxBytes) { callback(new Error("Preview exceeds the safe transfer budget")); return; }
       try {
         onProgress?.({ received, total, ratio: total > 0 ? Math.min(1, received / total) : 0 });
         callback(null, chunk);

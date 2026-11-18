@@ -77,8 +77,8 @@ const shared = {
 
 await build({
   ...shared,
-  entryPoints: ["src/main/index.ts"],
-  outfile: "out/main/index.js",
+  entryPoints: ["src/main/index.ts", "src/main/hdr-decode-worker.ts"],
+  outdir: "out/main",
   platform: "node",
   format: "cjs",
   target: "node22",
@@ -106,7 +106,7 @@ await build({
   target: "chrome120",
   jsx: "automatic",
   minify: true,
-  loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl", ".png": "dataurl" },
+  loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl", ".png": "dataurl", ".hdr": "file" },
   define
 });
 

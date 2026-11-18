@@ -125,6 +125,7 @@ interface PoliigonState {
   resolutions: string[];
   creationMethods: string[];
   mapTypes: string[];
+  weather: string[];
   timeStart: number | null;
   timeEnd: number | null;
   sort: PoliigonSort;
@@ -165,6 +166,7 @@ interface PoliigonState {
   toggleResolution(value: string): void;
   toggleCreationMethod(value: string): void;
   toggleMapType(value: string): void;
+  toggleWeather(value: string): void;
   setTimeRange(start: number | null, end: number | null): void;
   setSizeRange(minSize: number | null, maxSize: number | null): void;
   clearFilters(): void;
@@ -172,6 +174,16 @@ interface PoliigonState {
   openLocal(asset: AssetRecord): Promise<void>;
   stepAsset(delta: number): void;
   closeAsset(): void;
+}
+
+function isPoliigonHdriCategory(nodes: CategoryNode[], ids: number[]): boolean {
+  if (ids.length === 0) return false;
+  const wanted = new Set(ids.map(String));
+  const hdri = nodes.find(node => node.label.trim().toLowerCase() === "hdris");
+  if (!hdri) return false;
+  const visit = (node: CategoryNode): boolean =>
+    wanted.has(node.key) || node.children.some(visit);
+  return visit(hdri);
 }
 
 let requestId = 0;
@@ -202,6 +214,7 @@ function queryFrom(state: PoliigonState, offset: number): PoliigonCatalogQuery {
     resolutions: state.resolutions,
     creationMethods: state.type === "HDRS" ? [] : state.creationMethods,
     mapTypes: state.type === "HDRS" ? [] : state.mapTypes,
+    weather: state.type === "HDRS" ? state.weather : undefined,
     timeStart: state.type === "HDRS" && state.timeStart != null ? state.timeStart : undefined,
     timeEnd: state.type === "HDRS" && state.timeEnd != null ? state.timeEnd : undefined,
     sort: state.sort,
@@ -233,6 +246,7 @@ export const usePoliigonStore = create<PoliigonState>((set, get) => ({
   resolutions: [],
   creationMethods: [],
   mapTypes: [],
+  weather: [],
   timeStart: null,
   timeEnd: null,
   sort: "relevance",
@@ -448,7 +462,7 @@ export const usePoliigonStore = create<PoliigonState>((set, get) => ({
     set({
       loading: true,
       error: null,
-      ...(reset ? { hits: [], total: 0, hasMore: false } : {})
+      ...(reset ? { hasMore: false } : {})
     });
     try {
       const result = await window.openbridge.poliigon.search(queryFrom(current, offset));
@@ -481,12 +495,17 @@ export const usePoliigonStore = create<PoliigonState>((set, get) => ({
   setType(type) {
     set({
       type,
-      ...(type === "HDRS" ? { creationMethods: [], mapTypes: [], minSize: null, maxSize: null } : {})
+      ...(type === "HDRS"
+        ? { creationMethods: [], mapTypes: [], minSize: null, maxSize: null }
+        : { weather: [] })
     });
     void get().search(true);
   },
   setCategoryIds(categoryIds) {
-    set({ categoryIds });
+    set({
+      categoryIds,
+      ...(isPoliigonHdriCategory(get().categories, categoryIds) ? { type: "HDRS" } : {})
+    });
     void get().search(true);
   },
   setCategoryByPath(path) {
@@ -501,7 +520,11 @@ export const usePoliigonStore = create<PoliigonState>((set, get) => ({
       id = Number(node.key);
       nodes = node.children;
     }
-    set({ categoryIds: id !== null ? [id] : [], type: "" });
+    const categoryIds = id !== null ? [id] : [];
+    set({
+      categoryIds,
+      type: isPoliigonHdriCategory(get().categories, categoryIds) ? "HDRS" : ""
+    });
     void get().search(true);
   },
   setFreeOnly(freeOnly) {
@@ -536,6 +559,14 @@ export const usePoliigonStore = create<PoliigonState>((set, get) => ({
     }));
     void get().search(true);
   },
+  toggleWeather(value) {
+    set(state => ({
+      weather: state.weather.includes(value)
+        ? state.weather.filter(item => item !== value)
+        : [...state.weather, value]
+    }));
+    void get().search(true);
+  },
   setTimeRange(start, end) {
     set({ timeStart: start, timeEnd: end });
     void get().search(true);
@@ -555,6 +586,7 @@ export const usePoliigonStore = create<PoliigonState>((set, get) => ({
       resolutions: [],
       creationMethods: [],
       mapTypes: [],
+      weather: [],
       minSize: null,
       maxSize: null,
       timeStart: null,
@@ -656,7 +688,8 @@ export const usePoliigonStore = create<PoliigonState>((set, get) => ({
       lodCount: technical?.lodCount ?? 0,
       maxTris: technical?.maxTris ?? null,
       hasModel: asset.type === "Model",
-      software: []
+      software: [],
+      weather: null
     };
     set({
       selection: {

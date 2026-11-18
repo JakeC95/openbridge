@@ -301,7 +301,7 @@ export class PolyHavenDownloadManager {
     private readonly getLibraryPath: () => string,
     private readonly notify: (message: string, error?: boolean) => void,
     private readonly transfer: typeof downloadFile = downloadFile,
-    private readonly onLibraryChanged: () => void = () => undefined
+    private readonly onLibraryChanged: (path: string) => void = () => undefined
   ) {
     try {
       this.completions = new DownloadCompletions(join(app.getPath("userData"), "download-history.sqlite"));
@@ -884,7 +884,7 @@ export class PolyHavenDownloadManager {
       this.sessionCompleted += 1;
       this.setStatus(job, "complete", "Download complete");
       this.notify(`Downloaded ${job.name ?? job.assetId} from Poly Haven`);
-      this.onLibraryChanged();
+      this.onLibraryChanged(dirAsset);
     } catch (error) {
       if (job.cancelled) {
         this.setStatus(job, "cancelled", "Cancelled");

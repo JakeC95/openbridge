@@ -2,15 +2,19 @@ import poliigonLogo from "../providers/poliigon.svg";
 import megascansLogo from "../providers/megascans.svg";
 import polyhavenLogo from "../providers/polyhaven.png";
 
-export type Provider = "megascans" | "poliigon" | "polyhaven";
+import type { AssetProvider } from "../../shared/types";
+export type Provider = AssetProvider;
 
 const PROVIDER_NAME: Record<Provider, string> = {
   megascans: "Megascans",
   poliigon: "Poliigon",
-  polyhaven: "Poly Haven"
+  polyhaven: "Poly Haven",
+  ambientcg: "ambientCG",
+  blenderkit: "BlenderKit",
+  openhdri: "OpenHDRI"
 };
 
-const PROVIDER_LOGO: Record<Provider, string> = {
+const PROVIDER_LOGO: Partial<Record<Provider, string>> = {
   megascans: megascansLogo,
   poliigon: poliigonLogo,
   polyhaven: polyhavenLogo
@@ -25,7 +29,7 @@ export function ProviderLogo({ provider, className = "" }: { provider: Provider;
       aria-label={PROVIDER_NAME[provider]}
       role="img"
     >
-      <img src={PROVIDER_LOGO[provider]} alt="" draggable={false} />
+      {PROVIDER_LOGO[provider] ? <img src={PROVIDER_LOGO[provider]} alt="" draggable={false} /> : <span>{provider === "ambientcg" ? "aCG" : provider === "blenderkit" ? "BK" : "OH"}</span>}
     </span>
   );
 }

@@ -8,43 +8,33 @@ const pending = new Map<string, Promise<string>>();
  * images resolve to the original URL; transparent subjects resolve to a
  * tightly cropped cache file.
  */
-export function useSmartThumbnail(source: string | null | undefined): string | null {
-  const [value, setValue] = useState<string | null>(() =>
-    source ? cache.get(source) ?? source : null
-  );
+export function useSmartThumbnail(source: string | null | undefined, crop?: "top-2-1"): string | null {
+  const key = source && crop ? `${source}\u0001${crop}` : source;
+  const [resolved, setResolved] = useState<{ key: string; url: string } | null>(null);
 
   useEffect(() => {
-    if (!source) {
-      setValue(null);
-      return;
-    }
-    const cached = cache.get(source);
-    if (cached) {
-      setValue(cached);
-      return;
-    }
+    if (!source || !key || cache.has(key)) return;
     let cancelled = false;
-    setValue(source);
-    let request = pending.get(source);
+    let request = pending.get(key);
     if (!request) {
-      request = window.openbridge.smartThumbnail(source)
+      request = window.openbridge.smartThumbnail(source, crop)
         .then(result => {
-          cache.set(source, result);
+          cache.set(key, result);
           return result;
         })
         .catch(() => source)
         .finally(() => {
-          pending.delete(source);
+          pending.delete(key);
         });
-      pending.set(source, request);
+      pending.set(key, request);
     }
     void request.then(result => {
-      if (!cancelled) setValue(result);
+      if (!cancelled) setResolved({ key, url: result });
     });
     return () => {
       cancelled = true;
     };
-  }, [source]);
+  }, [source, crop, key]);
 
-  return value;
+  return key ? (resolved?.key === key ? resolved.url : cache.get(key) ?? source ?? null) : null;
 }

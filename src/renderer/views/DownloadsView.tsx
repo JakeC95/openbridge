@@ -4,6 +4,7 @@ import { FolderIcon, CloseIcon, DownloadIcon, CheckIcon } from "../icons";
 import type { DownloadProgress } from "../../shared/types";
 import { DownloadStats } from "../components/DownloadStats";
 import { DownloadsRail } from "../components/DownloadsRail";
+import { isPublicProviderId, publicProviderLabel } from "../../shared/public-providers";
 
 function bytes(value: number): string {
   if (!value) return "0 B";
@@ -73,6 +74,21 @@ export function DownloadsView() {
     (status === "active" ? ["downloading", "requesting", "extracting"].includes(item.status) : item.status === status)) &&
     `${item.name ?? ""} ${item.assetId}`.toLowerCase().includes(search.trim().toLowerCase()));
   const visibleItems = filteredItems.slice(0, 300);
+  const primary = items.find(item => ["downloading", "extracting", "requesting", "queued", "paused"].includes(item.status)) ?? items[0];
+  const libraryProvider = primary?.provider;
+  const libraryPath = settings
+    ? isPublicProviderId(libraryProvider)
+      ? settings[`${libraryProvider}LibraryPath`]
+      : libraryProvider === "poliigon"
+        ? settings.poliigonLibraryPath
+        : libraryProvider === "polyhaven"
+          ? settings.polyhavenLibraryPath
+          : settings.libraryPath
+    : "";
+  const library = libraryPath ? {
+    path: libraryPath,
+    label: libraryProvider === "poliigon" ? "Poliigon" : libraryProvider === "polyhaven" ? "Poly Haven" : isPublicProviderId(libraryProvider) ? publicProviderLabel(libraryProvider) : "Megascans"
+  } : null;
 
   const groups = [
     {
@@ -136,7 +152,7 @@ export function DownloadsView() {
             (item.status === "extracting" && item.diagnostics.activeTransfers > 0)) &&
             <DownloadStats stats={item.diagnostics} assetId={item.assetId} />}
           <div className="download-meta">
-            <span>{item.provider === "poliigon" ? "Poliigon" : "Megascans"} · {item.assetId}</span>
+            <span>{item.provider === "poliigon" ? "Poliigon" : item.provider === "polyhaven" ? "Poly Haven" : isPublicProviderId(item.provider) ? publicProviderLabel(item.provider) : "Megascans"} · {item.assetId}</span>
             {item.message && <span className="download-message">{item.message}</span>}
             {item.path && (
               <button
@@ -202,8 +218,8 @@ export function DownloadsView() {
         <div className="header-line">
           <div>
             <p className="view-subtitle">{summary}</p>
-            {settings?.libraryPath && (
-              <p className="view-subtitle download-library-path">Megascans library · {settings.libraryPath}</p>
+            {library && (
+              <p className="view-subtitle download-library-path">{library.label} library · {library.path}</p>
             )}
           </div>
           <div className="header-actions">
@@ -240,9 +256,9 @@ export function DownloadsView() {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => settings && void window.openbridge.openPath(settings.libraryPath)}
+              onClick={() => library && void window.openbridge.openPath(library.path)}
             >
-              <FolderIcon /> Open Megascans
+              <FolderIcon /> Open {library?.label ?? "library"}
             </button>
           </div>
         </div>

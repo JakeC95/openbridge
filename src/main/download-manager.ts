@@ -423,7 +423,7 @@ export class DownloadManager {
     private readonly logger: Logger,
     private readonly getSettings: () => AppSettings,
     private readonly getLibraryPath: () => string,
-    private readonly scanLibrary: () => void,
+    private readonly scanLibrary: (path: string) => void,
     private readonly notify: (message: string, error?: boolean) => void
   ) {
     this.queueFile = join(app.getPath("userData"), "download-queue.json");
@@ -962,7 +962,7 @@ export class DownloadManager {
       catch (error) { this.historyError = "A completion could not be saved to history."; this.logger.error(this.historyError, { error }); }
       this.setStatus(job, "complete", "Downloaded");
       this.notify(`${json.name ?? job.assetId} downloaded`);
-      this.scanLibrary();
+      this.scanLibrary(destination);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!job.cancelled && !job.paused && isRetryable(error)) {

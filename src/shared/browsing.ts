@@ -2,10 +2,10 @@ import type { CategoryNode } from "./types";
 
 export function canonicalType(value: string): string {
   const type = value.toLowerCase().replace(/[\s_-]+/g, "");
-  if (["3d", "3dasset", "3dassets", "model", "models"].includes(type)) return "3d";
+  if (["3d", "3dasset", "3dassets", "3dmodel", "3dmodels", "model", "models", "terrain"].includes(type)) return "3d";
   if (["3dplant", "3dplants"].includes(type)) return "3dplant";
-  if (["texture", "textures", "surface", "surfaces"].includes(type)) return "surface";
-  if (["hdri", "hdris"].includes(type)) return "hdri";
+  if (["texture", "textures", "surface", "surfaces", "material", "materials", "substance", "phototexture"].includes(type)) return "surface";
+  if (["hdri", "hdris", "hdrielement"].includes(type)) return "hdri";
   return type;
 }
 

@@ -3,6 +3,8 @@ import { AssetScaleDiagram } from "./AssetScaleDiagram";
 import { useStore } from "../store";
 import { Dropdown } from "./Dropdown";
 import { ImageViewer } from "./ImageViewer";
+import { ModelPreviewPanel } from "./ModelViewer";
+import { is3dAssetType } from "../../shared/model-preview";
 import type {
   CatalogHit,
   DownloadMapFormat,
@@ -125,7 +127,7 @@ export function AssetDrawer() {
       if (tabs) scroll.scrollTop += tabs.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 20;
     }
   }, [section]);
-  const [previewMode, setPreviewMode] = useState<"render" | "maps">("render");
+  const [previewMode, setPreviewMode] = useState<"render" | "maps" | "3d">("render");
   const [mapPreviews, setMapPreviews] = useState<MapPreview[]>([]);
   const [mapIndex, setMapIndex] = useState(0);
   const [mapsLoading, setMapsLoading] = useState(false);
@@ -551,10 +553,24 @@ export function AssetDrawer() {
                 >
                   Maps
                 </button>
+                {is3dAssetType(assetType) && <button
+                  type="button"
+                  className={previewMode === "3d" ? "active" : ""}
+                  onClick={() => setPreviewMode("3d")}
+                >
+                  3D
+                </button>}
               </div>
             )}
 
-            {activePreview ? (
+            {previewMode === "3d" && is3dAssetType(assetType) ? <ModelPreviewPanel
+              assetId={assetId}
+              provider="megascans"
+              name={hit?.name ?? local?.name ?? assetId}
+              path={local?.path}
+              type={assetType}
+              isPlant={/3dplant|plant|foliage/i.test(`${assetType} ${hit?.name ?? local?.name ?? ""}`)}
+            /> : activePreview ? (
               <button type="button" className="expand-preview" onClick={() => setViewerOpen(true)} aria-label="Expand preview" title="Expand preview">
                 <img src={activePreview} alt={activeMap?.label ?? "Asset render"} referrerPolicy="no-referrer" />
               </button>
@@ -637,7 +653,7 @@ export function AssetDrawer() {
             )}
           </div>
 
-          {previewItems.length > 0 && <div className="preview-picker">
+          {previewMode !== "3d" && previewItems.length > 0 && <div className="preview-picker">
             <Dropdown className="select-dropdown" value={String(previewMode === "maps" ? mapIndex : renderIndex)}
               ariaLabel={previewMode === "maps" ? "Map and texture set" : "Render image"}
               onChange={value => previewMode === "maps" ? setMapIndex(Number(value)) : setRenderIndex(Number(value))}

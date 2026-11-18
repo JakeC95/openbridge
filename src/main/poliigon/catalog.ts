@@ -17,13 +17,14 @@ import type {
 import type { Logger } from "../logger";
 import { hdriTimeOfDay } from "../../shared/hdri-time";
 import { canonicalPoliigonMapCode } from "../../shared/poliigon-maps";
+import { poliigonSkyCondition } from "../../shared/sky-conditions";
 
 const API_BASE = "https://apiv2.poliigon.com/api/v2";
 // Poliigon adds assets continuously; re-check the public catalogue several times a day.
 const CATALOG_TTL_MS = 6 * 60 * 60 * 1000;
 // Failed checks back off so window focus cannot hammer the provider.
 const CATALOG_RETRY_COOLDOWN_MS = 15 * 60 * 1000;
-const SCHEMA_VERSION = "9";
+const SCHEMA_VERSION = "10";
 
 type PreviewKind = "gallery" | "toolbox" | "video";
 
@@ -238,6 +239,9 @@ function normalizeAsset(value: unknown, categories: Map<number, CategoryRecord>)
   const timeOfDay = type === "HDRS"
     ? hdriTimeOfDay({ name, tags, categories: categoriesForAsset, sunPosition })
     : null;
+  const weather = type === "HDRS"
+    ? poliigonSkyCondition({ name, tags, categories: categoriesForAsset })
+    : null;
 
   const summary: PoliigonAssetSummary = {
     id,
@@ -272,7 +276,8 @@ function normalizeAsset(value: unknown, categories: Map<number, CategoryRecord>)
     maxTris,
     hasModel: type.toLowerCase() === "models",
     software: unique(softwares),
-    timeOfDay
+    timeOfDay,
+    weather
   };
 
   return { summary, raw: gzipSync(Buffer.from(JSON.stringify({
@@ -304,6 +309,15 @@ function flattenCategories(value: unknown, parents: string[] = [], parentId: num
 function parseFtsQuery(value: string): string {
   const tokens = value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
   return tokens.map(token => `${token}*`).join(" AND ");
+}
+
+/** Numeric Poliigon IDs and asset-page URLs resolve directly, including `poliigon:7852`. */
+function poliigonLookupId(value: string): number | null {
+  const direct = /^(?:poliigon:)?(\d{2,})$/i.exec(value.trim());
+  if (direct) return Number(direct[1]);
+  if (!/poliigon\.com/i.test(value)) return null;
+  const match = /(\d{2,})(?:[/?#].*)?$/.exec(value.trim());
+  return match ? Number(match[1]) : null;
 }
 
 function clampLimit(value: number | undefined): number {
@@ -351,13 +365,27 @@ export class PoliigonCatalog {
       .prepare("SELECT value FROM meta WHERE key = 'schema'")
       .get() as { value: string } | undefined;
     if (existing && existing.value !== SCHEMA_VERSION) {
-      this.db.exec(`
-        DROP TABLE IF EXISTS assets_fts;
-        DROP TABLE IF EXISTS asset_categories;
-        DROP TABLE IF EXISTS assets;
-        DELETE FROM meta WHERE key IN ('count', 'published', 'refreshed_at', 'categories');
-      `);
-      this.db.exec("VACUUM;");
+      if (existing.value === "9") {
+        // Keep the downloaded catalogue and backfill the new canonical sky
+        // condition instead of forcing a full network reindex.
+        const columns = this.db
+          .prepare("PRAGMA table_info(assets)")
+          .all()
+          .map(column => text(dict(column).name));
+        if (columns.length > 0 && !columns.includes("weather")) {
+          this.db.exec("ALTER TABLE assets ADD COLUMN weather TEXT;");
+        }
+        if (columns.length > 0) this.backfillWeather();
+        this.db.prepare("UPDATE meta SET value = ? WHERE key = 'schema'").run(SCHEMA_VERSION);
+      } else {
+        this.db.exec(`
+          DROP TABLE IF EXISTS assets_fts;
+          DROP TABLE IF EXISTS asset_categories;
+          DROP TABLE IF EXISTS assets;
+          DELETE FROM meta WHERE key IN ('count', 'published', 'refreshed_at', 'categories');
+        `);
+        this.db.exec("VACUUM;");
+      }
     }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS assets (
@@ -390,6 +418,7 @@ export class PoliigonCatalog {
         has_model INTEGER NOT NULL,
         software TEXT NOT NULL,
         time_of_day REAL,
+        weather TEXT,
         detail TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS asset_categories (
@@ -403,6 +432,50 @@ export class PoliigonCatalog {
       );
     `);
     this.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)").run(SCHEMA_VERSION);
+    this.ensureWeatherBackfill();
+  }
+
+  /** Recompute the canonical HDRI sky condition from public metadata. */
+  private backfillWeather(): void {
+    const rows = this.db
+      .prepare("SELECT id, name, tags, categories, type FROM assets")
+      .all() as Dict[];
+    const update = this.db.prepare("UPDATE assets SET weather = ? WHERE id = ?");
+    this.db.exec("BEGIN");
+    try {
+      for (const row of rows) {
+        const weather = text(row.type) === "HDRS"
+          ? poliigonSkyCondition({
+              name: text(row.name),
+              tags: stringList(JSON.parse(text(row.tags) || "[]")),
+              categories: stringList(JSON.parse(text(row.categories) || "[]"))
+            })
+          : null;
+        update.run(weather, Number(row.id));
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  /**
+   * Repair a schema-v10 database whose HDRI weather values were erased by an
+   * older binary refreshing the shared catalogue file.
+   */
+  private ensureWeatherBackfill(): void {
+    const hdri = this.db
+      .prepare("SELECT COUNT(*) AS count FROM assets WHERE type = 'HDRS'")
+      .get() as { count: number } | undefined;
+    if (Number(hdri?.count ?? 0) === 0) return;
+    const weather = this.db
+      .prepare("SELECT COUNT(*) AS count FROM assets WHERE type = 'HDRS' AND weather IS NOT NULL")
+      .get() as { count: number } | undefined;
+    if (Number(weather?.count ?? 0) === 0) {
+      this.backfillWeather();
+      this.logger.info("Poliigon HDRI weather backfilled");
+    }
   }
 
   close(): void {
@@ -545,8 +618,8 @@ export class PoliigonCatalog {
           category_ids, categories, credit, free, convention, release_status,
           published_at, updated_at, resolutions, max_resolution, default_resolution,
           thumbnail, physical_size, physical_size_cm, creation_method, map_codes,
-          map_formats, lod_count, max_tris, has_model, software, time_of_day, detail
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          map_formats, lod_count, max_tris, has_model, software, time_of_day, weather, detail
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const insertCategory = this.db.prepare(
         "INSERT OR IGNORE INTO asset_categories (asset_id, category_id) VALUES (?, ?)"
@@ -602,6 +675,7 @@ export class PoliigonCatalog {
             summary.hasModel ? 1 : 0,
             JSON.stringify(summary.software),
             summary.timeOfDay ?? null,
+            summary.weather,
             raw
           );
           for (const categoryId of summary.categoryIds) {
@@ -719,11 +793,17 @@ export class PoliigonCatalog {
 
     const term = (query.query ?? "").trim();
     if (term) {
-      const match = parseFtsQuery(term);
-      if (match) {
-        where.push("assets_fts MATCH ?");
-        params.push(match);
-        fts = true;
+      const lookupId = poliigonLookupId(term);
+      if (lookupId !== null) {
+        where.push("a.id = ?");
+        params.push(lookupId);
+      } else {
+        const match = parseFtsQuery(term);
+        if (match) {
+          where.push("assets_fts MATCH ?");
+          params.push(match);
+          fts = true;
+        }
       }
     }
     if (query.type) {
@@ -772,6 +852,10 @@ export class PoliigonCatalog {
     for (const mapType of query.mapTypes ?? []) {
       where.push("a.map_codes LIKE ?");
       params.push(`%"${canonicalPoliigonMapCode(mapType)}"%`);
+    }
+    if (query.weather && query.weather.length > 0) {
+      where.push(`a.weather IN (${query.weather.map(() => "?").join(",")})`);
+      params.push(...query.weather);
     }
     if (
       query.type === "HDRS" &&
@@ -834,7 +918,8 @@ export class PoliigonCatalog {
       maxTris: numberValue(row.max_tris),
       hasModel: Number(row.has_model ?? 0) === 1,
       software: stringList(JSON.parse(text(row.software) || "[]")),
-      timeOfDay: row.time_of_day == null ? null : Number(row.time_of_day)
+      timeOfDay: row.time_of_day == null ? null : Number(row.time_of_day),
+      weather: text(row.weather) || null
     };
   }
 
@@ -899,16 +984,22 @@ export class PoliigonCatalog {
       .prepare(`SELECT a.* ${from} ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as Dict[];
     const hits = rows.map(row => this.summaryFromRow(row));
+    if (query.includeFacets === false) return {
+      hits, total, offset, limit, hasMore: offset + hits.length < total,
+      tookMs: performance.now() - started,
+      facets: { types: [], resolutions: [], creationMethods: [], mapTypes: [], weather: [], free: 0 }
+    };
 
     const facetFilter = this.buildWhere({
       ...query,
       resolutions: [],
       creationMethods: [],
-      mapTypes: []
+      mapTypes: [],
+      weather: []
     });
     const facetRows = this.db
       .prepare(
-        `SELECT a.type, a.resolutions, a.creation_method, a.map_codes, a.free ${facetFilter.from} ${
+        `SELECT a.type, a.resolutions, a.creation_method, a.map_codes, a.weather, a.free ${facetFilter.from} ${
           facetFilter.where.length > 0 ? `WHERE ${facetFilter.where.join(" AND ")}` : ""
         }`
       )
@@ -916,6 +1007,7 @@ export class PoliigonCatalog {
     const resolutions: string[] = [];
     const creationMethods: string[] = [];
     const mapTypes: string[] = [];
+    const weather: string[] = [];
     const types: string[] = [];
     let free = 0;
     for (const row of facetRows) {
@@ -925,12 +1017,15 @@ export class PoliigonCatalog {
       const method = text(row.creation_method);
       if (method) creationMethods.push(method);
       mapTypes.push(...stringList(JSON.parse(text(row.map_codes) || "[]")));
+      const condition = text(row.weather);
+      if (condition) weather.push(condition);
     }
     const facets: PoliigonFacets = {
       types: uniqueBuckets(types),
       resolutions: uniqueBuckets(resolutions),
       creationMethods: uniqueBuckets(creationMethods),
       mapTypes: uniqueBuckets(mapTypes),
+      weather: uniqueBuckets(weather),
       free
     };
 

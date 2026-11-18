@@ -9,13 +9,309 @@ application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution 
 
 - Branch: `main`, tracking `origin/main`
 - Last verified application commit: `781c962` (tagged `v1.4.2`)
-- Current app version: `1.5.9` (unreleased)
+- Current app version: `1.6.2` (release candidate)
 - Latest published release: `v1.4.2`
 - Repo visibility: public
 - Distribution: portable ZIP only; no installer, Linux or macOS build
 - The repository owner/name is discovered at build time and must not be hard-coded
 
-Changes after `v1.4.2` are unreleased. Choose the next version when new work is ready to publish.
+Changes after `v1.4.2` ship in `v1.6.2`. Choose the next version when new work is ready to publish.
+
+## 1.6.2 additional providers and browsing pass
+
+- Version 1.6.1 packages ambientCG, BlenderKit and OpenHDRI alongside Megascans, Poliigon and
+  Poly Haven. The current local portable build lives in `dist/OpenBridge-1.6.1-win-x64-portable`.
+  This is a local test build only: no commit, tag, push or GitHub release has been created.
+  The packaged ZIP is 162,315,169 bytes with SHA-256
+  `98B94A46B7D2DDCF71D3FC00EDD44BE19093E25923C96B15AAC3233083E1C086`.
+  The 1.6.0 local build is preserved as the previous build.
+- A Three.js 0.187 3D viewer is now integrated for local and catalog assets. glTF/GLB, FBX,
+  OBJ/MTL, USD/USDA/USDC/USDZ, STL, PLY and DAE load directly; ABC resolves to the provider's
+  published FBX/Alembic alternative, and native `.blend`/`.max`/`.c4d`/`.ma`/`.mb`/`.skp` remain
+  download-only with an explicit message. The inline viewer defaults to the lowest texture tier
+  (1K where published) and the lowest mesh LOD, except 3D plants which default to the highest
+  mesh LOD. Full screen upgrades to at most 4K automatically when the estimated transfer stays
+  within 250 MiB and the known mipmapped texture maps within 512 MiB; 8K stays an explicit user
+  choice. Embedded textures and driver overhead cannot be estimated from the manifest. A single bundled Poly Haven CC0
+  `monochrome_studio_02_1k.hdr` studio environment lights every preview. There is no auto-rotate;
+  clicking the inline canvas opens full screen and Escape or the close button returns.
+- Global search is typeahead-first. The topbar search debounces catalogue requests at 140 ms, keeps
+  the previous result page visible while the new query resolves, and shows an `Updating` spinner
+  instead of blanking or flashing skeletons. A fast local suggestion layer queries Poliigon, Poly
+  Haven, ambientCG, OpenHDRI and the local library after 60 ms and returns ranked quick matches in
+  roughly 85–130 ms and updates progressively as each local provider responds; Megascans and
+  BlenderKit remain on the full all-source search. The quick panel
+  supports recent searches, starter queries, provider/type/thumbnail rows, arrow-key navigation,
+  Enter to search, and Enter on a highlighted row to open it directly. Typing any printable
+  character outside an input focuses the search bar and starts a query. Quick suggestions are
+  hidden while provider or local filters are active so they cannot contradict the filtered grid.
+- Cross-provider relevance is no longer provider round-robin. All-source relevance scores text
+  matches in names/tags/categories, provider-native rank, popularity, free licensing, query intent
+  (HDRI/material/model), and whole-object specificity (stumps, branches, trunks, bark, GOBOs and
+  LOD/season duplicates are demoted). Duplicate names and repeated providers are lightly diversified
+  so the first page is not five copies of one catalogue entry. Poliigon numeric IDs and asset-page
+  URLs resolve directly, and empty facet requests no longer ask Algolia for every facet bucket.
+  `search-ranking.ts` has regression coverage in `test:browsing` (24 checks). Search acceptance:
+  quick matches appeared at 86 ms in the source viewer and 126 ms in the packaged build; keyboard
+  navigation opened Dining Chair 02; the full `tree` page mixed BlenderKit, Poly Haven, Megascans
+  and ambientCG results; and Poliigon `7852` plus its asset-page URL both resolved directly.
+- Windows responsiveness pass: quick matches skip facet buckets and local Library browse
+  categories/packs. Local public-catalogue searches rank the joined FTS match set in one pass
+  instead of running a separate FTS lookup for each result. On a Windows copy of the ambientCG
+  index, the warm median for `s` dropped from ~665 ms to ~18 ms with facets, ~9 ms without
+  (database time). Poliigon and public HDR decoding share one cancellable worker queue to bound
+  peak decode memory. The 3D viewer reuses its studio environment across tier changes, coalesces
+  draws to one per frame, caps framebuffer pixels on high-DPI screens, and disposes the GPU
+  context on close. The Windows Electron UI fixture verifies lighting reuse and context release.
+- Follow-up Windows responsiveness pass: Library scans share one writer and discard results from
+  obsolete roots. Completed downloads batch their paths across providers and refresh the index
+  incrementally, including re-downloads whose folder times stay unchanged. Manual full refresh
+  remains available. Global search diversifies the first 120 results and keeps the remaining
+  results in relevance order instead of re-running the full diversity loop on every page.
+- Windows UI audit: asset titles stay visible in catalogue and Library grids; public-provider cards
+  use the shared metadata overlay rather than clipping text below the image. Failed thumbnails
+  try the original/fallback source and then show a placeholder. List/compare actions live in
+  browse toolbars, and public saved-search editors are collapsed by default. Global quick matches
+  keep keyboard selection by asset ID as providers respond, respect scoped filters and leave
+  composition keys to the IME. Fullscreen previews contain focus, restore it on close and retain
+  the working 3D model when a requested quality/LOD manifest fails.
+- The Windows window can now resize to 1024 px wide. Compact workspaces use a 224 px sidebar
+  (208 px at 1060 px and below), shorter navigation/topbar and tighter gutters; provider names
+  remain visible. The inspector follows the topbar edge. Public-provider primary controls fit
+  on one row at 1024 px. Verified in the Windows app and covered by the Electron layout fixture.
+- Catalog preview downloads are cache-only under `userData/model-previews`, use the provider's
+  signed/entitled endpoints, and are pruned as a rolling 2 GB LRU. Megascans now requests the
+  selected 1K–8K/LOD tier through the account's `v1/downloads` signing path, exposing LOD0–5 for
+  props and LOD0–7 for plants, using the atlas maps from `asset.maps`; plants use Var1 so a
+  preview shows one coherent plant rather than eight stacked variations. If the account cannot
+  fetch the requested tier, the reference 1K/LOD0–1 preview is cached with a persisted
+  `.preview-meta.json` marker so the UI stops advertising unavailable tiers after restart. Poly
+  Haven downloads the glTF package plus include maps; ambientCG extracts the LQ OBJ/MTL package;
+  BlenderKit resolves a runtime file; Poliigon requests a Generic runtime package through
+  `/assets/download`, filters maps to the selected resolution/LOD, and uses
+  `specifications.meshes` to distinguish true assemblies (plant + pot, no row layout) from
+  variant collections (candle stages, row layout). USD layers whose materials reference absolute
+  authoring paths fall back to the local/manifest maps.
+- Texture selection is LOD-aware. The scanner records LOD tokens from filenames; exact-LOD maps
+  win, then generic master maps, then the nearest labelled LOD. Resolution and format are chosen
+  within that LOD pool (JPEG first for colour, lossless PNG/EXR first for data maps). This covers
+  Megascans `_LODn` normals/albedo, Poliigon `_LODn` maps and local DCC exports.
+- Multi-material meshes are resolved per source slot. The viewer derives the published material
+  prefixes from filenames, then matches each mesh's original material name (and object/parent names
+  as fallbacks) to those prefixes. A single FBX can therefore use a different texture set per
+  material slot; material arrays are preserved when assigning PBR and map-inspection materials.
+  Missing map types for a resolved material never borrow another material's maps, which prevents a
+  trunk or pot from receiving a leaf mask. Poliigon's Large Fraser Fir tree is the fixture: one
+  LOD4 FBX has `Trunk01` (trunk and branches) and `Needles01` materials, and now renders the trunk
+  and branches with the bark set and only the needles with the foliage/alpha set. Bit-depth tokens
+  such as `NRM16` and `DISP16` are treated as map tokens instead of material-key suffixes, avoiding
+  phantom material groups. The inspector's channel list and per-map views operate over every
+  material slot.
+- The wireframe toggle replaces every mesh material with flat black and overlays white
+  `WireframeGeometry` lines. It survives LOD/quality reloads and restores/disposes cleanly. The
+  camera frames the bounding sphere with an aspect-aware margin instead of a fixed max-axis
+  distance. The full-screen exposure control is now in linear EV from -10 to +10 (default 0),
+  applies `2^EV` to `toneMappingExposure`, shows the exact EV value and includes Reset exposure,
+  matching the HDR viewer. It no longer passes a raw slider value as exposure.
+- Navigation follows Autodesk Maya's button mapping: LMB orbit, MMB pan, RMB/Alt+RMB dolly, and
+  the Alt+LMB/MMB combinations behave identically. The right-button dolly is a custom horizontal
+  drag handler: dragging right dollies in, dragging left dollies out, and vertical movement does
+  not zoom. This replaces OrbitControls' vertical RMB interpretation and is clamped to the current
+  min/max camera distance. Mouse wheel zoom is unchanged. Shift+RMB drag rotates the bundled studio
+  environment and the light rig together, Substance Painter style, with a live environment angle
+  readout and Reset environment. Inline click-to-expand ignores drags longer than four pixels, so
+  orbiting the inline preview no longer opens full screen.
+- Texture and LOD switches are non-destructive. The select shows the requested tier immediately, but
+  the live viewer keeps its applied manifest/quality/LOD until the new manifest is ready. If the
+  switch takes longer than one second, a centered status overlay appears with the exact operation
+  (`Loading 8K textures…`, `Loading LOD4 mesh…`, etc.) and `Downloading and preparing the selected
+  files…`; the old preview stays visible underneath. Cached switches that finish under one second
+  show no overlay and do not flicker. This applies to both the inline preview and the full-screen
+  quality bar. The old `loading 4K` head note was replaced by this pending-switch status.
+- Foliage alpha handling was audited and fixed. Poly Haven glTF packages can omit the separate
+  alpha sheet from their embedded material; the viewer now downloads the published alpha/opacity
+  map for the selected tier and applies it to glTF materials that have no alpha map. Alpha sheets
+  are matched to material names so a leaf mask is not applied to a pot. Custom foliage uses
+  alphaTest 0.35 with alpha-to-coverage; patched glTF foliage uses 0.5. The separate alpha sheet
+  is now uploaded with `flipY=false` for glTF/GLB, matching GLTFLoader's convention for the
+  material's embedded textures. Previously it used TextureLoader's default `flipY=true`, which
+  mirrored the mask vertically and produced black jagged leaf borders after the alpha sheet was
+  added; disabling the flip removed them at the same extreme close range. Texture caching keys
+  now include colour space and flip orientation so one bitmap cannot be reused with the wrong
+  sampling convention. Didelta Spinosa was the regression fixture, and Potted Plant 01 was
+  rechecked to confirm its leaf mask stayed on the leaves while the pot stayed solid.
+- The custom PBR material consumes every applicable published map: base colour, normal (GL/DX),
+  roughness, metalness, AO, packed ORM/ARM, opacity, emissive, specular colour, gloss, displacement
+  and translucency. Gloss is inverted into roughness when roughness is absent; displacement is a
+  bump fallback when no normal map exists; translucency drives thickness/transmission. Missing maps
+  use neutral fallbacks: roughness 0.55, metalness 0, white specular at intensity 1, mid-grey base
+  colour, no emission. Poliigon multi-part sets download the maps for every selected part and
+  assign a material per part. Local Poliigon folders are grouped into same-LOD assemblies (up to
+  four parts for the candle fixture) and use the same per-part material path. TGA maps decode
+  through Three's `TGALoader`; TIFF/DDS/KTX2 are not advertised to the preview texture path so an
+  unsupported sidecar cannot break an otherwise usable set.
+- The full-screen viewer includes a Sketchfab-style Model Inspector. It offers PBR, Matcap, UV
+  Checker and Vertex Normals display modes plus one button per published map channel discovered
+  from the loaded materials and manifest: base colour, metalness, roughness, normal, opacity,
+  emissive, specular F0, AO, packed ORM/ARM, gloss, displacement and translucency. Packed ORM/ARM
+  views isolate the selected channel as R=AO, G=roughness and B=metalness. Map views use cloned
+  textures and a channel shader so the raw published map is visible; Map and Matcap/UV/Normal
+  modes are mutually exclusive with Wireframe, while Single Sided is independent. PBR restore
+  returns the original per-slot materials, including material arrays. Every downloaded published
+  map is inspectable even when the PBR shader would skip it, such as displacement alongside a
+  normal map or gloss
+  alongside roughness, so the inspector channel list matches the provider payload.
+- 3D acceptance now includes a cross-provider audit of 14 assets: Megascans rocks/cobblestone
+  (4K/LOD0 plus 1K/LOD5), Xeric Grass and Silvery Glade Fern (1K–8K, LOD0–7, Var1, opacity,
+  translucency and specular), Poliigon Monstera/Plantain Lily (1K–8K, 2K maps verified, plant +
+  pot assembly, per-part materials), Poliigon microwave (metalness/roughness), Poliigon candle
+  set (four variants, LOD0–4, per-part maps), Poliigon Large Fraser Fir tree (LOD4/8K, one FBX
+  with Trunk01 bark for the trunk/branches and Needles01 foliage), Poly Haven Potted Plant 01 /
+  Ceramic Pot / Ceramic Vase 03 (glTF, auto-4K, leaf/pot materials), ambientCG 3D Apple 002 /
+  3D Bread 013 (USDC, 1K–4K), and BlenderKit's no-key error. Controls were checked against provider metadata:
+  Megascans plants expose 1K–8K + LOD0–7, props 1K–8K + LOD0–5, Poliigon exposes the provider
+  resolution tiers and any LODs, Poly Haven exposes 1K–8K where published, ambientCG exposes
+  its LQ package tiers, and no-key BlenderKit shows the explicit API-key error. Exposure was
+  checked at -10 EV (near black, not blown out), 0 EV and the EV readout. Maya dolly was measured
+  in the source viewer: Alt+RMB dragging right reduced camera distance from 689 to 326, dragging
+  left returned it to 689, and vertical drag left it unchanged. The packaged tree smoke test
+  confirmed the same direction visually (right drag enlarged the tree, left drag returned to the
+  exact default screenshot) with no page errors. Shift+RMB environment spin moved the environment
+  angle from 0° to 73°, and Reset environment returned it to 0°. The packaged LOD4/8K Fraser Fir
+  displayed bark on the trunk and branches with needle foliage, and source instrumentation
+  confirmed `Trunk01` bark for trunk/branches and `Needles01` foliage. Texture/LOD switch loading
+  was measured: Didelta 4K→8K showed `Loading 8K textures…` at 1,061 ms and completed after 9.8 s;
+  the packaged Potted Plant 4K→8K check showed the same label at 1,055 ms and completed after
+  16.8 s; a cached candle LOD3→LOD2 switch completed in 508 ms with no overlay; the inline
+  LOD0→LOD4 switch showed `Loading LOD4 mesh…` at 1,027 ms. Didelta Spinosa was checked
+  at 4K close
+  range with no black leaf borders, and Potted Plant 01 was checked to confirm the leaf alpha
+  sheet did not cut the pot. Inspector acceptance covered the four-part Poliigon candle set
+  (Base Color, Metalness, Roughness, Normal, AO and Translucency; per-part maps across all four
+  parts), the two-part Monstera planter at auto-4K, and Xeric Grass as the custom-material
+  Megascans plant (Base Color, Roughness, Normal, Opacity/Alpha, Specular F0, AO, Gloss,
+  Displacement and Translucency). PBR, Matcap, UV Checker, Vertex Normals, Single Sided,
+  Wireframe and PBR restore were checked, including the packaged Didelta modes. Local Poly Haven
+  previews still show only the tiers physically present in the local folder; local Megascans
+  ABC-only previews use the full provider tier set. Remaining gaps: real-account BlenderKit 3D
+  delivery, per-variation plant selection (Var1 is used), and local-only tier expansion for
+  providers other than Megascans.
+- Focused browsing now uses a themed filter panel rather than unstyled native selects. The blank
+  white controls were a real CSS bug: `.select-dropdown` styles the custom `Dropdown` wrapper, not
+  plain `<select>` elements. Native selects now use `.native-select`, and the app declares a dark
+  `color-scheme`. The Electron regression asserts non-white backgrounds and visible text.
+- Combined Discover now adds ambientCG/BlenderKit/OpenHDRI licence, resolution, map, model-format
+  and sky-condition groups. Their selections participate in active-filter counts, clearing, saved
+  searches and filtered source totals. Provider-specific All filters stay absent for unsupported
+  metadata instead of being broadened.
+- Additional provider browsing gained list/comparison (with technical data), density, independent
+  scroll restoration, saved/recent searches, inclusive Shift selection, inspector previous/next and
+  favourites. The provider switch handles seven sources without horizontal overflow and gives each
+  new source its own active accent. Provider wordmarks are neutral text tiles, not third-party art.
+- Settings includes all provider library paths, per-provider catalogue status/refresh, and a
+  BlenderKit API-key test against the provider `/me` endpoint. The key is encrypted and never
+  printed; a successful test shows only the account display name and plan. A saved key is not
+  claimed valid until this test succeeds.
+- Previews: ambientCG cards use the published LQ JPG panorama that sits beside its EXR preview
+  sources instead of the sphere-render thumbnail; the drawer/360 uses the HQ JPG, and live exposure
+  decodes the EXR only on demand. BlenderKit's square render thumbnail is never treated as
+  equirectangular. OpenHDRI's 4:3 preview is requested
+  as a 4096px PNG and cropped to its real 2:1 environment strip for cards/drawers; the URL is built
+  from the slug so older catalogues cannot fall back to the 512 AVIF thumbnail. Live 360° exposure
+  is capped at the 8K preview budget for every provider; OpenHDRI's 16K EXR is download-only and
+  the UI explains why it cannot be decoded live. Closing the viewer no longer cancels the drawer's
+  preview request, and cancellation/AbortError responses are not shown as retryable errors. Flat
+  HDRI elements stay flat. Map facets and technical
+  labels are humanised; provider polygon counts are not relabelled as triangles.
+- Provider metadata now uses the full published payload in All-mode drawers, list/comparison and
+  downloads: ambientCG relations, download statistics, collections, colors and technique; BlenderKit
+  ratings, verification, version, source app, video/filesize/formats and bookmarks; OpenHDRI upload
+  date, author, capture/location/dynamic range/white balance, file format and the optional
+  color-checker EXR. Technical panels hide non-applicable geometry rows for HDRIs and surface
+  assets, and the related tab uses provider-published ambientCG relations when available.
+- Downloads: full completion history now merges all providers rather than dropping the shorter
+  provider list. Library sidecars use the real preview image extension, native BlenderKit material
+  packages do not raise false missing-texture warnings, and health output lists every provider path.
+- Deep UI parity audit completed against Megascans/Poliigon. Focused provider facets now use the
+  shared multi-select `FilterWorkbench` with active chips; Start fresh, catalogue indexing/error/
+  empty/loading states, card quick download/progress/pause, HDRI card width, saved-search scope,
+  global recent assets, provider-filter round-tripping, Related tab, grouped technical data,
+  clickable category/tag filters, inline download errors and Alt+Left navigation were added.
+  BlenderKit key state is shared in the renderer and gates card/bulk/drawer downloads; authenticated
+  searches include the key with an anonymous fallback if it is rejected. All Sources now exposes
+  public provider focus/refresh and indexing states. Select-all isolates per-source failures, and
+  downloads preflight local/key/entitlement state. Library empty states/types, download/storage
+  labels and Settings catalogue wording were corrected per provider.
+- Known acceptance gaps: real-account BlenderKit free/paid delivery has still not been executed;
+  its protocol/alternate CDN/entitlement fixtures pass. BlenderKit facets remain sampled and are
+  labelled as such. Public libraries index only sidecar-backed OpenBridge downloads. OpenHDRI is
+  16K original is download-only because live exposure is capped at 8K for every provider; the UI
+  explains this and keeps the 4K panorama available. Public provider bulk defaults remain provider-tier
+  based rather than full per-map/LOD plans, because those sources don't publish such manifests.
+  See `docs/PUBLIC-PROVIDERS.md` for the parity matrix and exact remaining checks.
+
+## 1.5.10 HDRI category and filter pass (unreleased)
+
+### Three-provider expansion — implemented, acceptance still pending
+
+- ambientCG, BlenderKit and OpenHDRI adapters plus shared catalogue/download types are under
+  `src/main/public/` and `src/shared/public-providers.ts`. They are wired through main IPC,
+  preload, source switching, focused browsing, the All grid, download routing and offline Library
+  sidecars. Provider paths and encrypted BlenderKit API-key entry are in Settings.
+- Run `npm run test:providers` for isolated catalogue, pagination, download and Library fixtures;
+  `npm run test:providers:live` additionally audits real catalogues, downloads/extracts one small
+  ambientCG material and checks an OpenHDRI EXR header without a multi-GB transfer. The Electron
+  UI test now includes focused browsing, licence display and download routing for all three.
+- The second pass implements genuine HDR/map previews, safe high-resolution upgrades, shared
+  transfer telemetry and cancellation, explicit flat HDRI-element handling, saved/recent browsing,
+  list/comparison, density, range selection, paging/scroll state and inspector navigation. The UI
+  regression caught and fixed a real queued-state Shift-anchor bug and a scroll-container CSS
+  specificity bug; it also verifies source-file caching rather than weakening renderer CSP.
+- Artist categories now resolve from live provider keys; the live audit checks 44 ambientCG and
+  26 OpenHDRI and 30 BlenderKit mapped branches. Unsupported category leaves remain empty with an All-view note.
+  BlenderKit native-resolution/polygon query fields and category unions are implemented. Sample
+  facets are not labelled as global counts; search API caps are disclosed.
+- Preview limits: 160 MiB transfer, 8K maximum axis and at most 8K × 4K pixels for every provider.
+  OpenHDRI's 16K original is available as a download but is not decoded for live exposure; the UI
+  says so and retains the 4K panorama preview. Lower OpenHDRI tiers are advertised for supporter
+  tools; no private tier URLs or paid tool code were used. BlenderKit native material packages do
+  not expose separate maps; that is stated in UI.
+- **Remaining acceptance:** real-account BlenderKit free/paid download tests and a fresh portable
+  smoke test. The resolver protocol/alternate-CDN fallback/credential isolation is fixture-tested,
+  but no real key has been used. Do not claim those authenticated tests passed.
+- No credentials, tag, commit, push or release were created by this expansion. The existing portable
+  1.5.10 build remains unchanged. Protocol details and remaining work: `docs/PUBLIC-PROVIDERS.md`.
+
+- HDRI category setup rebuilt from the live provider taxonomies. Poly Haven publishes a
+  three-level `category` field (12 environment roots, 41 second-level groups, 153 leaves); the
+  combined Discover sidebar attaches those live children at runtime and groups them under
+  **Skies & Skyboxes**, **Nature & Landscapes**, **Urban & Built**, **Interiors**, **Studio** and
+  **General Environments**. Poliigon Arid/Coastal/Environment/fields/Industrial/Sky/Urban map into
+  the matching branches. Dynamic Poly Haven leaves are generated from `polyhaven-categories`, so
+  new provider leaves appear without hard-coding every path.
+- HDRI weather is now a canonical dimension. Poly Haven uses the published
+  `attributes.weather`; a weather filter always implies `environment=outdoor`, so indoor/studio
+  captures tagged `clear` or `overcast` cannot leak into sky results. Poliigon derives a
+  `weather` value at index time from name/tags/categories (`src/shared/sky-conditions.ts`) and
+  exposes it as a facet and query filter. `poliigon-catalog.sqlite` schema is v10; existing v9
+  databases migrate in place and backfill weather without a network rebuild. An all-null weather
+  column is also repaired on startup (guards against an older binary refreshing the shared file).
+- HDRI category trees and filters now use weather instead of contradictory provider tags:
+  Poly Haven flat `clear`/`partly cloudy`/`overcast` category tags are hidden for HDRI browsing,
+  and Poliigon's raw `Sky > Clear/Partly Cloudy/Overcast` branches are hidden in the focused
+  view. Both focused views expose a normalised **Sky condition** facet. **Clear / Sunny Day** is
+  clear + 07:00–17:00; **Clear Skies** is all clear. A curated time preset is cleared when moving
+  to a sibling sky condition without a window.
+- HDRI filter presentation: Megascans groups are hidden, provider filters are ordered Sky
+  condition first, the type dropdown stays at the top-level type (HDRIs) while the category
+  tree/chip carries the subcategory, and cards show resolved weather + time. Poly Haven FTS
+  refresh now recreates the contentless FTS5 table instead of issuing an unsupported DELETE.
+- Verified against live catalogues: Poly Haven 997 HDRIs (outdoor weather Clear 270, Partly 315,
+  Overcast 119, Fog 11, Rain 3, Snow 1); Poliigon 342 HDRIs (Clear 130, Partly 111, Overcast 42,
+  Fog 23, Rain 1). Every weather, environment, sky-view, backplate, season, contrast, light,
+  resolution, category, time and combined AND filter was queried against real catalog data.
+  `npm run check`, `npm run build`, `npm run test:browsing`, `npm run test:browsing:ui` and the
+  live Electron UI smoke test pass. No tag or release has been created.
 
 ## 1.5.9 workspace pass (unreleased)
 
@@ -138,12 +434,12 @@ Changes after `v1.4.2` are unreleased. Choose the next version when new work is 
 - Poliigon map codes are canonicalised at index time (`src/shared/poliigon-maps.ts`) so legacy
   tokens (`COL`, `NRM`, `METALNESS`, `DISP`, `GLOSS`, `REFL`) and PascalCase names (`BaseColor`,
   `Normal`, `Metalness`, `Gloss`, `Reflection`) produce one facet each. `poliigon-catalog.sqlite`
-  schema is v9 and rebuilds automatically; the count remains 7,448. Map labels/order live in
+  schema is v10 (v9 migrates in place); the live count is 7,554. Map labels/order live in
   `src/renderer/poliigon-labels.ts`; legacy filter values still resolve through the canonicaliser.
 - Physical-size presets/filters/sorts are shared (`src/renderer/size-filter.ts`) by Discover, All
   sources, Poliigon (non-HDRI) and Poly Haven (models). Resolution facets sort numerically and map
   facets use canonical order; Megascans facet values are humanised.
-- Verified counts after the audit: 28,670 total (18,835 Megascans · 7,448 Poliigon · 2,387 Poly
+- Verified counts after the audit: 28,776 total (18,835 Megascans · 7,554 Poliigon · 2,387 Poly
   Haven); Poliigon Normal 7,072 and Base Color 7,035; Poly Haven models 2–5 m 71. `npm run check`,
   `npm run build`, `npm run test:browsing`, `npm run test:network` and `npm run test:browsing:ui`
   pass. The UI fixture now covers the three-provider All view, and All-view Shift selection closes
@@ -196,7 +492,7 @@ Changes after `v1.4.2` are unreleased. Choose the next version when new work is 
 - GitHub Quality exposed a sorted auto-paging regression at 1024x768; 1.5.9 captures the visible
   anchor before a page request. The UI regression scrolls near the bottom with headroom below the
   anchor (the last row cannot keep its viewport position once new pages extend the list), and runs
-  at both narrow and wide widths. A fresh 1.5.9 portable build is available locally in `dist/`.
+  at both narrow and wide widths. A fresh 1.5.10 portable build is available locally in `dist/`.
 
 ## Mandatory checks
 

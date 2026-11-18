@@ -20,11 +20,287 @@ export interface AllCategoryNode {
   poliigonType?: string;
   /** Flat Poly Haven category tags (as published on the asset summary). */
   polyhavenCategories?: string[];
+  /** Poly Haven's hierarchical `category` paths (prefix matches descendants). */
+  polyhavenCategoryPaths?: string[];
+  /** Canonical Poly Haven weather attributes. */
+  polyhavenWeather?: string[];
+  /** Canonical Poliigon sky condition (derived from public metadata). */
+  poliigonWeather?: string[];
+  /** Optional time-of-day windows applied by a curated sky category. */
+  polyhavenTimeStart?: number;
+  polyhavenTimeEnd?: number;
+  poliigonTimeStart?: number;
+  poliigonTimeEnd?: number;
+  /** Fill this node's children from a live Poly Haven catalogue root. */
+  polyhavenRoot?: string;
   polyhavenType?: string;
   children?: AllCategoryNode[];
 }
 
 const NONE = NONE_TYPE;
+const POLYHAVEN_HDRI_PREFIX = "hdri:ph:";
+
+/**
+ * Poly Haven publishes a complete three-level HDRI environment taxonomy.
+ * These are the twelve current roots; the combined view groups them into
+ * Skies, Nature, Urban, Interiors and Studio while preserving every published
+ * subcategory underneath. Poliigon's flatter HDRI categories are mapped into
+ * the matching branches.
+ */
+const HDRI_NATURE_PATHS = [
+  "Fields & Countryside",
+  "Forest & Woodland",
+  "Mountains & Hills",
+  "Coast & Water",
+  "Desert & Arid",
+  "Parks & Gardens"
+];
+const HDRI_URBAN_PATHS = ["Streets & Town", "Industrial", "Abandoned & Ruins"];
+
+export const POLYHAVEN_HDRI_ROOTS: readonly string[] = [
+  "Pure Skies",
+  ...HDRI_NATURE_PATHS,
+  ...HDRI_URBAN_PATHS,
+  "Interiors",
+  "Studio"
+];
+
+const POLYHAVEN_HDRI_ROOT_SET = new Set<string>(POLYHAVEN_HDRI_ROOTS);
+
+interface HdriNodeInput {
+  value: string;
+  label: string;
+  polyhavenRoot?: string;
+  polyhavenCategoryPaths?: string[];
+  polyhavenCategories?: string[];
+  polyhavenWeather?: string[];
+  polyhavenTimeStart?: number;
+  polyhavenTimeEnd?: number;
+  poliigonPaths?: string[][];
+  poliigonWeather?: string[];
+  poliigonTimeStart?: number;
+  poliigonTimeEnd?: number;
+  poliigonType?: string;
+  children?: AllCategoryNode[];
+}
+
+/**
+ * HDRI nodes never contribute Megascans results (the app's Megascans
+ * catalogue has no HDRI type), and a Poly Haven/ Poliigon node must explicitly
+ * opt in so an unmapped leaf cannot silently fall back to a whole provider.
+ */
+function hdriNode(input: HdriNodeInput): AllCategoryNode {
+  const polyhavenCategoryPaths = input.polyhavenCategoryPaths ??
+    (input.polyhavenRoot ? [input.polyhavenRoot] : undefined);
+  const hasPolyHaven = Boolean(
+    input.polyhavenRoot ||
+    (polyhavenCategoryPaths?.length ?? 0) > 0 ||
+    (input.polyhavenCategories?.length ?? 0) > 0 ||
+    (input.polyhavenWeather?.length ?? 0) > 0
+  );
+  const hasPoliigon = Boolean(
+    (input.poliigonPaths?.length ?? 0) > 0 ||
+    (input.poliigonWeather?.length ?? 0) > 0
+  );
+  return {
+    value: input.value,
+    label: input.label,
+    megascansType: NONE,
+    poliigonPaths: input.poliigonPaths,
+    poliigonWeather: input.poliigonWeather,
+    poliigonTimeStart: input.poliigonTimeStart,
+    poliigonTimeEnd: input.poliigonTimeEnd,
+    poliigonType: input.poliigonType ?? (hasPoliigon ? "HDRS" : NONE),
+    polyhavenCategories: input.polyhavenCategories,
+    polyhavenCategoryPaths,
+    polyhavenWeather: input.polyhavenWeather,
+    polyhavenTimeStart: input.polyhavenTimeStart,
+    polyhavenTimeEnd: input.polyhavenTimeEnd,
+    polyhavenRoot: input.polyhavenRoot,
+    polyhavenType: hasPolyHaven ? "hdris" : NONE,
+    children: input.children
+  };
+}
+
+const HDRI_SKY_GROUPS: AllCategoryNode[] = [
+  hdriNode({
+    value: "hdri:skies:pure",
+    label: "Pure Sky Panoramas",
+    polyhavenCategoryPaths: ["Pure Skies"]
+  }),
+  hdriNode({
+    value: "hdri:clear-day",
+    label: "Clear / Sunny Day",
+    polyhavenWeather: ["clear"],
+    poliigonWeather: ["clear"],
+    polyhavenTimeStart: 7,
+    polyhavenTimeEnd: 17,
+    poliigonTimeStart: 7,
+    poliigonTimeEnd: 17
+  }),
+  hdriNode({
+    value: "hdri:clear",
+    label: "Clear Skies",
+    polyhavenWeather: ["clear"],
+    poliigonWeather: ["clear"]
+  }),
+  hdriNode({
+    value: "hdri:partly-cloudy",
+    label: "Partly Cloudy",
+    polyhavenWeather: ["partly_cloudy"],
+    poliigonWeather: ["partly_cloudy"]
+  }),
+  hdriNode({
+    value: "hdri:overcast",
+    label: "Overcast",
+    polyhavenWeather: ["overcast"],
+    poliigonWeather: ["overcast"]
+  }),
+  hdriNode({
+    value: "hdri:fog",
+    label: "Fog & Haze",
+    polyhavenWeather: ["fog"],
+    poliigonWeather: ["fog"]
+  }),
+  hdriNode({
+    value: "hdri:rain",
+    label: "Rain & Storm",
+    polyhavenWeather: ["rain"],
+    poliigonWeather: ["rain"]
+  }),
+  hdriNode({
+    value: "hdri:snow",
+    label: "Snow",
+    polyhavenWeather: ["snow"],
+    poliigonWeather: ["snow"]
+  }),
+  hdriNode({
+    value: "hdri:sunrise-sunset",
+    label: "Sunrise & Sunset",
+    polyhavenCategories: ["sunrise-sunset"],
+    poliigonPaths: [["HDRIS", "Sky", "Sunrise"], ["HDRIS", "Sky", "Sunset"]]
+  }),
+  hdriNode({
+    value: "hdri:evening",
+    label: "Evening",
+    poliigonPaths: [["HDRIS", "Sky", "Evening"]]
+  }),
+  hdriNode({
+    value: "hdri:night",
+    label: "Night",
+    polyhavenCategories: ["night"],
+    poliigonPaths: [["HDRIS", "Sky", "Night"]]
+  })
+];
+
+const HDRI_NATURE_GROUPS: AllCategoryNode[] = [
+  hdriNode({
+    value: "hdri:nature:fields",
+    label: "Fields & Countryside",
+    polyhavenRoot: "Fields & Countryside",
+    poliigonPaths: [["HDRIS", "fields"]]
+  }),
+  hdriNode({
+    value: "hdri:nature:forest",
+    label: "Forest & Woodland",
+    polyhavenRoot: "Forest & Woodland"
+  }),
+  hdriNode({
+    value: "hdri:nature:mountains",
+    label: "Mountains & Hills",
+    polyhavenRoot: "Mountains & Hills"
+  }),
+  hdriNode({
+    value: "hdri:nature:coast",
+    label: "Coast & Water",
+    polyhavenRoot: "Coast & Water",
+    poliigonPaths: [["HDRIS", "Coastal"]]
+  }),
+  hdriNode({
+    value: "hdri:nature:desert",
+    label: "Desert & Arid",
+    polyhavenRoot: "Desert & Arid",
+    poliigonPaths: [["HDRIS", "Arid"]]
+  }),
+  hdriNode({
+    value: "hdri:nature:parks",
+    label: "Parks & Gardens",
+    polyhavenRoot: "Parks & Gardens"
+  })
+];
+
+const HDRI_URBAN_GROUPS: AllCategoryNode[] = [
+  hdriNode({
+    value: "hdri:built:streets",
+    label: "Streets & Town",
+    polyhavenRoot: "Streets & Town",
+    poliigonPaths: [["HDRIS", "Urban"]]
+  }),
+  hdriNode({
+    value: "hdri:built:industrial",
+    label: "Industrial",
+    polyhavenRoot: "Industrial",
+    poliigonPaths: [["HDRIS", "Industrial"]]
+  }),
+  hdriNode({
+    value: "hdri:built:abandoned",
+    label: "Abandoned & Ruins",
+    polyhavenRoot: "Abandoned & Ruins"
+  })
+];
+
+const HDRI_GROUPS: AllCategoryNode[] = [
+  hdriNode({
+    value: "hdri:skies",
+    label: "Skies & Skyboxes",
+    polyhavenCategories: ["skies", "pure skies"],
+    poliigonPaths: [["HDRIS", "Sky"]],
+    children: HDRI_SKY_GROUPS
+  }),
+  hdriNode({
+    value: "hdri:nature",
+    label: "Nature & Landscapes",
+    polyhavenCategoryPaths: [...HDRI_NATURE_PATHS],
+    poliigonPaths: [["HDRIS", "fields"], ["HDRIS", "Coastal"], ["HDRIS", "Arid"]],
+    children: HDRI_NATURE_GROUPS
+  }),
+  hdriNode({
+    value: "hdri:built",
+    label: "Urban & Built",
+    polyhavenCategoryPaths: [...HDRI_URBAN_PATHS],
+    poliigonPaths: [["HDRIS", "Urban"], ["HDRIS", "Industrial"]],
+    children: HDRI_URBAN_GROUPS
+  }),
+  hdriNode({
+    value: "hdri:interiors",
+    label: "Interiors",
+    polyhavenRoot: "Interiors"
+  }),
+  hdriNode({
+    value: "hdri:studio",
+    label: "Studio",
+    polyhavenRoot: "Studio"
+  }),
+  hdriNode({
+    value: "hdri:general",
+    label: "General Environments",
+    poliigonPaths: [["HDRIS", "Environment"]]
+  })
+];
+
+/** True when a Poly Haven category path belongs to the HDRI environment tree. */
+export function isPolyHavenHdriCategoryPath(path: string | null | undefined): boolean {
+  const root = path?.split("/")[0]?.trim() ?? "";
+  return POLYHAVEN_HDRI_ROOT_SET.has(root);
+}
+
+/** Return only the live Poly Haven roots that belong to HDRIs. */
+export function polyHavenHdriCategoryRoots(nodes: CategoryNode[]): CategoryNode[] {
+  const order = new Map(POLYHAVEN_HDRI_ROOTS.map((label, index) => [label, index]));
+  return nodes
+    .filter(node => POLYHAVEN_HDRI_ROOT_SET.has(node.key))
+    .sort((a, b) => (order.get(a.key) ?? 999) - (order.get(b.key) ?? 999));
+}
 
 export const ALL_CONTENT: AllCategoryNode = {
   value: "",
@@ -303,133 +579,7 @@ export const ALL_SOURCE_TREE: AllCategoryNode[] = [
     megascansType: NONE,
     poliigonType: "HDRS",
     polyhavenType: "hdris",
-    children: [
-      {
-        value: "hdri:skies",
-        label: "Skies",
-        megascansType: NONE,
-        poliigonType: "HDRS",
-        poliigonPaths: [["HDRIS", "Sky"]],
-        polyhavenType: "hdris",
-        polyhavenCategories: ["skies", "pure skies", "clear", "partly cloudy", "overcast", "sunrise-sunset", "midday", "night"],
-        children: [
-          {
-            value: "hdri:clear",
-            label: "Clear Skies",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Sky", "Clear"]],
-            polyhavenType: "hdris",
-            polyhavenCategories: ["clear", "pure skies"]
-          },
-          {
-            value: "hdri:partly-cloudy",
-            label: "Partly Cloudy",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Sky", "Partly Cloudy"]],
-            polyhavenType: "hdris",
-            polyhavenCategories: ["partly cloudy"]
-          },
-          {
-            value: "hdri:overcast",
-            label: "Overcast",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Sky", "Overcast"]],
-            polyhavenType: "hdris",
-            polyhavenCategories: ["overcast"]
-          },
-          {
-            value: "hdri:sunrise-sunset",
-            label: "Sunrise & Sunset",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Sky", "Sunrise"], ["HDRIS", "Sky", "Sunset"]],
-            polyhavenType: "hdris",
-            polyhavenCategories: ["sunrise-sunset"]
-          },
-          {
-            value: "hdri:evening",
-            label: "Evening",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Sky", "Evening"]],
-            polyhavenType: NONE
-          },
-          {
-            value: "hdri:night",
-            label: "Night",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Sky", "Night"]],
-            polyhavenType: "hdris",
-            polyhavenCategories: ["night"]
-          }
-        ]
-      },
-      {
-        value: "hdri:environments",
-        label: "Environments",
-        megascansType: NONE,
-        poliigonType: "HDRS",
-        poliigonPaths: [["HDRIS", "Environment"], ["HDRIS", "Arid"], ["HDRIS", "Coastal"], ["HDRIS", "fields"]],
-        polyhavenType: "hdris",
-        polyhavenCategories: ["nature", "urban", "indoor", "studio", "outdoor"],
-        children: [
-          {
-            value: "hdri:arid",
-            label: "Arid & Desert",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Arid"]],
-            polyhavenType: NONE
-          },
-          {
-            value: "hdri:coastal",
-            label: "Coastal",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Coastal"]],
-            polyhavenType: NONE
-          },
-          {
-            value: "hdri:fields",
-            label: "Fields & Rural",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "fields"]],
-            polyhavenType: NONE
-          },
-          {
-            value: "hdri:environment",
-            label: "General Environments",
-            megascansType: NONE,
-            poliigonType: "HDRS",
-            poliigonPaths: [["HDRIS", "Environment"]],
-            polyhavenType: "hdris",
-            polyhavenCategories: ["nature", "urban", "indoor", "studio", "outdoor"]
-          }
-        ]
-      },
-      {
-        value: "hdri:urban",
-        label: "Urban",
-        megascansType: NONE,
-        poliigonType: "HDRS",
-        poliigonPaths: [["HDRIS", "Urban"]],
-        polyhavenType: "hdris",
-        polyhavenCategories: ["urban"]
-      },
-      {
-        value: "hdri:industrial",
-        label: "Industrial",
-        megascansType: NONE,
-        poliigonType: "HDRS",
-        poliigonPaths: [["HDRIS", "Industrial"]],
-        polyhavenType: NONE
-      }
-    ]
+    children: HDRI_GROUPS
   },
   {
     value: "atlas",
@@ -613,25 +763,73 @@ export type AllSort =
 
 const CATEGORY_INDEX = new Map<string, AllCategoryNode>();
 const CATEGORY_PARENT = new Map<string, string | null>();
+const POLYHAVEN_ROOT_PARENT = new Map<string, string[]>();
 
-function indexTree(nodes: AllCategoryNode[], parent: string | null): void {
+/** Old saved Discover scopes resolve to their closest new HDRI branch. */
+const ALL_VALUE_ALIASES: Record<string, string> = {
+  "hdri:environments": "hdri:nature",
+  "hdri:arid": "hdri:nature:desert",
+  "hdri:coastal": "hdri:nature:coast",
+  "hdri:fields": "hdri:nature:fields",
+  "hdri:environment": "hdri:general",
+  "hdri:urban": "hdri:built:streets",
+  "hdri:industrial": "hdri:built:industrial"
+};
+
+function canonicalAllValue(value: string): string {
+  return ALL_VALUE_ALIASES[value] ?? value;
+}
+
+function indexTree(nodes: AllCategoryNode[], parentPath: string[]): void {
   for (const node of nodes) {
+    const path = [...parentPath, node.value];
     CATEGORY_INDEX.set(node.value, node);
-    CATEGORY_PARENT.set(node.value, parent);
-    if (node.children) indexTree(node.children, node.value);
+    CATEGORY_PARENT.set(node.value, parentPath[parentPath.length - 1] ?? null);
+    if (node.polyhavenRoot) POLYHAVEN_ROOT_PARENT.set(node.polyhavenRoot, path);
+    if (node.children) indexTree(node.children, path);
   }
 }
-indexTree(ALL_SOURCE_TREE, null);
+indexTree(ALL_SOURCE_TREE, []);
+
+function dynamicPolyHavenCategory(value: string): AllCategoryNode | null {
+  if (!value.startsWith(POLYHAVEN_HDRI_PREFIX)) return null;
+  const path = value.slice(POLYHAVEN_HDRI_PREFIX.length);
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length === 0) return null;
+  return {
+    value,
+    label: parts[parts.length - 1],
+    megascansType: NONE,
+    poliigonType: NONE,
+    polyhavenType: "hdris",
+    polyhavenCategoryPaths: [path]
+  };
+}
 
 export function allSourceCategory(value: string | null | undefined): AllCategoryNode {
   if (!value) return ALL_CONTENT;
-  return CATEGORY_INDEX.get(value) ?? ALL_CONTENT;
+  const canonical = canonicalAllValue(value);
+  return dynamicPolyHavenCategory(canonical) ?? CATEGORY_INDEX.get(canonical) ?? ALL_CONTENT;
 }
 
 export function allSourcePath(value: string | null | undefined): string[] {
   if (!value) return [];
+  const canonical = canonicalAllValue(value);
+  if (canonical.startsWith(POLYHAVEN_HDRI_PREFIX)) {
+    const path = canonical.slice(POLYHAVEN_HDRI_PREFIX.length);
+    const parts = path.split("/").filter(Boolean);
+    // The live root is represented by the static leaf node, so only its
+    // descendants become dynamic path entries.
+    const parent = POLYHAVEN_ROOT_PARENT.get(parts[0] ?? "") ?? ["hdri"];
+    return [
+      ...parent,
+      ...parts.slice(1).map((_, index) =>
+        `${POLYHAVEN_HDRI_PREFIX}${parts.slice(0, index + 2).join("/")}`
+      )
+    ];
+  }
   const path: string[] = [];
-  let current: string | null | undefined = value;
+  let current: string | null | undefined = canonical;
   while (current) {
     path.unshift(current);
     current = CATEGORY_PARENT.get(current) ?? null;
@@ -639,13 +837,38 @@ export function allSourcePath(value: string | null | undefined): string[] {
   return path;
 }
 
-export function allCategoryNodes(): CategoryNode[] {
-  const map = (nodes: AllCategoryNode[]): CategoryNode[] => nodes.map(node => ({
-    key: node.value,
+function findCategoryNode(nodes: CategoryNode[], key: string): CategoryNode | undefined {
+  for (const node of nodes) {
+    if (node.key === key) return node;
+    const found = findCategoryNode(node.children, key);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function livePolyHavenChildren(nodes: CategoryNode[]): CategoryNode[] {
+  return nodes.map(node => ({
+    key: `${POLYHAVEN_HDRI_PREFIX}${node.key}`,
     label: node.label,
     count: 0,
-    children: map(node.children ?? [])
+    children: livePolyHavenChildren(node.children)
   }));
+}
+
+export function allCategoryNodes(polyHavenCategories: CategoryNode[] = []): CategoryNode[] {
+  const map = (nodes: AllCategoryNode[]): CategoryNode[] => nodes.map(node => {
+    let children = node.children ? map(node.children) : [];
+    if (node.polyhavenRoot) {
+      const root = findCategoryNode(polyHavenCategories, node.polyhavenRoot);
+      if (root) children = livePolyHavenChildren(root.children);
+    }
+    return {
+      key: node.value,
+      label: node.label,
+      count: 0,
+      children
+    };
+  });
   return map(ALL_SOURCE_TREE);
 }
 

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
+import { usePublicStore } from "../public-store";
+import { isPublicProviderId, PUBLIC_PROVIDER_IDS, publicProviderLabel } from "../../shared/public-providers";
 import { CloseIcon } from "../icons";
 
 interface Command {
@@ -15,6 +17,7 @@ export function CommandPalette() {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const setView = useStore(state => state.setView);
+  const provider = useStore(state => state.provider);
   const setQuery = useStore(state => state.setQuery);
   const search = useStore(state => state.search);
   const clearFilters = useStore(state => state.clearFilters);
@@ -55,7 +58,7 @@ export function CommandPalette() {
       },
       {
         id: "free",
-        label: "Show free assets",
+        label: "Show free Megascans assets",
         run: () => {
           setView("discover");
           setFreeOnly(true);
@@ -63,7 +66,7 @@ export function CommandPalette() {
       },
       {
         id: "favorites",
-        label: "Show favorites",
+        label: "Show Megascans favorites",
         run: () => {
           setView("discover");
           setFavoritesOnly(true);
@@ -71,7 +74,7 @@ export function CommandPalette() {
       },
       {
         id: "clear-filters",
-        label: "Clear catalogue filters",
+        label: "Clear Megascans catalogue filters",
         run: () => {
           setView("discover");
           clearFilters();
@@ -128,12 +131,26 @@ export function CommandPalette() {
     if (customSearch) {
       list.unshift({
         id: "search",
-        label: `Search Megascans for “${customSearch}”`,
+        label: `Search ${isPublicProviderId(provider) ? publicProviderLabel(provider) : "Megascans"} for “${customSearch}”`,
         hint: "Enter",
         run: () => {
           setView("discover");
-          setQuery(customSearch);
-          void search(true);
+          if (isPublicProviderId(provider)) void usePublicStore.getState().search(provider, true, { query: customSearch });
+          else {
+            setQuery(customSearch);
+            void search(true);
+          }
+        }
+      });
+    }
+    for (const source of PUBLIC_PROVIDER_IDS) {
+      list.push({
+        id: `focus-${source}`,
+        label: `Open ${publicProviderLabel(source)} catalogue`,
+        hint: "Source",
+        run: () => {
+          setView("discover");
+          useStore.getState().setProvider(source);
         }
       });
     }
@@ -142,6 +159,7 @@ export function CommandPalette() {
     clearFilters,
     importFolder,
     importZip,
+    provider,
     text,
     search,
     setFavoritesOnly,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
@@ -29,6 +29,10 @@ const result = await build({
     export { summarizeDownloads } from './src/renderer/download-summary';
     export { recordDownloadSpeed, clearDownloadSpeed } from './src/renderer/download-history';
     export { assetBounds, scaleDiagramLayout } from './src/shared/asset-scale';
+    export { poliigonSkyCondition, skyConditionLabel } from './src/shared/sky-conditions';
+    export { allSourceCategory, allSourcePath, allCategoryNodes, polyHavenHdriCategoryRoots } from './src/renderer/all-sources';
+    export { modelTextureMaterialKey, modelPartMaterialKey } from './src/shared/model-preview';
+    export { rankSearchEntries, searchTextScore, searchIntentBoost, searchSpecificityPenalty } from './src/renderer/search-ranking';
   `, resolveDir: process.cwd(), loader: "ts" },
   bundle: true, platform: "node", format: "esm", write: false,
   banner: { js: 'import { createRequire as fixtureRequire } from "node:module"; const require = fixtureRequire(process.cwd() + "/package.json");' },
@@ -76,6 +80,54 @@ try {
       assert.ok(layout.boxX + layout.boxWidth <= 396);
       assert.ok(layout.boxY >= 0 && layout.humanY >= 0);
     }
+  });
+  check("material keys keep tree trunk and needles separate from 16-bit map tokens", () => {
+    const key = api.modelTextureMaterialKey;
+    assert.equal(key("TreeFraserFirLarge001_Trunk01_COL_8K_METALNESS.png"), "TreeFraserFirLarge001 Trunk01");
+    assert.equal(key("TreeFraserFirLarge001_Needles01_MASK_8K_METALNESS.png"), "TreeFraserFirLarge001 Needles01");
+    assert.equal(key("TreeFraserFirLarge001_Needles01_NRM16_8K_LOD4_METALNESS.png"), "TreeFraserFirLarge001 Needles01");
+    assert.equal(key("TreeFraserFirLarge001_Trunk01_DISP16_8K_METALNESS.png"), "TreeFraserFirLarge001 Trunk01");
+    assert.equal(key("Metal01_COL_1K.png"), "Metal01");
+    assert.equal(api.modelPartMaterialKey("TreeFraserFirLarge001_Trunk01_Geo_LOD4.fbx"), "TreeFraserFirLarge001 Trunk01");
+  });
+  check("global search ranks exact tokens and query intent above provider turn-taking", () => {
+    const entries = [
+      { item: "mega-branch", provider: "megascans", groupIndex: 0, match: { name: "Desert Western Tree Branch Juniper", typeLabel: "3D Plant" } },
+      { item: "poly-fir", provider: "polyhaven", groupIndex: 3, match: { name: "Fir Tree 01", typeLabel: "3D Model" }, free: true, popularity: 5000 },
+      { item: "poli-tree-texture", provider: "poliigon", groupIndex: 0, match: { name: "Tree End 005", typeLabel: "Surface" } },
+      { item: "poly-sunset", provider: "polyhaven", groupIndex: 1, match: { name: "Evening Sunset Sky", typeLabel: "HDRI" }, free: true },
+      { item: "bk-tree-1", provider: "blenderkit", groupIndex: 0, match: { name: "Tree", typeLabel: "3D Model" }, free: true },
+      { item: "bk-tree-2", provider: "blenderkit", groupIndex: 1, match: { name: "Tree", typeLabel: "3D Model" }, free: true },
+      { item: "bk-tree-lod", provider: "blenderkit", groupIndex: 2, match: { name: "Tree LOD 0", typeLabel: "3D Model" }, free: true },
+      { item: "tree-small", provider: "polyhaven", groupIndex: 2, match: { name: "Tree Small 02", typeLabel: "3D Model" }, free: true },
+      { item: "tree-stump", provider: "megascans", groupIndex: 3, match: { name: "Tree Stump 01", typeLabel: "3D Plant" } }
+    ];
+    const tree = api.rankSearchEntries("tree", entries);
+    assert.equal(tree[0], "bk-tree-1");
+    assert.notEqual(tree[1], "bk-tree-2");
+    assert.ok(tree.indexOf("bk-tree-2") > 3);
+    assert.ok(tree.indexOf("bk-tree-lod") > 4);
+    assert.ok(tree.indexOf("tree-small") < tree.indexOf("tree-stump"));
+    assert.ok(tree.indexOf("poli-tree-texture") < tree.indexOf("poly-sunset"));
+    assert.ok(api.searchSpecificityPenalty("tree", { name: "Tree Stump 01" }) < 0);
+    assert.ok(api.searchSpecificityPenalty("tree", { name: "Tree Trunk Juniper" }) < 0);
+    assert.equal(api.searchSpecificityPenalty("tree stump", { name: "Tree Stump 01" }), 0);
+    const sunset = api.rankSearchEntries("sunset", entries);
+    assert.equal(sunset[0], "poly-sunset");
+    assert.equal(api.searchTextScore("fir tree", { name: "Fir Tree 01" }) > api.searchTextScore("fir tree", { name: "Tree 01" }), true);
+    assert.ok(api.searchIntentBoost("sunset", "HDRI") > api.searchIntentBoost("sunset", "Surface"));
+    assert.ok(api.searchIntentBoost("brick", "Surface") > api.searchIntentBoost("brick", "HDRI"));
+  });
+  check("deep global search ranking preserves every result and stays deterministic", () => {
+    const entries = Array.from({ length: 600 }, (_, item) => ({
+      item, provider: `provider-${item % 6}`, groupIndex: Math.floor(item / 6),
+      match: { name: item % 20 === 0 ? "Oak Tree" : `Oak Tree ${item}`, typeLabel: "3D Model" }
+    }));
+    const ranked = api.rankSearchEntries("oak tree", entries);
+    assert.equal(ranked[0], 0);
+    assert.notEqual(ranked[1] % 20, 0);
+    assert.equal(new Set(ranked).size, entries.length);
+    assert.deepEqual(api.rankSearchEntries("oak tree", entries), ranked);
   });
   check("completion history survives reopen, repeats and queue clearing", () => {
     const path = join(directory, "completions.sqlite");
@@ -276,16 +328,36 @@ try {
   const customFolder = join(libraryRoot, "Custom", "duplicate");
   await mkdir(customFolder, { recursive: true });
   await writeFile(join(customFolder, "fixture.json"), JSON.stringify({ id: "fixture", name: "Custom copy", type: "surface" }));
+  let configuredLibrary = libraryRoot;
+  const scanLogs = [];
   library = new LibraryService(
-    () => libraryRoot,
+    () => configuredLibrary,
     () => join(directory, "poliigon-library"),
     () => join(directory, "polyhaven-library"),
     () => null,
     () => null,
     join(directory, "library.sqlite"),
-    logger
+    { ...logger, info(message, data) { if (message === "Library scan complete") scanLogs.push(data); } }
   );
-  await library.scan(true);
+  const initial = await Promise.all([library.scan(true), library.snapshot(true), library.snapshot()]);
+  check("concurrent Library consumers share one full scan", () => {
+    assert.equal(scanLogs.length, 1);
+    assert.equal(initial[0].assets.length, 2);
+    assert.strictEqual(initial[1], initial[2]);
+  });
+  const jsonPath = join(folder, "fixture.json");
+  const jsonTimes = await stat(jsonPath);
+  const folderTimes = await stat(folder);
+  await writeFile(jsonPath, JSON.stringify({ id: "fixture", name: "Refreshed download", type: "surface", components: [{ type: "albedo" }] }));
+  await utimes(jsonPath, jsonTimes.atime, jsonTimes.mtime);
+  await utimes(folder, folderTimes.atime, folderTimes.mtime);
+  library.invalidate([folder]);
+  await library.snapshot();
+  check("completed-download refresh reindexes the changed folder and skips its neighbors", () => {
+    assert.equal(library.query({ repo: "downloaded" }).assets[0].name, "Refreshed download");
+    assert.equal(scanLogs.at(-1).changed, 1);
+    assert.equal(scanLogs.at(-1).skipped, 1);
+  });
   const previews = await library.previews("fixture", folder);
   check("local renders and nested browser-readable maps work offline", () => {
     assert.equal(previews.renders.length, 1); assert.equal(previews.maps.length, 1);
@@ -300,6 +372,68 @@ try {
     assert.equal(library.query({ repo: "custom" }).total, 1);
     assert.equal(library.query({ repo: "downloaded" }).total, 0);
   });
+  const obsolete = library.snapshot(true);
+  configuredLibrary = join(directory, "new-empty-library");
+  library.invalidate();
+  const switched = await Promise.all([obsolete, library.snapshot()]);
+  check("an in-flight Library scan cannot publish an obsolete root", () => {
+    assert.equal(switched[0].libraryPath, configuredLibrary);
+    assert.equal(switched[1].libraryPath, configuredLibrary);
+    assert.equal(library.query({}).total, 0);
+  });
+  check("HDRI sky conditions ignore contradictory provider tags", () => {
+    const condition = api.poliigonSkyCondition;
+    assert.equal(condition({ name: "Clear Day HDRI", tags: ["clear sky"], categories: ["HDRIS / Sky / Clear"] }), "clear");
+    assert.equal(condition({ name: "Mostly Clear Sunset", tags: ["cloudy sky"], categories: ["HDRIS / Sky / Sunset"] }), "clear");
+    assert.equal(condition({ name: "Overcast Day HDRI", tags: [], categories: ["HDRIS / Sky / Overcast"] }), "overcast");
+    assert.equal(condition({ name: "Hazy Sunset Field", tags: [], categories: ["HDRIS / Environment"] }), "fog");
+    assert.equal(condition({ name: "Overcast Stormy Plain HDRI", tags: ["cloudy sky"], categories: [] }), "rain");
+    assert.equal(condition({ name: "Snowy Field Clear Winters Day", tags: ["snow", "clear sky"], categories: ["HDRIS / Sky / Clear"] }), "clear");
+    assert.notEqual(condition({ name: "Whiterock Mudflats Shaded Cloudy Day", tags: ["overcast sky"], categories: ["HDRIS / Sky / Clear", "HDRIS / Sky / Partly Cloudy"] }), "clear");
+    assert.equal(condition({ name: "Interior Lobby Glazed Partition HDRI", tags: ["neutral daylight"], categories: ["HDRIS / Environment"] }), null);
+  });
+
+  check("combined HDRI categories use normalised conditions, not tag buckets", () => {
+    const clear = api.allSourceCategory("hdri:clear");
+    assert.deepEqual(clear.polyhavenWeather, ["clear"]);
+    assert.deepEqual(clear.poliigonWeather, ["clear"]);
+    assert.equal(clear.polyhavenCategories, undefined);
+    assert.equal(clear.poliigonPaths, undefined);
+    assert.deepEqual(api.allSourcePath("hdri:clear"), ["hdri", "hdri:skies", "hdri:clear"]);
+
+    const overcast = api.allSourceCategory("hdri:overcast");
+    assert.deepEqual(overcast.polyhavenWeather, ["overcast"]);
+    assert.deepEqual(overcast.poliigonWeather, ["overcast"]);
+
+    const clearDay = api.allSourceCategory("hdri:clear-day");
+    assert.deepEqual(clearDay.polyhavenWeather, ["clear"]);
+    assert.deepEqual(clearDay.poliigonWeather, ["clear"]);
+    assert.equal(clearDay.polyhavenTimeStart, 7);
+    assert.equal(clearDay.polyhavenTimeEnd, 17);
+    assert.equal(clearDay.poliigonTimeStart, 7);
+    assert.equal(clearDay.poliigonTimeEnd, 17);
+
+    const dynamic = api.allSourceCategory("hdri:ph:Interiors/Residential/Living Rooms & Lounges");
+    assert.deepEqual(dynamic.polyhavenCategoryPaths, ["Interiors/Residential/Living Rooms & Lounges"]);
+    assert.deepEqual(api.allSourcePath("hdri:ph:Interiors/Residential/Living Rooms & Lounges"), [
+      "hdri",
+      "hdri:interiors",
+      "hdri:ph:Interiors/Residential",
+      "hdri:ph:Interiors/Residential/Living Rooms & Lounges"
+    ]);
+
+    const categories = [
+      { key: "Interiors", label: "Interiors", count: 10, children: [
+        { key: "Interiors/Residential", label: "Residential", count: 2, children: [] }
+      ] }
+    ];
+    const tree = api.allCategoryNodes(categories);
+    const hdri = tree.find(node => node.key === "hdri");
+    const interiors = hdri.children.find(node => node.key === "hdri:interiors");
+    assert.equal(interiors.children[0].key, "hdri:ph:Interiors/Residential");
+    assert.deepEqual(api.polyHavenHdriCategoryRoots(categories).map(node => node.key), ["Interiors"]);
+  });
+
   console.log(`\n${checks} browsing regression checks passed.`);
 } finally {
   index.close(); metadata.close(); library?.close();

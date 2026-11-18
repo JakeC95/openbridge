@@ -258,7 +258,7 @@ export class LibraryIndex {
   }
 
   counts(): LibraryCounts {
-    const counts: LibraryCounts = { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, downloaded: 0, custom: 0, dhi: 0 };
+    const counts: LibraryCounts = { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, ambientcg: 0, blenderkit: 0, openhdri: 0, downloaded: 0, custom: 0, dhi: 0 };
     const rows = this.db
       .prepare("SELECT provider, repo, COUNT(*) AS total FROM assets GROUP BY provider, repo")
       .all() as Array<{ provider: string; repo: string; total: number }>;
@@ -268,6 +268,7 @@ export class LibraryIndex {
       }
       if (row.provider === "poliigon") counts.poliigon += Number(row.total);
       else if (row.provider === "polyhaven") counts.polyhaven += Number(row.total);
+      else if (row.provider === "ambientcg" || row.provider === "blenderkit" || row.provider === "openhdri") counts[row.provider] += Number(row.total);
       else counts.megascans += Number(row.total);
       counts.all += Number(row.total);
     }
@@ -329,7 +330,7 @@ export class LibraryIndex {
       limit,
       hasMore: offset + rows.length < total,
       tookMs: performance.now() - started,
-      ...this.browseFacets(options)
+      ...(options.includeFacets === false ? { categories: [], packs: [] } : this.browseFacets(options))
     };
   }
 
@@ -526,7 +527,7 @@ export class LibraryIndex {
     });
   }
 
-  healthReport(libraryPath: string, poliigonLibraryPath?: string, polyhavenLibraryPath?: string): LibraryHealthReport {
+  healthReport(libraryPath: string, poliigonLibraryPath?: string, polyhavenLibraryPath?: string, publicPaths: Partial<Record<"ambientcg" | "blenderkit" | "openhdri", string>> = {}): LibraryHealthReport {
     const totals = this.db
       .prepare(
         `SELECT COUNT(*) AS assets,
@@ -598,6 +599,9 @@ export class LibraryIndex {
       libraryPath,
       poliigonLibraryPath,
       polyhavenLibraryPath,
+      ambientcgLibraryPath: publicPaths.ambientcg,
+      blenderkitLibraryPath: publicPaths.blenderkit,
+      openhdriLibraryPath: publicPaths.openhdri,
       scannedAt: Date.now(),
       assets: Number(totals.assets),
       files: Number(totals.files),

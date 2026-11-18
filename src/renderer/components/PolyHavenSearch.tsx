@@ -36,7 +36,7 @@ export function PolyHavenSearch() {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (draft !== usePolyHavenStore.getState().query) setQuery(draft);
-    }, 350);
+    }, 140);
     return () => clearTimeout(timer);
   }, [draft, setQuery]);
 

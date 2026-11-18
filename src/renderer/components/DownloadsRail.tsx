@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { DownloadOverview } from "../../shared/types";
 import { useStore } from "../store";
 import { formatTransferBytes as bytes } from "../download-summary";
+import { assetCountLabel } from "../catalog-utils";
 
 export function DownloadsRail() {
   const settings = useStore(state => state.settings);
@@ -34,11 +35,11 @@ export function DownloadsRail() {
         <dt>Received over network</dt><dd>{bytes(overview.session.receivedBytes)}</dd>
         <dt>Average job speed</dt><dd>{bytes(overview.session.averageBytesPerSecond)}/s</dd>
         <dt>Peak receive speed</dt><dd>{bytes(overview.session.peakBytesPerSecond)}/s</dd>
-        <dt>Completed</dt><dd>{overview.session.completed} assets</dd>
+        <dt>Completed</dt><dd>{assetCountLabel(overview.session.completed)}</dd>
       </dl> : <p className="hint">Loading session totals…</p>}
       <p className="hint">Network bytes exclude resumed files already on disk. Average includes request and finalization time.</p>
     </section>
-    <section className="download-rail-card"><h3>Megascans storage</h3>
+    <section className="download-rail-card"><h3>Library storage</h3>
       {disk ? <>
         <p className="storage-path" title={disk.libraryPath}>{disk.libraryPath}</p>
         {used !== null && <><strong className="storage-free">{bytes(disk.freeBytes!)} free</strong>

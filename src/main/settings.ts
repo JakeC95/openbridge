@@ -73,6 +73,9 @@ export class SettingsStore {
       }
     }
     delete old.offlineLibraryPath;
+    for (const [key, folder] of [["ambientcgLibraryPath", "ambientCG"], ["blenderkitLibraryPath", "BlenderKit"], ["openhdriLibraryPath", "OpenHDRI"]] as const) {
+      if (!this.provided.has(key)) this.data[key] = join(this.data.libraryRoot, folder);
+    }
     delete old.downloadConcurrency;
     delete old.downloadTimeoutSec;
     delete old.autoDownloadAcquired;
@@ -101,6 +104,9 @@ export class SettingsStore {
         : "";
     }
     this.data.poliigonConfirmPurchases = this.data.poliigonConfirmPurchases !== false;
+    for (const [key, folder] of [["ambientcgLibraryPath", "ambientCG"], ["blenderkitLibraryPath", "BlenderKit"], ["openhdriLibraryPath", "OpenHDRI"]] as const) {
+      this.data[key] = String(this.data[key] ?? "").trim() || (this.data.libraryRoot ? join(this.data.libraryRoot, folder) : "");
+    }
     this.data.apiPort = clampInt(this.data.apiPort, 1024, 65535, 28241);
     this.data.discoveryPort = clampInt(this.data.discoveryPort, 1024, 65535, 28852);
     this.data.autoSyncEnabled = Boolean(this.data.autoSyncEnabled);

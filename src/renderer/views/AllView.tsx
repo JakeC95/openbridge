@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactElement } from "react";
 import type {
   CatalogHit,
   PoliigonAssetSummary,
@@ -11,6 +12,7 @@ import { AssetList } from "../components/AssetList";
 import { BrowsingMenu, DensityControl, FilterWorkbench, PackBrowser, RecentBrowsing, type FilterGroup } from "../components/BrowsingTools";
 import { TimeOfDaySlider } from "../components/TimeOfDaySlider";
 import { formatClockValue, formatHdriTime } from "../../shared/hdri-time";
+import { skyConditionLabel, skyConditionRank } from "../../shared/sky-conditions";
 import {
   POLYHAVEN_ATTRIBUTE_TYPES,
   polyHavenAttributeLabel,
@@ -34,8 +36,23 @@ import { polyHavenTechnical } from "../polyhaven-technical";
 import { usePoliigonStore } from "../poliigon-store";
 import { usePolyHavenStore } from "../polyhaven-store";
 import { useStore } from "../store";
-import { SIZE_FILTER_LABELS, SIZE_FILTER_OPTIONS } from "../size-filter";
+import { SIZE_FILTER_LABELS, SIZE_FILTER_OPTIONS, sizeBounds } from "../size-filter";
 import { useBrowseScroll } from "../use-browse-scroll";
+import { PUBLIC_PROVIDER_IDS, parsePublicJobId, publicCardThumbnail, publicJobId, publicProviderLabel, type PublicAssetSummary, type PublicCatalogQuery, type PublicProviderId } from "../../shared/public-providers";
+import { usePublicStore, publicCategoryQuery, publicTypesForRoot } from "../public-store";
+import { normalizePublicQuery } from "../public-preferences";
+import { PublicCard } from "../components/PublicAsset";
+import { publicProviderFacts, publicTechnical } from "../public-technical";
+import { rankSearchEntries, type SearchMatch } from "../search-ranking";
+
+function hdriFilterRank(key: string): number {
+  if (key === "poli:weather") return 0;
+  if (key === "poly:attribute:weather" || key.endsWith(":weather")) return 1;
+  if (key.endsWith(":resolution")) return 2;
+  if (key === "poly:collection") return 3;
+  if (key.startsWith("poly:attribute:")) return 4;
+  return 5;
+}
 
 const FACET_GROUPS = [
   { key: "biome", label: "Biome" },
@@ -64,7 +81,8 @@ interface PolyHavenItem {
   hit: PolyHavenAssetSummary;
 }
 
-type UnifiedItem = MegaItem | PoliItem | PolyHavenItem;
+interface PublicItem { provider: "public"; key: string; hit: PublicAssetSummary }
+type UnifiedItem = MegaItem | PoliItem | PolyHavenItem | PublicItem;
 
 const SORTS: Array<{ value: AllSort; label: string }> = [
   { value: "relevance", label: "Sort: Relevance" },
@@ -88,6 +106,7 @@ interface AllSavedSearch {
   poliResolutions: string[];
   poliCreationMethods: string[];
   poliMapTypes: string[];
+  poliWeather?: string[];
   polyResolutions?: string[];
   polyMapTypes?: string[];
   polyCategories?: string[];
@@ -95,6 +114,8 @@ interface AllSavedSearch {
   polyAttributes?: Record<string, string[]>;
   poliTimeStart?: number | null;
   poliTimeEnd?: number | null;
+  /** Provider-specific facets for ambientCG, BlenderKit and OpenHDRI. */
+  publicQueries?: Partial<Record<PublicProviderId, Partial<PublicCatalogQuery>>>;
   /** Legacy single-centre saved searches, migrated to a ±3 h window. */
   poliTimeCenter?: number | null;
 }
@@ -114,6 +135,7 @@ function loadAllSavedSearches(): AllSavedSearch[] {
       item.megaFacets && typeof item.megaFacets === "object" &&
       Array.isArray(item.poliResolutions) && Array.isArray(item.poliCreationMethods) &&
       Array.isArray(item.poliMapTypes) &&
+      (item.poliWeather === undefined || Array.isArray(item.poliWeather)) &&
       (item.polyResolutions === undefined || Array.isArray(item.polyResolutions)) &&
       (item.polyMapTypes === undefined || Array.isArray(item.polyMapTypes)) &&
       (item.polyCategories === undefined || Array.isArray(item.polyCategories)) &&
@@ -176,6 +198,55 @@ function itemName(item: UnifiedItem): string {
   return item.hit.name;
 }
 
+function itemSearchMatch(item: UnifiedItem): SearchMatch {
+  const typeLabelValue = itemTypeLabel(item);
+  if (item.provider === "megascans") {
+    const hit = item.hit;
+    return {
+      name: hit.name,
+      typeLabel: typeLabelValue,
+      tags: [hit.asset_type, hit.category, hit.subCategory, hit.subCategory2, hit.subCategory3, hit.biome, hit.region, hit.physicalSize]
+        .filter((value): value is string => Boolean(value)),
+      categories: [...(hit.tags ?? []), ...(hit._tags ?? []), ...(hit.categories ?? []), ...(hit.assetCategories ?? [])]
+    };
+  }
+  if (item.provider === "poliigon") {
+    return {
+      name: item.hit.name,
+      typeLabel: typeLabelValue,
+      tags: [...item.hit.tags, item.hit.assetName],
+      categories: item.hit.categories
+    };
+  }
+  if (item.provider === "polyhaven") {
+    return {
+      name: item.hit.name,
+      typeLabel: typeLabelValue,
+      tags: item.hit.tags,
+      categories: [...item.hit.categories, item.hit.category, ...item.hit.collections]
+    };
+  }
+  return {
+    name: item.hit.name,
+    typeLabel: typeLabelValue,
+    tags: item.hit.tags,
+    categories: [...item.hit.categories, item.hit.category]
+  };
+}
+
+function itemPopularity(item: UnifiedItem): number | null {
+  if (item.provider === "megascans") return typeof item.hit.points === "number" ? item.hit.points : null;
+  if (item.provider === "poliigon") return null;
+  return item.hit.downloadCount;
+}
+
+function itemFree(item: UnifiedItem): boolean {
+  if (item.provider === "megascans") return item.hit.points === 0;
+  if (item.provider === "poliigon") return item.hit.free;
+  if (item.provider === "polyhaven") return true;
+  return item.hit.free;
+}
+
 function itemResolution(item: UnifiedItem): number | null {
   if (item.provider === "megascans") {
     return item.hit.metadata?.technical?.resolution ?? item.hit.resolution ?? null;
@@ -184,8 +255,9 @@ function itemResolution(item: UnifiedItem): number | null {
 }
 
 function itemTriangles(item: UnifiedItem): number | null {
+  if (item.provider === "public" && item.hit.provider === "blenderkit") return null;
   if (item.provider === "megascans") return item.hit.metadata?.technical?.maxTris ?? null;
-  if (item.provider === "polyhaven") return item.hit.polycount;
+  if (item.provider === "polyhaven" || item.provider === "public") return item.hit.polycount;
   return item.hit.maxTris;
 }
 
@@ -202,7 +274,7 @@ function itemSize(item: UnifiedItem): number | null {
         ? item.hit.minSize
         : null;
   }
-  if (item.provider === "polyhaven") {
+  if (item.provider === "polyhaven" || item.provider === "public") {
     const dimensions = item.hit.dimensionsMm;
     return dimensions && dimensions.length > 0 ? Math.max(...dimensions) / 1000 : null;
   }
@@ -210,10 +282,15 @@ function itemSize(item: UnifiedItem): number | null {
 }
 
 export function AllView() {
+  const publicStates = usePublicStore(state => state.providers);
+  const publicFavorites = usePublicStore(state => state.favorites);
+  const blenderkitAuth = usePublicStore(state => state.blenderkit);
+  const publicMetadataReady = PUBLIC_PROVIDER_IDS.map(provider => String(publicStates[provider].metadataReady)).join(":");
   const density = useStore(state => state.density);
   const packs = useStore(state => state.packs);
   const allType = useStore(state => state.allType);
   const allStateFilter = useStore(state => state.allStateFilter);
+  const publicFavoritesVersion = allStateFilter === "favorites" ? publicFavorites.join("|") : "";
   const allSort = useStore(state => state.allSort);
   const sizeFilter = useStore(state => state.sizeFilter);
   const setAllType = useStore(state => state.setAllType);
@@ -249,6 +326,8 @@ export function AllView() {
   const poliResolutions = usePoliigonStore(state => state.resolutions);
   const poliCreationMethods = usePoliigonStore(state => state.creationMethods);
   const poliMapTypes = usePoliigonStore(state => state.mapTypes);
+  const poliWeather = usePoliigonStore(state => state.weather);
+  const togglePoliWeather = usePoliigonStore(state => state.toggleWeather);
   const poliTimeStart = usePoliigonStore(state => state.timeStart);
   const poliTimeEnd = usePoliigonStore(state => state.timeEnd);
   const setTimeRange = usePoliigonStore(state => state.setTimeRange);
@@ -294,6 +373,7 @@ export function AllView() {
     poliResolutions,
     poliCreationMethods,
     poliMapTypes,
+    poliWeather,
     polyResolutions,
     polyMapTypes,
     polyCategories,
@@ -304,22 +384,32 @@ export function AllView() {
     scope: "all"
   });
 
-  const typeOptions = useMemo(() => {
-    const options = [
-      { value: "", label: "All content" },
-      ...ALL_SOURCE_TREE.map(node => ({ value: node.value, label: node.label }))
-    ];
-    if (allType && !options.some(option => option.value === allType)) {
-      options.push({ value: allType, label: allSourceCategory(allType).label });
-    }
-    return options;
-  }, [allType]);
+  const typeOptions = useMemo(() => [
+    { value: "", label: "All content" },
+    ...ALL_SOURCE_TREE.map(node => ({ value: node.value, label: node.label }))
+  ], []);
+  // The type control stays at the top-level type; the category tree and the
+  // active-filter chip carry the selected subcategory.
+  const typeValue = allType.includes(":") ? allType.split(":")[0] : allType;
 
   useEffect(() => {
     // Entering the combined view re-applies the cross-provider type and state filters
     // to both stores and establishes the same query on each side.
     useStore.getState().syncAllSources();
   }, []);
+  useEffect(() => {
+    for (const provider of PUBLIC_PROVIDER_IDS) {
+      const state = usePublicStore.getState();
+      // Subcategory mappings are deliberately conservative until verified against each taxonomy.
+      const category = publicCategoryQuery(provider, allType, state.providers[provider].categories);
+      const start = polyTimeStart ?? poliTimeStart;
+      const end = polyTimeEnd ?? poliTimeEnd;
+      const bounds = allType.startsWith("hdri") ? null : sizeBounds(sizeFilter);
+      const range = bounds ? { min: bounds.minSize, max: bounds.maxSize } : null;
+      const unsupported = provider === "blenderkit" && (start !== null && end !== null || sizeFilter !== "any");
+      void state.search(provider, true, { ...category, ...(unsupported ? { types: ["__none__"] } : {}), minSize: range?.min ?? undefined, maxSize: range?.max ?? undefined, timeStart: start ?? category.timeStart, timeEnd: end ?? category.timeEnd, query, freeOnly: allStateFilter === "free", ids: allStateFilter === "favorites" ? publicFavorites.filter(key => key.startsWith(`${provider}:`)).map(key => key.slice(provider.length + 1)) : allStateFilter === "downloaded" ? megaLocalRefs.filter(ref => ref.id.startsWith(`${provider}:`)).map(ref => ref.id.slice(provider.length + 1)) : undefined });
+    }
+  }, [query, allType, allStateFilter, megaLocalRefs, publicFavoritesVersion, sizeFilter, poliTimeStart, poliTimeEnd, polyTimeStart, polyTimeEnd, publicMetadataReady]);
 
   useEffect(() => {
     // Poliigon category paths become IDs only after the category tree loads.
@@ -358,17 +448,45 @@ export function AllView() {
       key: polyHavenKey(hit),
       hit
     }));
+    const additional: UnifiedItem[] = PUBLIC_PROVIDER_IDS.flatMap(provider => publicStates[provider].hits.map(hit => ({ provider: "public" as const, key: publicJobId(provider, hit.id), hit })));
+    const groups: Array<{ provider: string; items: UnifiedItem[] }> = [
+      { provider: "megascans", items: mega },
+      { provider: "poliigon", items: poli },
+      { provider: "polyhaven", items: poly },
+      ...PUBLIC_PROVIDER_IDS.map(provider => ({
+        provider,
+        items: publicStates[provider].hits.map(hit => ({
+          provider: "public" as const,
+          key: publicJobId(provider, hit.id),
+          hit
+        }))
+      }))
+    ];
     let items: UnifiedItem[];
     if (allSort === "relevance") {
-      items = [];
-      const length = Math.max(mega.length, poli.length, poly.length);
-      for (let index = 0; index < length; index += 1) {
-        if (mega[index]) items.push(mega[index]);
-        if (poli[index]) items.push(poli[index]);
-        if (poly[index]) items.push(poly[index]);
+      if (query.trim()) {
+        // Rank across providers instead of taking turns: the first page should
+        // contain the best matches regardless of which catalogue owns them.
+        items = rankSearchEntries(query, groups.flatMap(group => group.items.map((item, groupIndex) => ({
+          item,
+          provider: group.provider,
+          groupIndex,
+          match: itemSearchMatch(item),
+          popularity: itemPopularity(item),
+          free: itemFree(item)
+        }))));
+      } else {
+        items = [];
+        const length = Math.max(mega.length, poli.length, poly.length, additional.length);
+        for (let index = 0; index < length; index += 1) {
+          if (mega[index]) items.push(mega[index]);
+          if (poli[index]) items.push(poli[index]);
+          if (poly[index]) items.push(poly[index]);
+          if (additional[index]) items.push(additional[index]);
+        }
       }
     } else {
-      items = [...mega, ...poli, ...poly];
+      items = [...mega, ...poli, ...poly, ...additional];
     }
     if (allSort === "name") {
       return items.sort((a, b) => itemName(a).localeCompare(itemName(b)));
@@ -393,11 +511,11 @@ export function AllView() {
       if (bv === null) return -1;
       return bv - av || itemName(a).localeCompare(itemName(b));
     });
-  }, [allSort, megaHits, poliHits, polyHits]);
+  }, [allSort, megaHits, poliHits, polyHits, publicStates, query]);
 
-  const total = megaTotal + poliTotal + polyTotal;
-  const loading = megaLoading || poliLoading || polyLoadingState;
-  const hasMore = megaHasMore || poliHasMore || polyHasMore;
+  const total = megaTotal + poliTotal + polyTotal + PUBLIC_PROVIDER_IDS.reduce((sum, provider) => sum + publicStates[provider].total, 0);
+  const loading = megaLoading || poliLoading || polyLoadingState || PUBLIC_PROVIDER_IDS.some(provider => publicStates[provider].loading);
+  const hasMore = megaHasMore || poliHasMore || polyHasMore || PUBLIC_PROVIDER_IDS.some(provider => publicStates[provider].hasMore);
   const typeOption = allSourceCategory(allType);
   const rootType = allType.split(":")[0];
   const isHdri = allType === "hdri" || allType.startsWith("hdri:");
@@ -431,15 +549,77 @@ export function AllView() {
   const polyReady = polyStatus?.state === "ready";
   const polyIndexing = polyStatus?.state === "refreshing" || (!polyReady && polyLoadingState);
   const polyUnavailable = !polyReady && !polyIndexing && polyStatus?.state !== "error";
-  const favoriteCount = megaFavorites.length + poliFavorites.length + polyFavorites.length;
-  const megaDownloadedCount = megaLocalRefs.filter(ref => !ref.id.startsWith("poliigon:") && !ref.id.startsWith("polyhaven:")).length;
-  const downloadedCount = megaDownloadedCount + Object.keys(poliLocal).length + Object.keys(polyLocal).length;
+  const publicIndexing = PUBLIC_PROVIDER_IDS.filter(provider => provider !== "blenderkit" && publicStates[provider].status?.state === "refreshing");
+  const publicUnindexed = PUBLIC_PROVIDER_IDS.filter(provider => provider !== "blenderkit" && publicStates[provider].status !== null && !publicStates[provider].loading && !publicStates[provider].error && publicStates[provider].hits.length === 0 && (!publicStates[provider].status?.count || publicStates[provider].status?.state === "empty"));
+  const favoriteCount = megaFavorites.length + poliFavorites.length + polyFavorites.length + publicFavorites.length;
+  const megaDownloadedCount = megaLocalRefs.filter(ref => !ref.id.startsWith("poliigon:") && !ref.id.startsWith("polyhaven:") && !parsePublicJobId(ref.id)).length;
+  const downloadedCount = megaDownloadedCount + Object.keys(poliLocal).length + Object.keys(polyLocal).length + megaLocalRefs.filter(ref => Boolean(parsePublicJobId(ref.id))).length;
 
   const megaFacetCount = Object.values(megaFacetFilters).reduce((sum, values) => sum + values.length, 0);
-  const poliFacetCount = poliResolutions.length + poliCreationMethods.length + poliMapTypes.length;
+  const poliFacetCount = poliResolutions.length + poliCreationMethods.length + poliMapTypes.length + poliWeather.length;
   const polyFacetCount = polyResolutions.length + polyMapTypes.length + polyCategories.length + polyCollections.length;
   const polyAttributeCount = Object.values(polyAttributeFilters).reduce((sum, values) => sum + values.length, 0);
-  const activeFacetCount = megaFacetCount + poliFacetCount + polyFacetCount + polyAttributeCount;
+  const publicFacetCount = PUBLIC_PROVIDER_IDS.reduce((sum, provider) => {
+    const query = publicStates[provider].query;
+    return sum + (query.licenses?.length ?? 0) + (query.resolutions?.length ?? 0) + (query.mapTypes?.length ?? 0) + (query.modelFormats?.length ?? 0) + (query.weather?.length ?? 0) + (query.tags?.length ?? 0)
+      + (query.minResolution !== undefined ? 1 : 0) + (query.maxTris !== undefined ? 1 : 0)
+      + (query.minBytes !== undefined ? 1 : 0) + (query.maxBytes !== undefined ? 1 : 0)
+      + (query.timeWindows?.length ?? 0);
+  }, 0);
+  const activeFacetCount = megaFacetCount + poliFacetCount + polyFacetCount + polyAttributeCount + publicFacetCount;
+
+  const togglePublicFacet = (provider: typeof PUBLIC_PROVIDER_IDS[number], field: "licenses" | "resolutions" | "mapTypes" | "modelFormats" | "weather", value: string): void => {
+    const current = publicStates[provider].query[field] ?? [];
+    const next = current.includes(value) ? current.filter(entry => entry !== value) : [...current, value];
+    void usePublicStore.getState().search(provider, true, { [field]: next } as Partial<import("../../shared/public-providers").PublicCatalogQuery>);
+  };
+  const publicChips = (): ReactElement[] => PUBLIC_PROVIDER_IDS.flatMap(provider => {
+    const query = publicStates[provider].query;
+    const chips: ReactElement[] = [];
+    const add = (field: "licenses" | "resolutions" | "mapTypes" | "modelFormats" | "weather" | "tags", value: string) => chips.push(
+      <button type="button" key={`public:${provider}:${field}:${value}`} className="facet-chip active" onClick={() => field === "tags" ? void usePublicStore.getState().search(provider, true, { tags: (query.tags ?? []).filter(entry => entry !== value) }) : togglePublicFacet(provider, field, value)}>
+        <span>{publicProviderLabel(provider)} {field === "mapTypes" ? "map" : field === "modelFormats" ? "format" : field === "weather" ? "sky" : field}</span>
+        <strong>{field === "weather" ? skyConditionLabel(value) : field === "mapTypes" ? poliigonMapName(value) : field === "resolutions" || field === "modelFormats" ? value.toUpperCase() : value}</strong>
+        <em aria-hidden="true">×</em>
+      </button>
+    );
+    for (const field of ["licenses", "resolutions", "mapTypes", "modelFormats", "weather", "tags"] as const) {
+      for (const value of query[field] ?? []) add(field, value);
+    }
+    if (query.minResolution !== undefined) chips.push(<button type="button" key={`public:${provider}:minres`} className="facet-chip active" onClick={() => void usePublicStore.getState().search(provider, true, { minResolution: undefined })}><span>{publicProviderLabel(provider)} min resolution</span><strong>{query.minResolution / 1024}K</strong><em aria-hidden="true">×</em></button>);
+    if (query.maxTris !== undefined) chips.push(<button type="button" key={`public:${provider}:maxtris`} className="facet-chip active" onClick={() => void usePublicStore.getState().search(provider, true, { maxTris: undefined })}><span>{publicProviderLabel(provider)} max polygons</span><strong>{query.maxTris.toLocaleString()}</strong><em aria-hidden="true">×</em></button>);
+    if (query.minBytes !== undefined) chips.push(<button type="button" key={`public:${provider}:minbytes`} className="facet-chip active" onClick={() => void usePublicStore.getState().search(provider, true, { minBytes: undefined })}><span>{publicProviderLabel(provider)} min size</span><strong>{(query.minBytes / 1048576).toFixed(1)} MB</strong><em aria-hidden="true">×</em></button>);
+    if (query.maxBytes !== undefined) chips.push(<button type="button" key={`public:${provider}:maxbytes`} className="facet-chip active" onClick={() => void usePublicStore.getState().search(provider, true, { maxBytes: undefined })}><span>{publicProviderLabel(provider)} max size</span><strong>{(query.maxBytes / 1048576).toFixed(1)} MB</strong><em aria-hidden="true">×</em></button>);
+    return chips;
+  });
+
+  const publicFacetGroups = (): FilterGroup[] => PUBLIC_PROVIDER_IDS.flatMap(provider => {
+    const state = publicStates[provider];
+    const groups: FilterGroup[] = [];
+    const add = (field: "licenses" | "resolutions" | "mapTypes" | "modelFormats" | "weather", label: string, buckets: Array<{ value: string; count: number }>, labels?: Record<string, string>) => {
+      const selected = state.query[field] ?? [];
+      if (!buckets.length && !selected.length) return;
+      const values = bucketRecord(buckets);
+      for (const value of selected) values[value] ??= 0;
+      groups.push({
+        key: `public:${provider}:${field}`,
+        label: `${publicProviderLabel(provider)} · ${label}${state.facets?.sampleFacets ? " (sample)" : ""}`,
+        values,
+        selected,
+        toggle: value => togglePublicFacet(provider, field, value),
+        showCounts: !state.facets?.sampleFacets,
+        ...(labels ? { labels } : {})
+      });
+    };
+    add("licenses", "Licence", state.facets?.licenses ?? [], Object.fromEntries((state.facets?.licenses ?? []).map(bucket => [bucket.value, bucket.value])));
+    if (provider !== "blenderkit") {
+      add("resolutions", "Resolution", state.facets?.resolutions ?? [], Object.fromEntries((state.facets?.resolutions ?? []).map(bucket => [bucket.value, bucket.value.toUpperCase()])));
+      add("mapTypes", "Texture maps", state.facets?.mapTypes ?? [], Object.fromEntries((state.facets?.mapTypes ?? []).map(bucket => [bucket.value, poliigonMapName(bucket.value)])));
+      if (isHdri) add("weather", "Sky condition", [...(state.facets?.weather ?? [])].sort((a, b) => skyConditionRank(a.value) - skyConditionRank(b.value)), Object.fromEntries((state.facets?.weather ?? []).map(bucket => [bucket.value, skyConditionLabel(bucket.value)])));
+      add("modelFormats", "Model format", state.facets?.modelFormats ?? []);
+    }
+    return groups;
+  });
   const timeStart = polyTimeStart ?? poliTimeStart;
   const timeEnd = polyTimeEnd ?? poliTimeEnd;
   const hasTimeFilter = isHdri && timeStart != null && timeEnd != null;
@@ -465,7 +645,7 @@ export function AllView() {
   const poliMapBuckets = sortBucketsBy(poliFacets?.mapTypes ?? [], poliigonMapRank);
   const polyMapBuckets = sortBucketsBy(polyFacets?.mapTypes ?? [], polyHavenMapRank);
   const filterGroups: FilterGroup[] = [
-    ...FACET_GROUPS.filter(group => !allowedMegaFacets || allowedMegaFacets.has(group.key)).map(group => ({
+    ...(isHdri ? [] : FACET_GROUPS.filter(group => !allowedMegaFacets || allowedMegaFacets.has(group.key)).map(group => ({
       key: `mega:${group.key}`,
       label: `Megascans · ${group.label}`,
       values: group.key === "resolution"
@@ -476,7 +656,7 @@ export function AllView() {
       ...(group.key === "resolution"
         ? { compare: (a: string, b: string) => resolutionFacetValue(a) - resolutionFacetValue(b) }
         : { labels: Object.fromEntries(Object.keys(megaFacets[group.key] ?? {}).map(value => [value, titleCase(value)])) })
-    })),
+    }))),
     {
       key: "poli:resolution",
       label: "Poliigon · Resolution",
@@ -485,6 +665,17 @@ export function AllView() {
       toggle: (value: string) => usePoliigonStore.getState().toggleResolution(value),
       compare: (a: string, b: string) => resolutionFacetValue(a) - resolutionFacetValue(b)
     },
+    ...(isHdri ? [{
+      key: "poli:weather",
+      label: "Poliigon · Sky condition",
+      values: bucketRecord([...(poliFacets?.weather ?? [])].sort(
+        (a, b) => skyConditionRank(a.value) - skyConditionRank(b.value)
+      )),
+      selected: poliWeather,
+      toggle: togglePoliWeather,
+      labels: Object.fromEntries((poliFacets?.weather ?? []).map(bucket => [bucket.value, skyConditionLabel(bucket.value)])),
+      compare: (a: string, b: string) => skyConditionRank(a) - skyConditionRank(b)
+    }] : []),
     {
       key: "poly:resolution",
       label: "Poly Haven · Resolution",
@@ -522,14 +713,14 @@ export function AllView() {
         compare: (a: string, b: string) => polyHavenMapRank(a) - polyHavenMapRank(b)
       }
     ]),
-    {
+    ...(isHdri ? [] : [{
       key: "poly:category",
-      label: "Poly Haven · Category",
+      label: "Poly Haven · Category tags",
       values: bucketRecord(polyFacets?.categories),
       selected: polyCategories,
       toggle: (value: string) => usePolyHavenStore.getState().toggleCategory(value),
       labels: Object.fromEntries((polyFacets?.categories ?? []).map(bucket => [bucket.value, titleCase(bucket.value)]))
-    },
+    }]),
     {
       key: "poly:collection",
       label: "Poly Haven · Collection",
@@ -542,33 +733,69 @@ export function AllView() {
       ? Object.entries(polyFacets?.attributes ?? {})
           .filter(([key, buckets]) => {
             if (key === "time_of_day") return false;
+            if (
+              key === "weather" &&
+              (polyAttributeFilters.environment?.length ?? 0) > 0 &&
+              !polyAttributeFilters.environment?.includes("outdoor")
+            ) {
+              return false;
+            }
             const allowed = POLYHAVEN_ATTRIBUTE_TYPES[key];
             return (!allowed || allowed.includes(polyAttributeType as "hdris" | "textures" | "models")) &&
               (buckets.length > 0 || (polyAttributeFilters[key]?.length ?? 0) > 0);
           })
-          .map(([key, buckets]) => ({
-            key: `poly:attribute:${key}`,
-            label: `Poly Haven · ${polyHavenAttributeLabel(key)}`,
-            values: bucketRecord(buckets),
-            selected: polyAttributeFilters[key] ?? [],
-            toggle: (value: string) => togglePolyAttribute(key, value),
-            labels: Object.fromEntries(buckets.map(bucket => [bucket.value, polyHavenAttributeValue(bucket.value)]))
-          }))
-      : [])
+          .map(([key, buckets]) => {
+            let values = key === "weather"
+              ? [...buckets].sort((a, b) => skyConditionRank(a.value) - skyConditionRank(b.value))
+              : buckets;
+            if (key === "environment" && (polyAttributeFilters.weather?.length ?? 0) > 0) {
+              values = values.filter(bucket => bucket.value === "outdoor");
+            }
+            return {
+              key: `poly:attribute:${key}`,
+              label: `Poly Haven · ${polyHavenAttributeLabel(key)}`,
+              values: bucketRecord(values),
+              selected: polyAttributeFilters[key] ?? [],
+              toggle: (value: string) => togglePolyAttribute(key, value),
+              labels: Object.fromEntries(values.map(bucket => [bucket.value, polyHavenAttributeValue(bucket.value)]))
+            };
+          })
+      : []),
+    ...publicFacetGroups()
   ].filter(group => Object.keys(group.values).length > 0 || group.selected.length > 0);
+  const orderedFilterGroups = isHdri
+    ? [...filterGroups].sort((a, b) => hdriFilterRank(a.key) - hdriFilterRank(b.key))
+    : filterGroups;
 
   useEffect(() => {
     if (filterGroups.length === 0 && activeFacetCount === 0 && filtersOpen) setFiltersOpen(false);
   }, [filterGroups.length, activeFacetCount, filtersOpen]);
 
   const loadMore = (): void => {
+    for (const provider of PUBLIC_PROVIDER_IDS) if (publicStates[provider].hasMore) void usePublicStore.getState().search(provider, false);
     if (megaHasMore) void useStore.getState().search(false);
     if (poliHasMore) void usePoliigonStore.getState().loadMore();
     if (polyHasMore) void usePolyHavenStore.getState().loadMore();
   };
 
+  const quickPublicDownload = async (hit: PublicAssetSummary): Promise<void> => {
+    if (hit.provider === "blenderkit" && !blenderkitAuth.hasKey) {
+      useStore.getState().toast("Add a BlenderKit API key in Settings before downloading.", true);
+      return;
+    }
+    if (hit.provider === "blenderkit" && hit.attributes.canDownload === false) {
+      useStore.getState().toast("BlenderKit account or plan required; OpenBridge does not purchase assets.", true);
+      return;
+    }
+    if (hit.provider === "openhdri" && !window.confirm("Download the published original EXR? OpenHDRI currently serves 16K files that can exceed 1 GB.")) return;
+    try { await window.openbridge.downloads.start(hit.id, undefined, hit.provider); useStore.getState().toast(`Queued ${hit.name}`); }
+    catch (error) { useStore.getState().toast(String(error), true); }
+  };
+
   const openItem = (item: UnifiedItem): void => {
     anchor.current = item.key;
+    usePublicStore.getState().close();
+    if (item.provider === "public") { useStore.getState().closeSelection(); void usePublicStore.getState().open(item.hit); return; }
     if (item.provider === "megascans") {
       usePoliigonStore.getState().closeAsset();
       usePolyHavenStore.getState().closeAsset();
@@ -629,22 +856,36 @@ export function AllView() {
     if (selectingAll) return;
     setSelectingAll(true);
     try {
-      const [megaResult, poliIds, polyIds] = await Promise.all([
-        window.openbridge.catalog.ids(catalogFilterQuery(useStore.getState())),
-        usePoliigonStore.getState().selectAllIds(),
-        usePolyHavenStore.getState().selectAllIds()
-      ]);
-      const keys = [
-        ...megaResult.entries.map(entry => `megascans:${entry.id}`),
-        ...poliIds.map(id => `poliigon:${id}`),
-        ...polyIds.map(id => `polyhaven:${id}`)
+      let megaPoints = new Map<string, number | undefined>();
+      const providers: Array<{ label: string; load: () => Promise<string[]> }> = [
+        {
+          label: "Megascans",
+          load: async () => {
+            const result = await window.openbridge.catalog.ids(catalogFilterQuery(useStore.getState()));
+            megaPoints = new Map(result.entries.map(entry => [`megascans:${entry.id}`, entry.points]));
+            return result.entries.map(entry => `megascans:${entry.id}`);
+          }
+        },
+        { label: "Poliigon", load: async () => (await usePoliigonStore.getState().selectAllIds()).map(id => `poliigon:${id}`) },
+        { label: "Poly Haven", load: async () => (await usePolyHavenStore.getState().selectAllIds()).map(id => `polyhaven:${id}`) },
+        ...PUBLIC_PROVIDER_IDS.map(provider => ({
+          label: publicProviderLabel(provider),
+          load: async () => (await window.openbridge.public.ids(usePublicStore.getState().providers[provider].query)).map(id => publicJobId(provider, id))
+        }))
       ];
+      const settled = await Promise.allSettled(providers.map(provider => provider.load()));
+      const keys: string[] = [];
+      const failures: string[] = [];
+      settled.forEach((result, index) => {
+        if (result.status === "fulfilled") keys.push(...result.value);
+        else failures.push(`${providers[index].label}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+      });
       setSelectedKeys(new Set(keys));
-      setPointsByKey(new Map(megaResult.entries.map(entry => [
-        `megascans:${entry.id}`,
-        entry.points
-      ])));
-      useStore.getState().toast(`Selected ${keys.length.toLocaleString()} asset${keys.length === 1 ? "" : "s"}`);
+      setPointsByKey(megaPoints);
+      const message = failures.length
+        ? `Selected ${keys.length.toLocaleString()} asset${keys.length === 1 ? "" : "s"}; ${failures.length} source${failures.length === 1 ? "" : "s"} could not be fully selected.`
+        : `Selected ${keys.length.toLocaleString()} asset${keys.length === 1 ? "" : "s"}`;
+      useStore.getState().toast(message, failures.length > 0);
     } catch (error) {
       useStore.getState().toast(error instanceof Error ? error.message : String(error), true);
     } finally {
@@ -657,8 +898,19 @@ export function AllView() {
     const megaIds: string[] = [];
     const poliIds: number[] = [];
     const polyIds: string[] = [];
+    const publicIds: string[] = [];
     let skipped = 0;
+    let keyRequired = false;
     for (const key of selectedKeys) {
+      const publicRef = parsePublicJobId(key);
+      if (publicRef) {
+        if (megaLocal.has(key)) { skipped += 1; continue; }
+        const loaded = publicStates[publicRef.provider].hits.find(hit => hit.id === publicRef.id);
+        if (publicRef.provider === "blenderkit" && !blenderkitAuth.hasKey) { skipped += 1; keyRequired = true; continue; }
+        if (publicRef.provider === "blenderkit" && loaded?.attributes.canDownload === false) { skipped += 1; continue; }
+        publicIds.push(key);
+        continue;
+      }
       if (key.startsWith("megascans:")) {
         const id = key.slice("megascans:".length);
         if (megaLocal.has(id)) { skipped += 1; continue; }
@@ -682,11 +934,13 @@ export function AllView() {
         polyIds.push(id);
       }
     }
+    if (keyRequired) useStore.getState().toast("BlenderKit downloads need an API key in Settings; those assets were skipped.", true);
+    if (publicIds.some(id => id.startsWith("openhdri:")) && !window.confirm("Queue OpenHDRI downloads? Its published originals are 16K EXRs and can use many gigabytes.")) return;
     let queued = 0;
     if (
-      megaIds.length + poliIds.length + polyIds.length > 100 &&
+      megaIds.length + poliIds.length + polyIds.length + publicIds.length > 100 &&
       !window.confirm(
-        `Queue ${(megaIds.length + poliIds.length + polyIds.length).toLocaleString()} downloads?\n\nThey will download sequentially and can use a lot of disk space and time.`
+        `Queue ${(megaIds.length + poliIds.length + polyIds.length + publicIds.length).toLocaleString()} downloads?\n\nThey can use a lot of disk space and time.`
       )
     ) {
       return;
@@ -698,6 +952,10 @@ export function AllView() {
         const result = await useStore.getState().downloadMany(megaIds);
         queued += result.queued;
       }
+    }
+    if (publicIds.length) {
+      try { queued += (await window.openbridge.downloads.startMany(publicIds)).queued; }
+      catch (error) { useStore.getState().toast(String(error), true); }
     }
     if (poliIds.length > 0) {
       try {
@@ -775,13 +1033,18 @@ export function AllView() {
         poliResolutions,
         poliCreationMethods,
         poliMapTypes,
+        poliWeather,
         polyResolutions,
         polyMapTypes,
         polyCategories,
         polyCollections,
         polyAttributes: polyAttributeFilters,
         poliTimeStart,
-        poliTimeEnd
+        poliTimeEnd,
+        publicQueries: Object.fromEntries(PUBLIC_PROVIDER_IDS.map(provider => {
+          const providerQuery = publicStates[provider].query;
+          return [provider, { ...normalizePublicQuery(provider, providerQuery), ids: undefined }];
+        })) as Partial<Record<PublicProviderId, Partial<PublicCatalogQuery>>>
       },
       ...savedSearches
     ].slice(0, 20);
@@ -806,6 +1069,7 @@ export function AllView() {
       resolutions: saved.poliResolutions,
       creationMethods: saved.poliCreationMethods,
       mapTypes: saved.poliMapTypes,
+      weather: saved.poliWeather ?? [],
       timeStart: saved.poliTimeStart ?? legacyStart,
       timeEnd: saved.poliTimeEnd ?? legacyEnd
     });
@@ -818,6 +1082,11 @@ export function AllView() {
       timeStart: saved.poliTimeStart ?? legacyStart,
       timeEnd: saved.poliTimeEnd ?? legacyEnd
     });
+    for (const provider of PUBLIC_PROVIDER_IDS) {
+      // Persisted searches are untrusted input; validate types, arrays and numeric bounds.
+      const savedQuery = saved.publicQueries?.[provider];
+      void usePublicStore.getState().search(provider, true, savedQuery ? normalizePublicQuery(provider, savedQuery) : {});
+    }
     useStore.getState().syncAllSources();
   };
 
@@ -836,7 +1105,7 @@ export function AllView() {
         <div className="filter-row catalog-toolbar">
           <Dropdown
             className="filter-select"
-            value={allType}
+            value={typeValue}
             onChange={setAllType}
             ariaLabel="Filter by asset type across all sources"
             options={typeOptions}
@@ -902,7 +1171,13 @@ export function AllView() {
           >
             {loading && merged.length === 0 ? "Searching all sources…" : assetCountLabel(total)}
           </span>
+          {loading && merged.length > 0 && (
+            <span className="result-updating" role="status" aria-live="polite">
+              <span className="spinner" aria-hidden="true" />Updating
+            </span>
+          )}
           <DensityControl />
+          {merged.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
           <RecentBrowsing />
           {!isHdri && <PackBrowser packs={packs} />}
           <BrowsingMenu label={`Saved searches${savedSearches.length ? ` (${savedSearches.length})` : ""}`}>
@@ -962,6 +1237,29 @@ export function AllView() {
             >
               <span>Poly Haven</span><strong>{polyTotal.toLocaleString()}</strong>
             </button>
+            {PUBLIC_PROVIDER_IDS.map(provider => <button
+              key={`focus:${provider}`}
+              type="button"
+              className="browse-list-item source-summary"
+              onClick={event => {
+                useStore.getState().setProvider(provider);
+                event.currentTarget.closest("details")?.removeAttribute("open");
+              }}
+            >
+              <span>{publicProviderLabel(provider)}</span><strong>{publicStates[provider].total.toLocaleString()}</strong>
+            </button>)}
+            {PUBLIC_PROVIDER_IDS.map(provider => <button
+              key={`refresh:${provider}`}
+              type="button"
+              className="browse-list-item"
+              disabled={publicStates[provider].status?.state === "refreshing"}
+              onClick={event => {
+                void window.openbridge.public.refresh(provider).then(() => usePublicStore.getState().init(provider)).catch(error => useStore.getState().toast(String(error), true));
+                event.currentTarget.closest("details")?.removeAttribute("open");
+              }}
+            >
+              <span>{publicStates[provider].status?.state === "refreshing" ? `Refreshing ${publicProviderLabel(provider)}…` : provider === "blenderkit" ? "Refresh BlenderKit categories" : `Refresh ${publicProviderLabel(provider)} catalogue`}</span>
+            </button>)}
             <button
               type="button"
               className="browse-list-item"
@@ -984,7 +1282,7 @@ export function AllView() {
             >
               <span>{polyStatus?.state === "refreshing" ? "Refreshing Poly Haven…" : "Refresh Poly Haven catalogue"}</span>
             </button>
-            <p className="hint">This view searches all three catalogues together. Choose a source to focus the catalogue on it.</p>
+            <p className="hint">This view searches all supported catalogues together. Choose a source to focus the catalogue on it.</p>
           </BrowsingMenu>
         </div>
 
@@ -1030,7 +1328,11 @@ export function AllView() {
               <strong>{polyTotal.toLocaleString()}</strong>
             </button>
           )}
+          {PUBLIC_PROVIDER_IDS.filter(provider => publicStates[provider].total > 0).map(provider => <button type="button" key={provider} className="all-source-pill" title={`Focus ${publicProviderLabel(provider)}`} onClick={() => useStore.getState().setProvider(provider)}><ProviderLogo provider={provider} /><span>{publicProviderLabel(provider)}</span><strong>{publicStates[provider].total.toLocaleString()}</strong></button>)}
         </div>
+        {PUBLIC_PROVIDER_IDS.filter(provider => publicStates[provider].error).map(provider => <p className="error-box" role="alert" key={provider}>{publicProviderLabel(provider)}: {publicStates[provider].error}<button type="button" className="text-btn" onClick={() => void usePublicStore.getState().search(provider)}>Retry</button></p>)}
+        {PUBLIC_PROVIDER_IDS.some(provider => publicStates[provider].metadataReady && publicStates[provider].query.types?.includes("__none__") && !publicTypesForRoot(provider, allType).includes("__none__")) && <p className="hint">Sources without reliable metadata for the selected category or shared filter are excluded, rather than showing unrelated assets.</p>}
+        {publicStates.blenderkit.total >= 10000 && <p className="hint">BlenderKit totals are capped by its search API; the combined count is not a complete catalogue size.</p>}
 
         {isHdri && (
           <TimeOfDaySlider
@@ -1069,7 +1371,7 @@ export function AllView() {
               Time: {formatClockValue(timeStart)}–{formatClockValue(timeEnd)} ×
             </button>
           )}
-          {Object.entries(megaFacetFilters).flatMap(([group, values]) => values.map(value => (
+          {!isHdri && Object.entries(megaFacetFilters).flatMap(([group, values]) => values.map(value => (
             <button
               type="button"
               key={`mega:${group}:${value}`}
@@ -1096,6 +1398,11 @@ export function AllView() {
               <span>Poliigon map</span><strong>{titleCase(value)}</strong><em aria-hidden="true">×</em>
             </button>
           ))}
+          {isHdri && poliWeather.map(value => (
+            <button type="button" key={`poli:weather:${value}`} className="facet-chip active" onClick={() => togglePoliWeather(value)}>
+              <span>Poliigon sky</span><strong>{skyConditionLabel(value)}</strong><em aria-hidden="true">×</em>
+            </button>
+          ))}
           {polyResolutions.map(value => (
             <button type="button" key={`poly:res:${value}`} className="facet-chip active" onClick={() => usePolyHavenStore.getState().toggleResolution(value)}>
               <span>Poly Haven resolution</span><strong>{value.toUpperCase()}</strong><em aria-hidden="true">×</em>
@@ -1106,7 +1413,7 @@ export function AllView() {
               <span>Poly Haven map</span><strong>{polyHavenMapLabel(value)}</strong><em aria-hidden="true">×</em>
             </button>
           ))}
-          {polyCategories.map(value => (
+          {!isHdri && polyCategories.map(value => (
             <button type="button" key={`poly:cat:${value}`} className="facet-chip active" onClick={() => usePolyHavenStore.getState().toggleCategory(value)}>
               <span>Poly Haven category</span><strong>{titleCase(value)}</strong><em aria-hidden="true">×</em>
             </button>
@@ -1116,6 +1423,7 @@ export function AllView() {
               <span>Poly Haven collection</span><strong>{titleCase(value.replace(/^collection:\s*/i, ""))}</strong><em aria-hidden="true">×</em>
             </button>
           ))}
+          {publicChips()}
           {Object.entries(polyAttributeFilters).flatMap(([key, values]) => values.map(value => (
             <button type="button" key={`poly:attribute:${key}:${value}`} className="facet-chip active" onClick={() => togglePolyAttribute(key, value)}>
               <span>Poly Haven {polyHavenAttributeLabel(key)}</span>
@@ -1135,7 +1443,7 @@ export function AllView() {
                 <strong>Refine all sources</strong>
                 <span aria-live="polite">
                   {isHdri
-                    ? "Time filters apply to Poliigon and Poly Haven HDRIs"
+                    ? "Sky condition uses normalised weather metadata · time filters apply to both providers"
                     : activeFacetCount > 0
                       ? `${activeFacetCount} active facet${activeFacetCount === 1 ? "" : "s"}`
                       : "Megascans, Poliigon and Poly Haven filters apply together"}
@@ -1156,7 +1464,7 @@ export function AllView() {
               <FilterWorkbench
                 activeGroup={activeGroup}
                 onActiveGroup={setActiveGroup}
-                groups={filterGroups}
+                groups={orderedFilterGroups}
               />
             )}
           </section>
@@ -1196,12 +1504,12 @@ export function AllView() {
           </div>
         )}
 
-        {(!auth.loggedIn || !poliAuth.loggedIn) && (
+        {(!auth.loggedIn || !poliAuth.loggedIn || !blenderkitAuth.hasKey) && (
           <div className="login-banner">
             <UserIcon />
             <span>
-              Browse all sources openly. Sign in to download from
-              {!auth.loggedIn ? " Megascans" : ""}{!auth.loggedIn && !poliAuth.loggedIn ? " and" : ""}{!poliAuth.loggedIn ? " Poliigon" : ""}.
+              Browse all sources openly. Account setup is required to download from{" "}
+              {[!auth.loggedIn ? "Megascans" : "", !poliAuth.loggedIn ? "Poliigon" : "", !blenderkitAuth.hasKey ? "BlenderKit" : ""].filter(Boolean).join(", ")}.
             </span>
             {!auth.loggedIn && (
               <button type="button" className="btn btn-ghost" onClick={() => void login()}>
@@ -1211,6 +1519,11 @@ export function AllView() {
             {!poliAuth.loggedIn && (
               <button type="button" className="btn btn-primary" onClick={openPoliigonLogin}>
                 Sign in to Poliigon
+              </button>
+            )}
+            {!blenderkitAuth.hasKey && (
+              <button type="button" className="btn btn-ghost" onClick={() => useStore.getState().setView("settings")}>
+                Add BlenderKit key
               </button>
             )}
           </div>
@@ -1230,6 +1543,16 @@ export function AllView() {
             </div>
           )}
 
+          {(publicIndexing.length > 0 || publicUnindexed.length > 0) && (
+            <div className="poliigon-indexing" role="status">
+              <div className="spinner" />
+              <div>
+                <strong>{publicIndexing.length > 0 ? `Indexing ${publicIndexing.map(provider => publicProviderLabel(provider)).join(" and ")}…` : `${publicUnindexed.map(provider => publicProviderLabel(provider)).join(" and ")} not indexed yet`}</strong>
+                <p>Existing results remain available. Build the local catalogue to include all of its assets in the combined view.</p>
+                {publicUnindexed.map(provider => <button key={provider} type="button" className="btn btn-ghost" onClick={() => void window.openbridge.public.refresh(provider).then(() => usePublicStore.getState().init(provider)).catch(error => useStore.getState().toast(String(error), true))}>Index {publicProviderLabel(provider)}</button>)}
+              </div>
+            </div>
+          )}
           {(poliIndexing || polyIndexing) && (
             <div className="poliigon-indexing" role="status">
               <div className="spinner" />
@@ -1271,11 +1594,6 @@ export function AllView() {
                 ? selectedCategory
                 : "All assets"}
           </div>
-          {merged.length > 0 && !selectMode && (
-            <button type="button" className="btn btn-ghost view-mode" onClick={() => setListView(value => !value)}>
-              {listView ? "Grid view" : "List / compare view"}
-            </button>
-          )}
 
           {merged.length > 0 && listView && (
             <AssetList
@@ -1325,6 +1643,7 @@ export function AllView() {
                     facts: hit.type === "hdris"
                       ? [
                           hit.maxResolution ? `${Math.round(hit.maxResolution / 1024)}K` : null,
+                          hit.attributes.weather ? polyHavenAttributeValue(hit.attributes.weather) : null,
                           formatHdriTime(hit.timeOfDay)
                         ].filter((value): value is string => Boolean(value))
                       : [
@@ -1336,6 +1655,16 @@ export function AllView() {
                     onOpen: () => openItem(item)
                   };
                 }
+                if (item.provider === "public") return {
+                  key: item.key, id: item.hit.id, name: item.hit.name, type: `${publicProviderLabel(item.hit.provider)} · ${item.hit.typeLabel}`,
+                  image: publicCardThumbnail(item.hit, 512), crop: item.hit.provider === "openhdri" ? "top-2-1" as const : undefined,
+                  direct: item.hit.provider === "ambientcg" && /^(hdri|hdri-element)$/i.test(item.hit.type),
+                  technical: publicTechnical(item.hit), dimensions: item.hit.dimensions,
+                  resolution: item.hit.maxResolution ? `${Math.round(item.hit.maxResolution / 1024)}K` : null,
+                  category: item.hit.category, facts: [item.hit.license, ...publicProviderFacts(item.hit)].slice(0, 6),
+                  status: megaLocal.has(item.key) ? "Downloaded" : item.hit.provider === "blenderkit" && item.hit.attributes.canDownload === false ? "Account required" : item.hit.free ? "Free" : "Plan required",
+                  onOpen: () => openItem(item)
+                };
                 const hit = item.hit;
                 const technical = poliigonTechnical(hit);
                 return {
@@ -1351,6 +1680,7 @@ export function AllView() {
                   facts: hit.type === "HDRS"
                     ? [
                         hit.maxResolution ? `${Math.round(hit.maxResolution / 1024)}K` : null,
+                        hit.weather ? skyConditionLabel(hit.weather) : null,
                         formatHdriTime(hit.timeOfDay)
                       ].filter((value): value is string => Boolean(value))
                     : [
@@ -1381,6 +1711,19 @@ export function AllView() {
               gap={28}
               aspectRatio={isHdri ? 2 : 1}
               renderItem={item => {
+                if (item.provider === "public") {
+                  const canDownload = item.hit.provider !== "blenderkit" || (blenderkitAuth.hasKey && item.hit.attributes.canDownload !== false);
+                  return <PublicCard
+                    hit={item.hit}
+                    wide={isHdri}
+                    selected={selectedKeys.has(item.key)}
+                    selectionMode={selectMode}
+                    onSelect={event => toggleSelection(item, event)}
+                    onOpen={() => openItem(item)}
+                    onDownload={canDownload ? () => void quickPublicDownload(item.hit) : undefined}
+                    downloadReason={item.hit.provider === "blenderkit" ? (!blenderkitAuth.hasKey ? "Add a BlenderKit API key in Settings." : "BlenderKit account or plan required.") : ""}
+                  />;
+                }
                 if (item.provider === "megascans") {
                   const hit = item.hit;
                   const id = hitId(hit);

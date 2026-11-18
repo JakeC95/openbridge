@@ -47,7 +47,7 @@ function mapLabel(type: string): string {
   return MAP_LABELS[type] ?? type.charAt(0).toUpperCase() + type.slice(1);
 }
 
-function signedFileUrl(base: string, uri: string): string {
+export function signedFileUrl(base: string, uri: string): string {
   if (/^https?:\/\//i.test(uri)) return uri;
   const file = uri.replace(/^\/+/, "");
   const marker = ".com/*?";

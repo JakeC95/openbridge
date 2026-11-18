@@ -21,11 +21,12 @@ import type {
 import { assetTechnicalFacts } from "../shared/asset-metadata";
 import { LibraryIndex } from "./library-index";
 import type { Logger } from "./logger";
+import { isPublicProviderId, type PublicProviderId } from "../shared/public-providers";
 
 const DOWNLOADED_TYPES = ["3d", "atlas", "surface", "3dplant", "brush"];
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg"]);
 const TEXTURE_EXT = new Set([".png", ".jpg", ".jpeg", ".exr", ".hdr", ".tif", ".tiff", ".webp", ".psd"]);
-const MESH_EXT = new Set([".fbx", ".obj", ".abc", ".usd", ".usdz", ".gltf", ".glb"]);
+const MESH_EXT = new Set([".fbx", ".obj", ".abc", ".usd", ".usdz", ".gltf", ".glb", ".blend"]);
 
 interface AssetFolder {
   folder: string;
@@ -549,6 +550,15 @@ interface PolyHavenMetadata {
   collections?: string[];
   publishedAt?: number | null;
   authors?: Record<string, string>;
+  maxResolution?: number | null;
+  resolutions?: string[];
+  dimensions?: string | null;
+  dimensionsMm?: number[] | null;
+  polycount?: number | null;
+  texelDensity?: string | null;
+  mapCodes?: string[];
+  mapFormats?: string[];
+  lodCount?: number;
 }
 
 function buildPolyHavenTechnical(
@@ -564,7 +574,7 @@ function buildPolyHavenTechnical(
     const pixels = resolutionPixels(size);
     if (pixels !== null && (resolution === null || pixels > resolution)) resolution = pixels;
   }
-  if (resolution === null) resolution = summary?.maxResolution ?? null;
+  if (resolution === null) resolution = summary?.maxResolution ?? metadata?.maxResolution ?? null;
   const mesh = files.find(file => MESH_EXT.has(extname(file.name).toLowerCase()));
   const localFormats = new Set<string>();
   for (const file of files) {
@@ -579,18 +589,18 @@ function buildPolyHavenTechnical(
     resolution,
     mapTypes,
     mapCount: mapTypes.length,
-    mapFormats: localFormats.size > 0 ? [...localFormats] : summary?.mapFormats.map(value => value.toUpperCase()) ?? [],
-    lodCount: lods.size > 0 ? lods.size : summary?.lodCount ?? 0,
+    mapFormats: localFormats.size > 0 ? [...localFormats] : (summary?.mapFormats ?? metadata?.mapFormats ?? []).map(value => value.toUpperCase()),
+    lodCount: lods.size > 0 ? lods.size : summary?.lodCount ?? metadata?.lodCount ?? 0,
     lodTriangles: [],
-    maxTris: summary?.polycount ?? 0,
+    maxTris: summary?.polycount ?? metadata?.polycount ?? 0,
     variationCount: 0,
     billboardCount: 0,
     tileable: null,
     tilingDirections: [],
     scanArea: null,
-    texelDensity: summary?.texelDensity ?? null,
-    physicalSize: summary?.dimensions ?? null,
-    dimensions: summary?.dimensions ?? null,
+    texelDensity: summary?.texelDensity ?? metadata?.texelDensity ?? null,
+    physicalSize: summary?.dimensions ?? metadata?.dimensions ?? null,
+    dimensions: summary?.dimensions ?? metadata?.dimensions ?? null,
     height: null,
     variationDimensions: [],
     meshType: mesh ? extname(mesh.name).replace(".", "").toLowerCase() : null,
@@ -628,13 +638,14 @@ function buildPolyHavenTechnical(
 
 async function readPolyHavenFolder(
   folder: string,
-  lookup: (id: string) => PolyHavenAssetSummary | null
+  lookup: (id: string) => PolyHavenAssetSummary | null,
+  provider: "polyhaven" | PublicProviderId = "polyhaven"
 ): Promise<PoliigonInspection | null> {
   const folderName = basename(folder);
   let metadata: PolyHavenMetadata | null = null;
   try {
     metadata = JSON.parse(
-      (await readFile(join(folder, "openbridge-polyhaven.json"), "utf8")).replace(/^\uFEFF/, "")
+      (await readFile(join(folder, `openbridge-${provider}.json`), "utf8")).replace(/^\uFEFF/, "")
     ) as PolyHavenMetadata;
   } catch {
     // folders created by other tools still match by id/name below
@@ -663,7 +674,7 @@ async function readPolyHavenFolder(
         await visit(target, depth + 1);
         continue;
       }
-      if (!entry.isFile() || entry.name === "openbridge-polyhaven.json") continue;
+      if (!entry.isFile() || entry.name === `openbridge-${provider}.json` || /\.part(?:\.meta\.json)?$/.test(entry.name)) continue;
       const info = await stat(target).catch(() => null);
       if (!info) continue;
       const file: PoliigonFileInfo = {
@@ -699,7 +710,7 @@ async function readPolyHavenFolder(
   }
 
   const localMapTypes = inferMapTypes(files);
-  const mapTypes = localMapTypes.length > 0 ? localMapTypes : summary?.mapCodes ?? [];
+  const mapTypes = localMapTypes.length > 0 ? localMapTypes : summary?.mapCodes ?? metadata?.mapCodes ?? [];
   const type = summary?.typeLabel
     || metadata?.typeLabel
     || (meshes > 0 ? "Model" : files.some(file => /\.(hdr|exr)$/i.test(file.name)) ? "HDRI" : "Texture");
@@ -708,7 +719,7 @@ async function readPolyHavenFolder(
     ? [summary.category]
     : metadata?.category
       ? [metadata.category]
-      : ["Poly Haven / Unmatched"];
+       : [`${provider} / Unmatched`];
   const tags = [
     ...new Set([
       ...(summary?.tags ?? metadata?.tags ?? []),
@@ -716,21 +727,21 @@ async function readPolyHavenFolder(
     ])
   ];
   const asset: AssetRecord = {
-    id: `polyhaven:${id}`,
-    provider: "polyhaven",
+    id: `${provider}:${id}`,
+    provider,
     name: summary?.name || metadata?.name || folderName,
     type,
     categories,
     tags,
     repo: "downloaded",
     path: folder,
-    jsonPath: join(folder, "openbridge-polyhaven.json"),
+    jsonPath: join(folder, `openbridge-${provider}.json`),
     preview,
     thumb: preview,
     mtime: latest,
     previewRelativeSize: "1x1",
     searchStr: [
-      `polyhaven:${id}`,
+      `${provider}:${id}`,
       id,
       summary?.name ?? metadata?.name ?? folderName,
       summary?.category ?? metadata?.category ?? "",
@@ -755,7 +766,7 @@ async function readPolyHavenFolder(
 
 
 function issuesForAsset(
-  row: { path: string; id: string; name: string; type: string; preview: string | null },
+  row: { path: string; id: string; name: string; type: string; preview: string | null; provider?: AssetProvider },
   walked: Awaited<ReturnType<typeof walkAssetFolder>>
 ): LibraryIssue[] {
   const issues: LibraryIssue[] = [];
@@ -800,7 +811,9 @@ function issuesForAsset(
       message: "No mesh file found"
     });
   }
-  if (["surface", "atlas", "decal", "texture", "model", "hdri"].includes(type) && walked.textures === 0) {
+  // BlenderKit material assets are native .blend packages, not loose image maps.
+  const nativeMaterialPackage = row.provider === "blenderkit" && ["surface", "material", "texture"].includes(type);
+  if (["surface", "atlas", "decal", "texture", "model", "hdri"].includes(type) && walked.textures === 0 && !nativeMaterialPackage) {
     issues.push({
       kind: "missing-texture",
       severity: "warning",
@@ -813,9 +826,19 @@ function issuesForAsset(
   return issues;
 }
 
+type LibraryScan = Omit<ScanResult, "assets">;
+
+function libraryFolderKey(path: string): string {
+  const absolute = resolve(path);
+  return process.platform === "win32" ? absolute.toLowerCase() : absolute;
+}
+
 export class LibraryService {
   private readonly index: LibraryIndex;
   private snapshotCache: LibrarySnapshot | null = null;
+  private scanRevision = 0;
+  private readonly dirtyFolders = new Set<string>();
+  private activeScan: { revision: number; force: boolean; result: Promise<LibraryScan | null> } | null = null;
   private closed = false;
 
   constructor(
@@ -825,26 +848,63 @@ export class LibraryService {
     private readonly lookupPoliigonAsset: (assetName: string) => PoliigonAssetSummary | null,
     private readonly lookupPolyHavenAsset: (id: string) => PolyHavenAssetSummary | null,
     indexPath: string,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly getPublicLibraryPaths: () => Partial<Record<PublicProviderId, string>> = () => ({})
   ) {
     this.index = new LibraryIndex(indexPath, logger);
   }
 
   async scan(force = false, includeAssets = true): Promise<ScanResult> {
+    const scan = await this.scanIndex(force);
+    return { ...scan, assets: includeAssets ? this.index.allAssets() : [] };
+  }
+
+  private async scanIndex(force: boolean): Promise<LibraryScan> {
+    for (;;) {
+      if (this.closed) throw new Error("Library index is closed");
+      const revision = this.scanRevision;
+      let scan = this.activeScan;
+      if (scan && (scan.revision !== revision || (force && !scan.force))) {
+        // Let the sole writer finish, then share the replacement scan.
+        await scan.result.catch(() => null);
+        continue;
+      }
+      if (!scan) {
+        const result = this.performScan(force, revision).finally(() => { this.activeScan = null; });
+        scan = this.activeScan = { revision, force, result };
+      }
+      const result = await scan.result;
+      if (result && revision === this.scanRevision) return result;
+    }
+  }
+
+  private async performScan(force: boolean, revision: number): Promise<LibraryScan | null> {
     const libraryPath = this.getLibraryPath();
     const poliigonLibraryPath = this.getPoliigonLibraryPath();
     const polyhavenLibraryPath = this.getPolyHavenLibraryPath();
+    const publicPaths = this.getPublicLibraryPaths();
     const started = Date.now();
     this.index.ensureLibraryPaths(libraryPath, poliigonLibraryPath, polyhavenLibraryPath);
     const megaFolders = await collectAssetFolders(libraryPath);
     const poliigonFolders = await collectPoliigonFolders(poliigonLibraryPath);
     const polyhavenFolders = await collectPolyHavenFolders(polyhavenLibraryPath);
+    const publicFolders = (await Promise.all(Object.entries(publicPaths).map(async ([provider, root]) => {
+      if (!isPublicProviderId(provider) || !root) return [];
+      const folders = await listDirectories(root);
+      // Only completed sidecar-backed assets belong to the Library, never a partial transfer.
+      return (await Promise.all(folders.map(async folder => {
+        const info = await stat(join(folder.folder, `openbridge-${provider}.json`)).catch(() => null);
+        return info?.isFile() ? { ...folder, provider, repo: "downloaded" as const, sidecarMtime: info.mtimeMs } : null;
+      }))).filter((folder): folder is NonNullable<typeof folder> => folder !== null);
+    }))).flat();
     const folders: Array<{
       folder: string;
       repo: RepoKind;
       provider: AssetProvider;
       folderMtime: number;
+      sidecarMtime?: number;
     }> = [
+      ...publicFolders,
       ...megaFolders.map(folder => ({ ...folder, provider: "megascans" as const })),
       ...poliigonFolders.map(folder => ({
         ...folder,
@@ -867,15 +927,17 @@ export class LibraryService {
     let skipped = 0;
 
     for (const folder of folders) {
+      if (this.closed || revision !== this.scanRevision) return null;
       seen.add(folder.folder);
       const cached = this.index.getCachedRow(folder.folder);
-      if (!force && cached && Math.trunc(cached.folder_mtime) === Math.trunc(folder.folderMtime)) {
+      if (!force && cached && !(this.dirtyFolders.size && this.dirtyFolders.has(libraryFolderKey(folder.folder))) &&
+        Math.trunc(cached.folder_mtime) === Math.trunc(folder.folderMtime)) {
         if (folder.provider === "poliigon" || folder.provider === "polyhaven") {
           skipped += 1;
           continue;
         }
-        const jsonInfo = await stat(cached.json_path).catch(() => null);
-        if (jsonInfo && Math.trunc(jsonInfo.mtimeMs) === Math.trunc(cached.json_mtime)) {
+        const jsonMtime = folder.sidecarMtime ?? (await stat(cached.json_path).catch(() => null))?.mtimeMs;
+        if (jsonMtime !== undefined && Math.trunc(jsonMtime) === Math.trunc(cached.json_mtime)) {
           skipped += 1;
           continue;
         }
@@ -900,8 +962,8 @@ export class LibraryService {
         continue;
       }
 
-      if (folder.provider === "polyhaven") {
-        const inspected = await readPolyHavenFolder(folder.folder, this.lookupPolyHavenAsset);
+      if (folder.provider === "polyhaven" || isPublicProviderId(folder.provider)) {
+        const inspected = await readPolyHavenFolder(folder.folder, folder.provider === "polyhaven" ? this.lookupPolyHavenAsset : () => null, folder.provider);
         if (!inspected) {
           seen.delete(folder.folder);
           continue;
@@ -909,7 +971,7 @@ export class LibraryService {
         changes.push({
           asset: inspected.asset,
           folderMtime: folder.folderMtime,
-          jsonMtime: 0
+          jsonMtime: folder.sidecarMtime ?? 0
         });
         healthChanges.push({
           path: inspected.asset.path,
@@ -932,38 +994,45 @@ export class LibraryService {
       });
     }
 
+    if (this.closed || revision !== this.scanRevision) return null;
     this.index.upsertMany(changes);
     if (healthChanges.length > 0) this.index.setHealthMany(healthChanges);
     const deleted = this.index.deleteMissing(seen);
     const scannedAt = Date.now();
     this.index.setScannedAt(scannedAt);
+    this.dirtyFolders.clear();
     this.snapshotCache = null;
 
-    const assets = includeAssets ? this.index.allAssets() : [];
     this.logger.info("Library scan complete", {
       libraryPath,
       poliigonLibraryPath,
       polyhavenLibraryPath,
-      assets: includeAssets ? assets.length : this.index.counts().all,
+      assets: this.index.counts().all,
       changed: changes.length,
       skipped,
       deleted,
       milliseconds: scannedAt - started,
       indexed: true
     });
-    return { assets, scannedAt, libraryPath, poliigonLibraryPath, polyhavenLibraryPath };
+    return {
+      scannedAt, libraryPath, poliigonLibraryPath, polyhavenLibraryPath,
+      ambientcgLibraryPath: publicPaths.ambientcg,
+      blenderkitLibraryPath: publicPaths.blenderkit,
+      openhdriLibraryPath: publicPaths.openhdri
+    };
   }
 
   async snapshot(force = false): Promise<LibrarySnapshot> {
     if (!force && this.snapshotCache) return this.snapshotCache;
-    await this.scan(force, false);
-    const snapshot = this.index.getSnapshot(
-      this.getLibraryPath(),
-      this.getPoliigonLibraryPath(),
-      this.getPolyHavenLibraryPath()
-    );
-    this.snapshotCache = snapshot;
-    return snapshot;
+    return this.readSnapshot(await this.scanIndex(force));
+  }
+
+  private readSnapshot(scan: LibraryScan): LibrarySnapshot {
+    const { libraryPath, poliigonLibraryPath, polyhavenLibraryPath, ambientcgLibraryPath, blenderkitLibraryPath, openhdriLibraryPath } = scan;
+    return this.snapshotCache ??= {
+      ...this.index.getSnapshot(libraryPath, poliigonLibraryPath, polyhavenLibraryPath),
+      ambientcgLibraryPath, blenderkitLibraryPath, openhdriLibraryPath
+    };
   }
 
   getAsset(id: string): AssetRecord | null {
@@ -1026,9 +1095,9 @@ export class LibraryService {
     const poliigonLibraryPath = this.getPoliigonLibraryPath();
     const polyhavenLibraryPath = this.getPolyHavenLibraryPath();
     const started = Date.now();
-    await this.scan(false, false);
+    const scan = await this.scanIndex(false);
     signal?.throwIfAborted();
-    this.snapshotCache = this.index.getSnapshot(libraryPath, poliigonLibraryPath, polyhavenLibraryPath);
+    this.readSnapshot(scan);
     const rows = this.index.healthRows(force);
     const total = rows.length;
     let checked = 0;
@@ -1068,7 +1137,8 @@ export class LibraryService {
       }
     }
     if (batch.length > 0) this.index.setHealthMany(batch);
-    const report = this.index.healthReport(libraryPath, poliigonLibraryPath, polyhavenLibraryPath);
+    const publicPaths = this.getPublicLibraryPaths();
+    const report = this.index.healthReport(libraryPath, poliigonLibraryPath, polyhavenLibraryPath, publicPaths);
     this.logger.info("Library health complete", {
       libraryPath,
       poliigonLibraryPath,
@@ -1098,13 +1168,15 @@ export class LibraryService {
       removed += 1;
     }
     if (removed > 0) {
+      this.invalidate();
       await this.scan(false, false);
-      this.snapshotCache = null;
     }
     return { removed };
   }
 
-  invalidate(): void {
+  invalidate(paths: Iterable<string> = []): void {
+    for (const path of paths) this.dirtyFolders.add(libraryFolderKey(path));
+    this.scanRevision += 1;
     this.snapshotCache = null;
   }
   storageSummary(): { measuredLibraryBytes: number; measuredAssets: number; totalAssets: number } {

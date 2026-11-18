@@ -10,6 +10,8 @@ import { ChevronDownIcon, CloseIcon } from "../icons";
 import { TimeOfDaySlider } from "../components/TimeOfDaySlider";
 import { DensityControl, FilterWorkbench, type FilterGroup } from "../components/BrowsingTools";
 import { formatClockValue } from "../../shared/hdri-time";
+import { skyConditionRank } from "../../shared/sky-conditions";
+import { polyHavenHdriCategoryRoots } from "../all-sources";
 import { SIZE_FILTER_OPTIONS, sizeBounds, sizeFilterFromBounds, type SizeFilter } from "../size-filter";
 import { assetCountLabel, sortBucketsBy, sortResolutionBuckets, resolutionFacetValue } from "../catalog-utils";
 import { assetTypeLabel } from "../asset-visuals";
@@ -58,6 +60,13 @@ function bucketRecord(buckets: Array<{ value: string; count: number }> | undefin
   return Object.fromEntries((buckets ?? []).map(bucket => [bucket.value, bucket.count]));
 }
 
+function hdriFilterRank(key: string): number {
+  if (key === "attribute:weather") return 0;
+  if (key === "resolution") return 1;
+  if (key === "collection") return 2;
+  return 3;
+}
+
 function quickOptions(hit: PolyHavenAssetSummary): {
   resolution: string;
   format?: string;
@@ -88,6 +97,7 @@ export function PolyHavenView() {
   const status = usePolyHavenStore(state => state.status);
   const query = usePolyHavenStore(state => state.query);
   const type = usePolyHavenStore(state => state.type);
+  const categories = usePolyHavenStore(state => state.categories);
   const categoryPaths = usePolyHavenStore(state => state.categoryPaths);
   const categoriesFilter = usePolyHavenStore(state => state.categoriesFilter);
   const collections = usePolyHavenStore(state => state.collections);
@@ -149,7 +159,12 @@ export function PolyHavenView() {
     (minSize != null || maxSize != null ? 1 : 0) +
     (type === "hdris" && timeStart != null && timeEnd != null ? 1 : 0);
 
-  const isHdri = type === "hdris";
+  const hdriRootKeys = useMemo(
+    () => new Set(polyHavenHdriCategoryRoots(categories).map(node => node.key)),
+    [categories]
+  );
+  const selectedRoot = categoryPaths[0]?.split("/")[0] ?? "";
+  const isHdri = type === "hdris" || (selectedRoot !== "" && hdriRootKeys.has(selectedRoot));
   const sizeValue = sizeFilterFromBounds(minSize, maxSize);
   const showSize = type === "models";
   const setSizePreset = (value: string): void => {
@@ -205,7 +220,7 @@ export function PolyHavenView() {
       });
     }
     const categoryFacet = facets?.categories ?? [];
-    if (categoryFacet.length > 0 || categoriesFilter.length > 0) {
+    if (!isHdri && (categoryFacet.length > 0 || categoriesFilter.length > 0)) {
       groups.push({
         key: "category",
         label: "Category tags",
@@ -239,9 +254,22 @@ export function PolyHavenView() {
     });
     for (const key of keys) {
       if (key === "time_of_day" && isHdri) continue;
+      if (
+        key === "weather" &&
+        (attributeFilters.environment?.length ?? 0) > 0 &&
+        !attributeFilters.environment?.includes("outdoor")
+      ) {
+        continue;
+      }
       const allowed = POLYHAVEN_ATTRIBUTE_TYPES[key];
-      if (type && allowed && !allowed.includes(type as "hdris" | "textures" | "models")) continue;
-      const values = attributes[key] ?? [];
+      const effectiveType = type || (isHdri ? "hdris" : "");
+      if (effectiveType && allowed && !allowed.includes(effectiveType as "hdris" | "textures" | "models")) continue;
+      let values = key === "weather"
+        ? [...(attributes[key] ?? [])].sort((a, b) => skyConditionRank(a.value) - skyConditionRank(b.value))
+        : attributes[key] ?? [];
+      if (key === "environment" && (attributeFilters.weather?.length ?? 0) > 0) {
+        values = values.filter(bucket => bucket.value === "outdoor");
+      }
       const selected = attributeFilters[key] ?? [];
       if (values.length === 0 && selected.length === 0) continue;
       groups.push({
@@ -253,7 +281,9 @@ export function PolyHavenView() {
         labels: Object.fromEntries(values.map(bucket => [bucket.value, polyHavenAttributeValue(bucket.value)]))
       });
     }
-    return groups;
+    return isHdri
+      ? [...groups].sort((a, b) => hdriFilterRank(a.key) - hdriFilterRank(b.key))
+      : groups;
   }, [
     facets,
     type,
@@ -442,9 +472,15 @@ export function PolyHavenView() {
                 ? "Searching…"
                 : assetCountLabel(total)}
           </span>
+          {loading && hits.length > 0 && (
+            <span className="result-updating" role="status" aria-live="polite">
+              <span className="spinner" aria-hidden="true" />Updating
+            </span>
+          )}
         </div>
         <div className="filter-row">
           <DensityControl />
+          {hits.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
           <button
             type="button"
             className="btn btn-ghost"
@@ -648,15 +684,6 @@ export function PolyHavenView() {
           <div className="asset-heading">
             {query ? "Search results" : categoryPaths.length > 0 ? categoryLabel : "Poly Haven catalogue"}
           </div>
-          {hits.length > 0 && !selectMode && (
-            <button
-              type="button"
-              className="btn btn-ghost view-mode"
-              onClick={() => setListView(value => !value)}
-            >
-              {listView ? "Grid view" : "List / compare view"}
-            </button>
-          )}
 
           {hits.length > 0 && listView && !selectMode && (
             <AssetList

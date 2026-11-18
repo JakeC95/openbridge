@@ -1,6 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { PoliigonAssetSummary } from "../../shared/types";
 import { formatHdriTime } from "../../shared/hdri-time";
+import { skyConditionLabel } from "../../shared/sky-conditions";
 import { assetTypeClass } from "../asset-visuals";
 import { ProviderLogo } from "./ProviderLogo";
 import { SmartThumbImage } from "./SmartThumbImage";
@@ -28,6 +29,7 @@ function facts(hit: PoliigonAssetSummary): string[] {
   else if (hit.resolutions.length > 0) output.push(hit.resolutions.at(-1) ?? "");
   if (hit.physicalSize) output.push(hit.physicalSize);
   if (hit.type === "HDRS") {
+    if (hit.weather) output.push(skyConditionLabel(hit.weather));
     output.push(formatHdriTime(hit.timeOfDay));
   } else if (hit.hasModel) {
     if (hit.maxTris) output.push(`${hit.maxTris.toLocaleString()} tris`);

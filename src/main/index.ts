@@ -26,7 +26,17 @@ import { PoliigonAuthService } from "./poliigon/auth";
 import { PoliigonDownloadManager } from "./poliigon/download";
 import { PolyHavenCatalog } from "./polyhaven/catalog";
 import { PolyHavenDownloadManager } from "./polyhaven/download";
+import { PublicCatalog } from "./public/catalog";
+import { AmbientCgAdapter } from "./public/ambientcg";
+import { OpenHdriAdapter } from "./public/openhdri";
+import { BlenderKitCatalog } from "./public/blenderkit";
+import { BlenderKitAuthService } from "./public/blenderkit-auth";
+import { PublicDownloadManager } from "./public/download";
+import { PublicPreviewService } from "./public/previews";
+import { isPublicProviderId, type PublicProviderId, type PublicCatalogQuery } from "../shared/public-providers";
 import { smartThumbnail } from "./smart-thumbnails";
+import { scanLocalModel } from "./model-preview";
+import { applyPoliigonMeshLayout, configureModelProviders, prepareProviderModel } from "./model-providers";
 import { flushLargePreviewCache } from "./preview-cache";
 import { SettingsStore } from "./settings";
 import { SyncService } from "./sync";
@@ -61,6 +71,23 @@ let poliigonCatalog: PoliigonCatalog | null = null;
 let poliigonAuth: PoliigonAuthService | null = null;
 let poliigonDownloads: PoliigonDownloadManager | null = null;
 let polyhavenCatalog: PolyHavenCatalog | null = null;
+const publicCatalogs = new Map<PublicProviderId, PublicCatalog | BlenderKitCatalog>();
+let blenderkitAuth: BlenderKitAuthService | null = null;
+let publicDownloads: PublicDownloadManager | null = null;
+let publicPreviews: PublicPreviewService | null = null;
+
+function requirePublicPreviews(provider: unknown): PublicPreviewService {
+  requirePublic(provider);
+  if (!publicPreviews) throw new Error("Provider preview service is not ready");
+  return publicPreviews;
+}
+
+function requirePublic(provider: unknown): PublicCatalog | BlenderKitCatalog {
+  if (!isPublicProviderId(provider)) throw new Error("Invalid provider");
+  const catalog = publicCatalogs.get(provider);
+  if (!catalog) throw new Error(`${provider} catalogue is not ready`);
+  return catalog;
+}
 let polyhavenDownloads: PolyHavenDownloadManager | null = null;
 let catalogueRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -203,6 +230,31 @@ async function broadcastLibrary(force = false): Promise<LibrarySnapshot | null> 
   }
 }
 
+let downloadLibraryTimer: ReturnType<typeof setTimeout> | null = null;
+let downloadLibraryUpdating = false;
+const downloadedLibraryPaths = new Set<string>();
+
+function flushDownloadedLibraryRefreshSoon(): void {
+  if (downloadLibraryTimer || downloadLibraryUpdating) return;
+  downloadLibraryTimer = setTimeout(async () => {
+    downloadLibraryTimer = null;
+    downloadLibraryUpdating = true;
+    try {
+      library?.invalidate(downloadedLibraryPaths);
+      downloadedLibraryPaths.clear();
+      await broadcastLibrary();
+    } finally {
+      downloadLibraryUpdating = false;
+      if (downloadedLibraryPaths.size) flushDownloadedLibraryRefreshSoon();
+    }
+  }, 250);
+}
+
+function scheduleDownloadedLibraryRefresh(path: string): void {
+  downloadedLibraryPaths.add(path);
+  flushDownloadedLibraryRefreshSoon();
+}
+
 async function startServices(): Promise<void> {
   if (!settingsStore || !logger || !library) return;
 
@@ -254,7 +306,7 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 1100,
+    minWidth: 1024,
     minHeight: 700,
     show: false,
     backgroundColor: "#1b1b1b",
@@ -540,9 +592,38 @@ function registerIpc(): void {
     if (logger) shell.showItemInFolder(logger.path);
   });
 
-  ipcMain.handle("thumb:smart", (_event, source: string) => {
+  ipcMain.handle("thumb:smart", (_event, source: string, crop?: "top-2-1") => {
     if (typeof source !== "string" || !/^(?:https?|file):/i.test(source)) return source;
-    return smartThumbnail(source);
+    return smartThumbnail(source, crop === "top-2-1" ? crop : undefined);
+  });
+
+  ipcMain.handle("model:manifest", async (_event, request: import("../shared/model-preview").ModelManifestRequest) => {
+    if (!request || typeof request.assetId !== "string" || typeof request.provider !== "string") {
+      throw new Error("Invalid 3D model request");
+    }
+    if (typeof request.path === "string" && request.path.trim()) {
+      let local = await scanLocalModel(request.path, request.assetId, request.provider, request.type ?? "");
+      if (local.meshes.length > 0 && request.provider === "poliigon") {
+        try {
+          const id = Number(String(request.assetId).replace(/^poliigon:/i, ""));
+          const expected = Number(poliigonCatalog?.extended(id)?.specifications?.meshes);
+          if (Number.isFinite(expected) && expected > 0) {
+            local = applyPoliigonMeshLayout(local, expected);
+          }
+        } catch {
+          // Local previews remain usable when the catalogue has no entry.
+        }
+      }
+      if (local.meshes.length > 0 || request.provider === "poliigon") return local;
+      // A local Megascans folder may contain only ABC/native files even though
+      // the provider publishes a small runtime FBX preview. Fall back to the
+      // provider preview cache rather than showing a dead canvas.
+      if (["megascans", "ambientcg", "polyhaven", "blenderkit"].includes(request.provider)) {
+        return prepareProviderModel({ ...request, path: undefined });
+      }
+      return local;
+    }
+    return prepareProviderModel(request);
   });
 
   ipcMain.handle("export:send", async (_event, port: number, data: ExportAsset[]) => {
@@ -741,6 +822,10 @@ function registerIpc(): void {
   ipcMain.handle(
     "downloads:start",
     (_event, assetId: string, options?: unknown, provider?: string) => {
+      if (isPublicProviderId(provider) || /^(ambientcg|blenderkit|openhdri):/.test(assetId)) {
+        if (!publicDownloads) throw new Error("Provider downloads are not ready");
+        return publicDownloads.start(assetId, options as never, isPublicProviderId(provider) ? provider : undefined);
+      }
       if (provider === "polyhaven" || assetId.startsWith("polyhaven:")) {
         return requirePolyHavenDownloads().start(assetId, options as never);
       }
@@ -753,6 +838,10 @@ function registerIpc(): void {
   ipcMain.handle(
     "downloads:startMany",
     (_event, assetIds: string[], options?: unknown, provider?: string) => {
+      if (isPublicProviderId(provider) || assetIds.length > 0 && assetIds.every(id => /^(ambientcg|blenderkit|openhdri):/.test(id))) {
+        if (!publicDownloads) throw new Error("Provider downloads are not ready");
+        return publicDownloads.startMany(assetIds, options as never, isPublicProviderId(provider) ? provider : undefined);
+      }
       if (provider === "polyhaven" || (assetIds.length > 0 && assetIds.every(id => id.startsWith("polyhaven:")))) {
         return requirePolyHavenDownloads().startMany(assetIds, options as never);
       }
@@ -766,6 +855,7 @@ function registerIpc(): void {
     requireDownloads().acquire(assetId)
   );
   ipcMain.handle("downloads:cancel", (_event, assetId: string) => {
+    if (/^(ambientcg|blenderkit|openhdri):/.test(assetId)) return publicDownloads?.cancel(assetId);
     if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
       requirePolyHavenDownloads().cancel(assetId);
       return;
@@ -777,6 +867,7 @@ function registerIpc(): void {
     requireDownloads().cancel(assetId);
   });
   ipcMain.handle("downloads:retry", (_event, assetId: string) => {
+    if (/^(ambientcg|blenderkit|openhdri):/.test(assetId)) return publicDownloads?.retry(assetId);
     if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
       return requirePolyHavenDownloads().retry(assetId);
     }
@@ -786,6 +877,7 @@ function registerIpc(): void {
     return requireDownloads().retry(assetId);
   });
   ipcMain.handle("downloads:pause", (_event, assetId: string) => {
+    if (/^(ambientcg|blenderkit|openhdri):/.test(assetId)) return publicDownloads?.pause(assetId);
     if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
       return requirePolyHavenDownloads().pause(assetId);
     }
@@ -795,6 +887,7 @@ function registerIpc(): void {
     return requireDownloads().pause(assetId);
   });
   ipcMain.handle("downloads:resume", (_event, assetId: string) => {
+    if (/^(ambientcg|blenderkit|openhdri):/.test(assetId)) return publicDownloads?.resume(assetId);
     if (assetId.startsWith("polyhaven:") || polyhavenDownloads?.has(assetId)) {
       return requirePolyHavenDownloads().resume(assetId);
     }
@@ -807,43 +900,50 @@ function registerIpc(): void {
     requireDownloads().cancelAll();
     await requirePoliigonDownloads().cancelAll();
     await requirePolyHavenDownloads().cancelAll();
+    await publicDownloads?.cancelAll();
   });
   ipcMain.handle("downloads:pauseAll", async () => {
     await Promise.all([
       requireDownloads().pauseAll(),
       requirePoliigonDownloads().pauseAll(),
-      requirePolyHavenDownloads().pauseAll()
+      requirePolyHavenDownloads().pauseAll(),
+      publicDownloads?.pauseAll()
     ]);
   });
   ipcMain.handle("downloads:resumeAll", async () => {
     await Promise.all([
       requireDownloads().resumeAll(),
       requirePoliigonDownloads().resumeAll(),
-      requirePolyHavenDownloads().resumeAll()
+      requirePolyHavenDownloads().resumeAll(),
+      publicDownloads?.resumeAll()
     ]);
   });
   ipcMain.handle("downloads:clearFinished", () => {
     requireDownloads().clearFinished();
     requirePoliigonDownloads().clearFinished();
     requirePolyHavenDownloads().clearFinished();
+    publicDownloads?.clearFinished();
   });
   ipcMain.handle("downloads:list", () => [
     ...requireDownloads().list(),
     ...requirePoliigonDownloads().list(),
-    ...requirePolyHavenDownloads().list()
+    ...requirePolyHavenDownloads().list(),
+    ...(publicDownloads?.list() ?? [])
   ]);
   ipcMain.handle("downloads:overview", async () => {
     const mega = requireDownloads().overview();
     const poliigon = requirePoliigonDownloads().overview();
     const polyhaven = requirePolyHavenDownloads().overview();
+    const additional = publicDownloads?.overview();
     const poliigonJobs = requirePoliigonDownloads().list();
     const polyhavenJobs = requirePolyHavenDownloads().list();
-    const libraryPath = polyhavenJobs.length > 0
+    const publicProvider = publicDownloads?.list().find(job => !["complete", "error", "cancelled"].includes(job.status))?.provider;
+    const libraryPath = isPublicProviderId(publicProvider) ? settings()[`${publicProvider}LibraryPath`] : polyhavenJobs.length > 0
       ? settings().polyhavenLibraryPath
       : poliigonJobs.length > 0
         ? settings().poliigonLibraryPath
         : settings().libraryPath;
-    const measured = poliigonJobs.length > 0 || polyhavenJobs.length > 0
+    const measured = isPublicProviderId(publicProvider) || poliigonJobs.length > 0 || polyhavenJobs.length > 0
       ? { measuredLibraryBytes: 0, measuredAssets: 0, totalAssets: 0 }
       : library?.storageSummary() ?? { measuredLibraryBytes: 0, measuredAssets: 0, totalAssets: 0 };
     let totalBytes: number | null = null;
@@ -856,15 +956,15 @@ function registerIpc(): void {
     } catch {
       error = "Disk space unavailable. Check that the library folder is accessible.";
     }
-    const histories = [mega.history, poliigon.history, polyhaven.history];
     return {
-      history: histories.sort((a, b) => b.length - a.length)[0],
+      // Every provider's history is independent; keep the newest completions across all of them.
+      history: [...mega.history, ...poliigon.history, ...polyhaven.history, ...(additional?.history ?? [])].sort((a, b) => b.completedAt - a.completedAt).slice(0, 30),
       historyError: mega.historyError || poliigon.historyError || polyhaven.historyError,
       session: {
-        receivedBytes: mega.session.receivedBytes + poliigon.session.receivedBytes + polyhaven.session.receivedBytes,
-        completed: mega.session.completed + poliigon.session.completed + polyhaven.session.completed,
-        averageBytesPerSecond: mega.session.averageBytesPerSecond + poliigon.session.averageBytesPerSecond + polyhaven.session.averageBytesPerSecond,
-        peakBytesPerSecond: Math.max(mega.session.peakBytesPerSecond, poliigon.session.peakBytesPerSecond, polyhaven.session.peakBytesPerSecond)
+        receivedBytes: mega.session.receivedBytes + poliigon.session.receivedBytes + polyhaven.session.receivedBytes + (additional?.session.receivedBytes ?? 0),
+        completed: mega.session.completed + poliigon.session.completed + polyhaven.session.completed + (additional?.session.completed ?? 0),
+        averageBytesPerSecond: mega.session.averageBytesPerSecond + poliigon.session.averageBytesPerSecond + polyhaven.session.averageBytesPerSecond + (additional?.session.averageBytesPerSecond ?? 0),
+        peakBytesPerSecond: Math.max(mega.session.peakBytesPerSecond, poliigon.session.peakBytesPerSecond, polyhaven.session.peakBytesPerSecond, additional?.session.peakBytesPerSecond ?? 0)
       },
       disk: { libraryPath, ...measured, totalBytes, freeBytes, error }
     };
@@ -924,6 +1024,51 @@ function registerIpc(): void {
   ipcMain.handle("poliigon:auth:syncOwned", () => requirePoliigonAuth().syncOwned());
 
   ipcMain.handle("polyhaven:status", () => requirePolyHaven().status());
+  ipcMain.handle("public:status", (_event, provider: unknown) => requirePublic(provider).status());
+  ipcMain.handle("public:refresh", (_event, provider: unknown) => requirePublic(provider).refresh());
+  ipcMain.handle("public:categories", async (_event, provider: unknown) => {
+    const catalog = requirePublic(provider);
+    await catalog.ensureReady();
+    return catalog.categories();
+  });
+  ipcMain.handle("public:search", async (_event, query: PublicCatalogQuery) => {
+    const catalog = requirePublic(query.provider);
+    await catalog.ensureReady();
+    return catalog instanceof PublicCatalog ? catalog.query(query) : catalog.search(query);
+  });
+  ipcMain.handle("public:ids", async (_event, query: PublicCatalogQuery) => {
+    const catalog = requirePublic(query.provider);
+    await catalog.ensureReady();
+    return catalog.ids(query);
+  });
+  ipcMain.handle("public:extended", async (_event, provider: unknown, id: string) => {
+    const catalog = requirePublic(provider);
+    await catalog.ensureReady();
+    return catalog.extended(id);
+  });
+  ipcMain.handle("public:previews", (_event, provider: PublicProviderId, id: string) => requirePublicPreviews(provider).previews(provider, id));
+  ipcMain.handle("public:highResolutionPreview", (_event, provider: PublicProviderId, id: string, type: string) => requirePublicPreviews(provider).highResolution(provider, id, type));
+  ipcMain.handle("public:hdrPreview", (_event, provider: PublicProviderId, id: string) => requirePublicPreviews(provider).hdr(provider, id));
+  ipcMain.handle("public:cancelPreviews", (_event, provider: PublicProviderId, id: string) => requirePublicPreviews(provider).cancel(provider, id));
+  ipcMain.handle("blenderkit:auth:state", () => blenderkitAuth?.state() ?? { hasKey: false });
+  ipcMain.handle("blenderkit:auth:setKey", (_event, key: string) => {
+    if (!blenderkitAuth || typeof key !== "string") throw new Error("BlenderKit authentication is unavailable");
+    const state = blenderkitAuth.setKey(key);
+    const catalog = publicCatalogs.get("blenderkit");
+    if (catalog instanceof BlenderKitCatalog) catalog.clearSearchCache();
+    return state;
+  });
+  ipcMain.handle("blenderkit:auth:test", async () => {
+    const catalog = requirePublic("blenderkit");
+    if (!(catalog instanceof BlenderKitCatalog)) throw new Error("BlenderKit catalogue is unavailable");
+    return catalog.testKey();
+  });
+  ipcMain.handle("blenderkit:auth:clear", () => {
+    const state = blenderkitAuth?.clear();
+    const catalog = publicCatalogs.get("blenderkit");
+    if (catalog instanceof BlenderKitCatalog) catalog.clearSearchCache();
+    return state;
+  });
   ipcMain.handle("polyhaven:refresh", () => requirePolyHaven().refresh());
   ipcMain.handle("polyhaven:categories", () => requirePolyHaven().categories());
   ipcMain.handle("polyhaven:search", (_event, query) => requirePolyHaven().query(query));
@@ -971,6 +1116,9 @@ async function init(): Promise<void> {
     libraryPath: join(app.getPath("documents"), "OpenBridge", "Megascans"),
     poliigonLibraryPath: join(app.getPath("documents"), "OpenBridge", "Poliigon"),
     polyhavenLibraryPath: join(app.getPath("documents"), "OpenBridge", "PolyHaven"),
+    ambientcgLibraryPath: join(app.getPath("documents"), "OpenBridge", "ambientCG"),
+    blenderkitLibraryPath: join(app.getPath("documents"), "OpenBridge", "BlenderKit"),
+    openhdriLibraryPath: join(app.getPath("documents"), "OpenBridge", "OpenHDRI"),
     poliigonConfirmPurchases: true,
     apiPort: 28241,
     discoveryPort: 28852,
@@ -987,7 +1135,8 @@ async function init(): Promise<void> {
     assetName => poliigonCatalog?.findByAssetName(assetName) ?? null,
     id => polyhavenCatalog?.findById(id) ?? polyhavenCatalog?.findByName(id) ?? null,
     join(userData, "library-index.sqlite"),
-    logger
+    logger,
+    () => ({ ambientcg: settings().ambientcgLibraryPath, blenderkit: settings().blenderkitLibraryPath, openhdri: settings().openhdriLibraryPath })
   );
 
   authService = new AuthService(logger, notify);
@@ -1032,10 +1181,7 @@ async function init(): Promise<void> {
     logger,
     () => settings(),
     () => settings().libraryPath,
-    () => {
-      library?.invalidate();
-      void broadcastLibrary(true);
-    },
+    scheduleDownloadedLibraryRefresh,
     notify
   );
   syncService = new SyncService(
@@ -1069,10 +1215,7 @@ async function init(): Promise<void> {
     () => settings().poliigonLibraryPath,
     notify,
     undefined,
-    () => {
-      library?.invalidate();
-      void broadcastLibrary(true);
-    }
+    scheduleDownloadedLibraryRefresh
   );
   poliigonDownloads.onProgress(progress => {
     mainWindow?.webContents.send("downloads:progress", progress);
@@ -1103,16 +1246,66 @@ async function init(): Promise<void> {
     () => settings().polyhavenLibraryPath,
     notify,
     undefined,
-    () => {
-      library?.invalidate();
-      void broadcastLibrary(true);
-    }
+    scheduleDownloadedLibraryRefresh
   );
   polyhavenDownloads.onProgress(progress => {
     mainWindow?.webContents.send("downloads:progress", progress);
   });
   const importPackArg = process.argv.find(arg =>
     arg.startsWith("--import-catalog-pack=")
+  );
+  blenderkitAuth = new BlenderKitAuthService(join(userData, "blenderkit-auth.bin"), logger);
+  blenderkitAuth.onChanged(state => mainWindow?.webContents.send("blenderkit:auth:changed", state));
+  publicCatalogs.set("ambientcg", new PublicCatalog("ambientcg", join(userData, "ambientcg-catalog.sqlite"), new AmbientCgAdapter(), logger));
+  publicCatalogs.set("openhdri", new PublicCatalog("openhdri", join(userData, "openhdri-catalog.sqlite"), new OpenHdriAdapter(), logger));
+  publicCatalogs.set("blenderkit", new BlenderKitCatalog(blenderkitAuth, logger));
+  for (const [provider, catalog] of publicCatalogs) {
+    catalog.onStatus(status => mainWindow?.webContents.send(`public:${provider}:status`, status));
+  }
+  configureModelProviders({
+    cacheRoot: join(userData, "model-previews"),
+    megascans: {
+      extended: id => requireApi().extended(id),
+      signedMapsUrl: () => requireApi().signedMapsUrl(),
+      requestDownload: payload => requireApi().requestDownload(payload)
+    },
+    polyhaven: { extended: id => polyhavenCatalog!.extended(id) },
+    ambientcg: { extended: id => (publicCatalogs.get("ambientcg") as PublicCatalog).extended(id) },
+    blenderkit: {
+      extended: id => (publicCatalogs.get("blenderkit") as BlenderKitCatalog).extended(id),
+      resolveDownload: url => (publicCatalogs.get("blenderkit") as BlenderKitCatalog).resolveDownload(url)
+    },
+    poliigon: {
+      extended: id => poliigonCatalog!.extended(Number(String(id).replace(/^poliigon:/i, ""))),
+      modelPreview: (id, resolution, lod) => {
+        if (!poliigonDownloads) throw new Error("Poliigon download service is not ready");
+        return poliigonDownloads.modelPreview(Number(String(id).replace(/^poliigon:/i, "")), resolution, lod);
+      }
+    },
+    logger
+  });
+  publicDownloads = new PublicDownloadManager(
+    join(userData, "public-download-queue.json"), join(userData, "public-download-completions.sqlite"),
+    async (provider, id) => { const catalog = requirePublic(provider); await catalog.ensureReady(); return catalog.extended(id); },
+    provider => settings()[`${provider}LibraryPath`],
+    async (provider, url) => {
+      if (provider !== "blenderkit") return url;
+      const catalog = requirePublic(provider);
+      if (!(catalog instanceof BlenderKitCatalog)) throw new Error("Invalid BlenderKit catalogue");
+      return catalog.resolveDownload(url);
+    }, logger, scheduleDownloadedLibraryRefresh
+  );
+  await publicDownloads.ready;
+  publicDownloads.onProgress(progress => mainWindow?.webContents.send("downloads:progress", progress));
+  publicPreviews = new PublicPreviewService(
+    join(userData, "public-previews"),
+    async (provider, id) => { const catalog = requirePublic(provider); await catalog.ensureReady(); return catalog.extended(id); },
+    async (provider, url) => {
+      if (provider !== "blenderkit") return url;
+      const catalog = requirePublic(provider);
+      if (!(catalog instanceof BlenderKitCatalog)) throw new Error("Invalid BlenderKit catalogue");
+      return catalog.resolveDownload(url);
+    }, progress => mainWindow?.webContents.send("downloads:progress", progress)
   );
   if (importPackArg) {
     try {
@@ -1205,13 +1398,24 @@ if (!gotLock) {
     if (process.platform !== "darwin") app.quit();
   });
 
-  app.on("before-quit", () => {
+  let publicDownloadsClosed = false;
+  let publicDownloadsClosing = false;
+  app.on("before-quit", event => {
+    publicPreviews?.close();
+    if (publicDownloads && !publicDownloadsClosed) {
+      event.preventDefault();
+      if (publicDownloadsClosing) return;
+      publicDownloadsClosing = true;
+      void publicDownloads.close().catch(error => logger?.error("Could not close provider download queue", { error })).finally(() => { publicDownloadsClosed = true; app.quit(); });
+    }
     downloads?.flushQueue();
     syncService?.stop();
     void apiServer?.stop();
     void bridgeLink?.stop();
   });
   app.on("will-quit", () => {
+    if (downloadLibraryTimer) clearTimeout(downloadLibraryTimer);
+    downloadedLibraryPaths.clear();
     if (catalogueRefreshTimer) {
       clearInterval(catalogueRefreshTimer);
       catalogueRefreshTimer = null;
@@ -1222,6 +1426,7 @@ if (!gotLock) {
     poliigonAuth?.cancelBrowserLogin();
     poliigonCatalog?.close();
     polyhavenCatalog?.close();
+    for (const catalog of publicCatalogs.values()) catalog.close();
     const flushed = flushLargePreviewCache();
     if (flushed.removed > 0) {
       console.log(

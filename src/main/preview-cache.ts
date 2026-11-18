@@ -9,7 +9,8 @@ export const PREVIEW_CACHE_ROOTS = [
   "poliigon-hdr-source",
   "polyhaven-map-previews",
   "polyhaven-map-highres",
-  "polyhaven-hdr-source"
+  "polyhaven-hdr-source",
+  "public-previews"
 ] as const;
 
 /**

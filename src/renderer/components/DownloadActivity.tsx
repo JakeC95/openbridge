@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { DownloadIcon } from "../icons";
 import { formatDuration, formatTransferBytes, summarizeDownloads, transferStatistics } from "../download-summary";
+import { isPublicProviderId, publicProviderLabel } from "../../shared/public-providers";
 
 export function DownloadActivity() {
   const downloads = useStore(state => state.downloads);
@@ -36,7 +37,7 @@ export function DownloadActivity() {
       {[...summary.active, ...summary.queued, ...summary.paused].slice(0, 4).map(item => {
         const stats = transferStatistics(item);
         return <div className="mini-download" key={item.assetId}>
-          <div><strong>{item.name || item.assetId}</strong><span>{item.provider === "poliigon" ? "Poliigon · " : item.provider === "polyhaven" ? "Poly Haven · " : ""}{item.message ?? item.status}{item.total > 0 ? ` · ${Math.round(item.ratio * 100)}%` : ""}{stats && stats.rate > 0 ? ` · ${formatTransferBytes(stats.rate)}/s` : ""}{typeof stats?.eta === "number" ? ` · ${formatDuration(stats.eta)} left` : ""}</span></div>
+          <div><strong>{item.name || item.assetId}</strong><span>{item.provider === "poliigon" ? "Poliigon · " : item.provider === "polyhaven" ? "Poly Haven · " : isPublicProviderId(item.provider) ? `${publicProviderLabel(item.provider)} · ` : ""}{item.message ?? item.status}{item.total > 0 ? ` · ${Math.round(item.ratio * 100)}%` : ""}{stats && stats.rate > 0 ? ` · ${formatTransferBytes(stats.rate)}/s` : ""}{typeof stats?.eta === "number" ? ` · ${formatDuration(stats.eta)} left` : ""}</span></div>
           <div className="progress"><div className="progress-fill" style={{ width: `${Math.max(0, Math.min(100, item.ratio * 100))}%` }} /></div>
         </div>;
       })}

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { useModalFocus } from "../use-modal-focus";
 import { createPortal } from "react-dom";
 import type { MapPreview, PoliigonHdrData } from "../../shared/types";
 import { previewProgressKey } from "../../shared/preview-keys";
+import { parsePublicJobId } from "../../shared/public-providers";
 import { useStore } from "../store";
 import { HdrCanvas } from "./HdrCanvas";
 import { PanoramaCanvas } from "./PanoramaCanvas";
@@ -96,7 +98,7 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
       setPanoView(DEFAULT_PANO_VIEW);
     }
     panoUserTouchedRef.current = "";
-    setPanorama(Boolean(itemRef.current?.exposure?.assetId));
+    setPanorama(itemRef.current?.panorama !== false && Boolean(itemRef.current?.exposure?.assetId || itemRef.current?.panorama));
     setPanoReady(false);
     setPanoError("");
     setBaseSize({ width: 0, height: 0 });
@@ -108,7 +110,7 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
     if (panoUserTouchedRef.current === imageKey) return;
     const ratio = baseSize.height > 0 ? baseSize.width / baseSize.height : 0;
     const equirect = ratio >= 1.9 && ratio <= 2.1;
-    setPanorama(Boolean(itemRef.current?.exposure?.assetId) || equirect);
+    setPanorama(itemRef.current?.panorama !== false && (Boolean(itemRef.current?.exposure?.assetId || itemRef.current?.panorama) || equirect));
   }, [imageKey, baseSize.width, baseSize.height]);
 
   useEffect(() => {
@@ -204,7 +206,7 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
   }, [imageKey, loadHdrSource, exposureEnabled, hdrRetry]);
 
   const aspect = baseSize.height > 0 ? baseSize.width / baseSize.height : 0;
-  const canPanorama = Boolean(item?.exposure) || (aspect >= 1.9 && aspect <= 2.1);
+  const canPanorama = item?.panorama !== false && (Boolean(item?.exposure || item?.panorama) || (aspect >= 1.9 && aspect <= 2.1));
   const panoramaActive = panorama && canPanorama && !panoError;
   const togglePanorama = (): void => {
     setPanoError("");
@@ -214,31 +216,11 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
   canPanoramaRef.current = canPanorama;
   togglePanoramaRef.current = togglePanorama;
 
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const root = document.getElementById("root");
-    if (root) root.inert = true;
-    dialog.current?.focus();
-    return () => {
-      if (root) root.inert = false;
-      previous?.focus();
-    };
-  }, []);
+  useModalFocus(dialog, Boolean(item), onClose);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault(); event.stopImmediatePropagation(); closeRef.current(); return;
-      }
-      if (event.key === "Tab") {
-        const elements = [...(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled),select,input:not(:disabled)") ?? [])];
-        const first = elements[0], last = elements.at(-1);
-        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) {
-          event.preventDefault(); last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault(); first?.focus();
-        }
-      }
+      if (!dialog.current || !dialog.current.contains(document.activeElement) || event.isComposing) return;
       if ((event.target as HTMLElement)?.tagName === "SELECT") return;
       if ((event.target as HTMLElement)?.tagName === "INPUT") return;
       if ((event.key === "p" || event.key === "P") && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -281,14 +263,14 @@ export function ImageViewer({ items, index, onIndex, onClose, loadHighResolution
   const hdrProgress = item.exposure
     ? downloads[
         typeof item.exposure.assetId === "string"
-          ? previewProgressKey.polyHdr(item.exposure.assetId)
+          ? parsePublicJobId(item.exposure.assetId) ? previewProgressKey.publicHdr(item.exposure.assetId) : previewProgressKey.polyHdr(item.exposure.assetId)
           : previewProgressKey.hdr(item.exposure.assetId)
       ]
     : undefined;
   const mapProgress = item.assetId && item.map
     ? downloads[
         typeof item.assetId === "string"
-          ? previewProgressKey.polyMap(item.assetId, item.map.type)
+          ? parsePublicJobId(item.assetId) ? previewProgressKey.publicMap(item.assetId, item.map.type) : previewProgressKey.polyMap(item.assetId, item.map.type)
           : previewProgressKey.map(item.assetId, item.map.type)
       ]
     : undefined;
