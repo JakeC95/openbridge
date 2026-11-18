@@ -76,6 +76,11 @@ Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new wor
   (208 px at 1060 px and below), shorter navigation/topbar and tighter gutters; provider names
   remain visible. The inspector follows the topbar edge. Public-provider primary controls fit
   on one row at 1024 px. Verified in the Windows app and covered by the Electron layout fixture.
+- Surface assets now have a **Sphere** preview in the drawer. It reuses the 3D viewer's
+  manifest/material/UV/map pipeline with a dense sphere, applies every published map (including
+  real vertex displacement with a 0–200% strength control), supports the inspector channels and
+  full-screen focus handling, and is available for local Megascans maps plus ambientCG, BlenderKit,
+  Poly Haven and Poliigon texture previews. HDRIs stay on their panorama viewer.
 - Catalog preview downloads are cache-only under `userData/model-previews`, use the provider's
   signed/entitled endpoints, and are pruned as a rolling 2 GB LRU. Megascans now requests the
   selected 1K–8K/LOD tier through the account's `v1/downloads` signing path, exposing LOD0–5 for

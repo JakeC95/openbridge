@@ -18,6 +18,7 @@ import { modelLodLabel, modelQualityLabel, normalizeModelMaterialKey, preferredT
 import environmentUrl from "../assets/monochrome_studio_02_1k.hdr";
 import { CloseIcon } from "../icons";
 import { useModalFocus } from "../use-modal-focus";
+import { surfaceManifest, type SurfacePreviewMap } from "../surface-preview";
 
 type MaterialSlot = {
   mapType: ModelMapType;
@@ -308,7 +309,7 @@ function applyGlossInversion(material: THREE.MeshStandardMaterial): void {
   material.customProgramCacheKey = () => "openbridge-gloss-inverted";
 }
 
-function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "gl" | "dx"): THREE.MeshPhysicalMaterial {
+function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "gl" | "dx", displacementStrength = 0): THREE.MeshPhysicalMaterial {
   const roughnessMap = maps.roughness ?? maps.orm ?? maps.gloss;
   const metalnessMap = maps.metalness ?? maps.orm;
   const aoMap = maps.ao ?? maps.orm;
@@ -326,8 +327,13 @@ function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "
     emissiveMap: maps.emissive,
     emissive: maps.emissive ? new THREE.Color(0xffffff) : new THREE.Color(0x000000),
     emissiveIntensity: 1,
-    bumpMap: !maps.normal && maps.displacement ? maps.displacement : null,
-    bumpScale: !maps.normal && maps.displacement ? 0.02 : 1,
+    // Surfaces use real vertex displacement on the dense sphere; models keep
+    // the cheaper bump fallback so their published LOD meshes are not altered.
+    bumpMap: !maps.normal && maps.displacement && !displacementStrength ? maps.displacement : null,
+    bumpScale: !maps.normal && maps.displacement && !displacementStrength ? 0.02 : 1,
+    displacementMap: displacementStrength ? maps.displacement : null,
+    displacementScale: displacementStrength,
+    displacementBias: displacementStrength ? -displacementStrength / 2 : 0,
     specularColorMap: maps.specular,
     specularColor: new THREE.Color(0xffffff),
     specularIntensity: 1,
@@ -345,6 +351,20 @@ function createPreviewMaterial(maps: LoadedMaps, alpha: boolean, normalSpace?: "
   if (!maps.roughness && !maps.orm && maps.gloss) applyGlossInversion(material);
   if (normalSpace === "dx") material.normalScale.y = -1;
   return material;
+}
+
+const SURFACE_DISPLACEMENT = 0.18;
+
+/** Dense sphere so 1K+ height maps have enough vertices to displace. */
+function createSurfaceSphere(): THREE.Mesh {
+  const geometry = new THREE.SphereGeometry(1, 384, 192);
+  const uv = geometry.getAttribute("uv");
+  if (uv) geometry.setAttribute("uv1", uv);
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshPhysicalMaterial());
+  // Put the equirectangular seam behind the initial camera.
+  mesh.rotation.y = Math.PI / 2;
+  mesh.userData.materialKey = "";
+  return mesh;
 }
 
 function patchEmbeddedMaterial(
@@ -892,6 +912,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   const [exposureStops, setExposureStops] = useState(0);
   const [environmentAngle, setEnvironmentAngle] = useState(0);
   const [wireframe, setWireframe] = useState(false);
+  const [displacement, setDisplacement] = useState(100);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("pbr");
   const [activeMap, setActiveMap] = useState<ModelMapType | null>(null);
   const [singleSided, setSingleSided] = useState(false);
@@ -1071,6 +1092,22 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   }, [exposureStops]);
 
   useEffect(() => {
+    const state = stateRef.current;
+    if (!state) return;
+    const scale = SURFACE_DISPLACEMENT * (displacement / 100);
+    for (const entry of state.inspectionEntries) {
+      for (const slot of entry.slots) {
+        for (const material of materialList(slot.original)) {
+          if (!(material instanceof THREE.MeshStandardMaterial) || !material.displacementMap) continue;
+          material.displacementScale = scale;
+          material.displacementBias = -scale / 2;
+        }
+      }
+    }
+    state.render();
+  }, [displacement, loading]);
+
+  useEffect(() => {
     displayRef.current = { mode: displayMode, map: activeMap, singleSided, wireframe };
     const state = stateRef.current;
     if (state) refreshDisplay(state, displayRef.current);
@@ -1089,9 +1126,10 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       try {
         const mesh = chooseMesh(manifest, lod);
         if (!mesh) throw new Error(manifest.notes[0] ?? "No runtime 3D mesh is available.");
+        const surface = Boolean(manifest.surface) || mesh.format === "sphere";
         await prepareEnvironment(state);
         if (token.cancelled) return;
-        const object = await loadGeometry(mesh, manager, token);
+        const object = surface ? createSurfaceSphere() : await loadGeometry(mesh, manager, token);
         if (token.cancelled) { disposeObject(object, true); return; }
         if (!object) return;
         state.model = object;
@@ -1200,7 +1238,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           const hasCustomMaps = !embeddedMaterials && Object.values(maps).some(Boolean);
           materialsByKey.set(
             key,
-            hasCustomMaps ? createPreviewMaterial(maps, manifest.alpha || Boolean(maps.opacity), normalSpaceByKey.get(key)) : null
+            hasCustomMaps ? createPreviewMaterial(maps, manifest.alpha || Boolean(maps.opacity), normalSpaceByKey.get(key), surface ? SURFACE_DISPLACEMENT : 0) : null
           );
         }
         const defaultKey = materialKeys.find(key => Object.values(mapsByKey.get(key) ?? {}).some(Boolean))
@@ -1340,6 +1378,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   const environmentDegrees = Math.round((((environmentAngle * 180) / Math.PI) % 360 + 360) % 360);
   const qualityLabel = useMemo(() => modelQualityLabel(quality), [quality]);
   const meshLabel = useMemo(() => {
+    if (manifest.surface) return "Sphere";
     const mesh = chooseMesh(manifest, lod);
     if (!mesh) return "No mesh";
     if (mesh.parts?.length) {
@@ -1377,6 +1416,9 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           <button type="button" className="text-btn" disabled={exposureStops === 0} title="Reset exposure to 0 EV" onClick={() => setExposureStops(0)}>Reset exposure</button>
           <button type="button" className={`text-btn${inspectorOpen ? " active" : ""}`} onClick={() => setInspectorOpen(value => !value)}>Inspector</button>
           <label className="toggle inline"><input type="checkbox" checked={wireframe} onChange={event => changeWireframe(event.target.checked)} /><span>Wireframe</span></label>
+          {manifest.surface && manifest.textures.some(texture => texture.mapType === "displacement") && (
+            <label>Displacement <input type="range" min="0" max="200" step="5" value={displacement} aria-label="Surface displacement strength" onChange={event => setDisplacement(Number(event.target.value))} /><strong>{displacement}%</strong></label>
+          )}
           <button type="button" className="text-btn" onClick={() => { const state = stateRef.current; if (state) frameModel(state); }}>Reset view</button>
           <button type="button" className="text-btn" onClick={resetEnvironment}>Reset environment</button>
           <strong className="model-viewer-env-angle">Env {environmentDegrees}°</strong>
@@ -1456,6 +1498,60 @@ function meshSwitchLabel(value: ModelLodMode): string {
   if (value === "highest") return "Loading highest-detail mesh…";
   if (value === "lowest") return "Loading lowest-detail mesh…";
   return `Loading LOD${value} mesh…`;
+}
+
+export interface SurfacePreviewPanelProps {
+  maps: SurfacePreviewMap[];
+  assetId: string;
+  provider: string;
+  name: string;
+  source?: "local" | "provider";
+  className?: string;
+}
+
+/** Wrap a 2D surface map set around a sphere using the 3D viewer pipeline. */
+export function SurfacePreviewPanel({ maps, assetId, provider, name, source = "provider", className = "" }: SurfacePreviewPanelProps) {
+  const manifest = useMemo(
+    () => surfaceManifest(maps, { assetId, provider, name, source }),
+    [maps, assetId, provider, name, source]
+  );
+  const [fullscreen, setFullscreen] = useState(false);
+  const dialog = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setFullscreen(false), []);
+  useModalFocus(dialog, fullscreen, close);
+  const [quality, setQuality] = useState(1024);
+  const qualities = manifest?.availableQualities ?? [];
+  const appliedQuality = qualities.includes(quality)
+    ? quality
+    : qualities.find(value => value >= 1024) ?? qualities[0] ?? 1024;
+
+  if (!manifest) {
+    return <div className={`model-preview-panel ${className}`.trim()}>
+      <div className="model-preview-empty">
+        <strong>Sphere preview unavailable</strong>
+        <span>No browser-readable colour, normal, roughness or displacement maps were found.</span>
+      </div>
+    </div>;
+  }
+
+  return (
+    <div className={`model-preview-panel surface-preview ${className}`.trim()}>
+      <ModelViewer manifest={manifest} quality={appliedQuality} lod="lowest" onExpand={() => setFullscreen(true)} />
+      <div className="model-preview-controls">
+        <span className="hint">Sphere surface preview · drag to orbit</span>
+        {qualities.length > 1 && <label>Textures <select className="native-select" value={appliedQuality} onChange={event => setQuality(Number(event.target.value))}>{qualities.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>}
+        <button type="button" className="text-btn" onClick={() => setFullscreen(true)}>Full screen</button>
+      </div>
+      {fullscreen && createPortal(
+        <div ref={dialog} tabIndex={-1} className="model-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${name} sphere preview`}>
+          <div className="model-viewer-fullscreen-card">
+            <ModelViewer fullscreen manifest={manifest} quality={appliedQuality} lod="lowest" onClose={close} />
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 }
 
 export interface ModelPreviewPanelProps {

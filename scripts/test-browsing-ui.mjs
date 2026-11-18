@@ -26,6 +26,7 @@ const publicImage = ${JSON.stringify(pathToFileURL(publicImagePath).href)};
 const highImage = type => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="4096"><rect width="4096" height="4096" fill="'+(type==='normal'?'royalblue':'forestgreen')+'"/></svg>');
 let previewMode = 'success';
 let modelFails = false;
+let surfaceMode = false;
 let paged = false;
 const categories = [{key:'3d',label:'3D Assets',count:80,children:[{key:'nature',label:'Nature',count:80,children:[]}]}];
 const hits = Array.from({length:80}, (_, i) => ({id:'asset'+i,objectID:'asset'+i,name:'Asset '+i,type:'3d',tags:['wood'],previews:{images:{preview:image,thumbJpg:image}}}));
@@ -37,7 +38,7 @@ const calls = [];
 const noop = () => () => {};
 let publicEnabled = false;
 let publicMany = false;
-const publicHit = provider => ({id:'fixture-'+provider,provider,name:provider+' fixture',type:provider==='blenderkit'?'hdr':'hdri',typeLabel:'HDRI',categories:['HDRIs/Outdoor'],category:'HDRIs/Outdoor',tags:['clear'],description:'Public provider fixture',authors:{'Fixture Author':'Creator'},attributes:provider==='ambientcg'?{technique:'hdri-bracketed-panorama',collections:['Fixture collection'],colors:['112233','445566'],downloadStats:{total:12,lastMonth:5,lastWeek:2,lastDay:1}}:provider==='blenderkit'?{canDownload:true,rating:9.5,ratingCount:4,verification:'validated',versionNumber:2,sourceApp:'blender 5.1.1',downloadBytes:18017740}:{fileFormat:'32-bit Float OpenEXR (.exr)',dynamicRange:'12 EV',whiteBalance:'5400 K',captureDate:'November 12, 2025 at 03:05 PM',location:'Fixture location',downloadSize:'312 MB',colorChecker:'https://example.invalid/colorchecker.exr'},maxResolution:2048,resolutions:['2K'],dimensions:null,dimensionsMm:null,polycount:null,texelDensity:null,publishedAt:1,downloadCount:1,thumbnail:image,previews:provider==='ambientcg'?[{type:'hdr-source',label:'HDR panorama LQ',url:'https://example.invalid/fixture_LQ.exr?1'},{type:'hdr-source',label:'HDR panorama HQ',url:'https://example.invalid/fixture_HQ.exr?2'}]:[{type:'preview',label:'Preview',url:image}],timeOfDay:12,weather:'clear',mapCodes:[],mapFormats:['exr'],modelFormats:[],lodCount:0,license:'CC0-1.0',free:true,websiteUrl:'https://example.invalid',filesHash:'fixture',enriched:true,files:[{role:'hdri',name:'fixture.exr',url:'https://example.invalid/fixture.exr',bytes:4,resolution:'2K',format:'exr'}]});
+const publicHit = provider => ({id:'fixture-'+provider,provider,name:provider+' fixture',type:surfaceMode?'surface':provider==='blenderkit'?'hdr':'hdri',typeLabel:surfaceMode?'Surface':'HDRI',categories:[surfaceMode?'Surfaces/Brick':'HDRIs/Outdoor'],category:surfaceMode?'Surfaces/Brick':'HDRIs/Outdoor',tags:['clear'],description:'Public provider fixture',authors:{'Fixture Author':'Creator'},attributes:provider==='ambientcg'?{technique:'hdri-bracketed-panorama',collections:['Fixture collection'],colors:['112233','445566'],downloadStats:{total:12,lastMonth:5,lastWeek:2,lastDay:1}}:provider==='blenderkit'?{canDownload:true,rating:9.5,ratingCount:4,verification:'validated',versionNumber:2,sourceApp:'blender 5.1.1',downloadBytes:18017740}:{fileFormat:'32-bit Float OpenEXR (.exr)',dynamicRange:'12 EV',whiteBalance:'5400 K',captureDate:'November 12, 2025 at 03:05 PM',location:'Fixture location',downloadSize:'312 MB',colorChecker:'https://example.invalid/colorchecker.exr'},maxResolution:2048,resolutions:['2K'],dimensions:null,dimensionsMm:null,polycount:null,texelDensity:null,publishedAt:1,downloadCount:1,thumbnail:image,previews:surfaceMode?[{type:'albedo',label:'Albedo',url:'https://example.invalid/fixture_albedo.png'},{type:'normal',label:'Normal',url:'https://example.invalid/fixture_normal.png'}]:provider==='ambientcg'?[{type:'hdr-source',label:'HDR panorama LQ',url:'https://example.invalid/fixture_LQ.exr?1'},{type:'hdr-source',label:'HDR panorama HQ',url:'https://example.invalid/fixture_HQ.exr?2'}]:[{type:'preview',label:'Preview',url:image}],timeOfDay:12,weather:'clear',mapCodes:surfaceMode?['albedo','normal','roughness','displacement']:[],mapFormats:['exr'],modelFormats:[],lodCount:0,license:'CC0-1.0',free:true,websiteUrl:'https://example.invalid',filesHash:'fixture',enriched:true,files:[{role:'hdri',name:'fixture.exr',url:'https://example.invalid/fixture.exr',bytes:4,resolution:'2K',format:'exr'}]});
  const progressListeners = new Set();
  const progressListener = item => progressListeners.forEach(callback=>callback(item));
 const downloadItem = {assetId:'asset0',name:'Asset 0',status:'downloading',received:12582912,total:41943040,ratio:0.3,
@@ -73,7 +74,7 @@ const api = {
    public:{status:async()=>({state:'ready',count:1,refreshedAt:1}),refresh:async()=>({state:'ready',count:1,refreshedAt:1}),categories:async()=>[],onStatus:noop,
      search:async query=>{calls.push({kind:'publicSearch',query});const hit=publicHit(query.provider);const available=publicEnabled&&!query.types?.includes('__none__')&&query.ids?.length!==0;const all=publicMany?Array.from({length:96},(_,index)=>({...hit,id:hit.id+'-'+index,name:hit.name+' '+index})):[hit];const offset=query.offset??0,limit=query.limit??60;return {hits:available?all.slice(offset,offset+limit):[],total:available?all.length:0,hasMore:available&&offset+limit<all.length,offset,limit,tookMs:1,facets:{types:[{value:hit.type,count:1}],licenses:[{value:hit.license,count:1}],resolutions:[{value:'2K',count:1},{value:'4K',count:1}],mapTypes:[],modelFormats:[],categories:[],weather:[{value:'clear',count:1}],free:1}}},
      ids:async query=>[publicHit(query.provider).id],extended:async(provider,id)=>({...publicHit(provider),id,raw:{}}),
-     previews:async(provider,id)=>{const assetId=provider+':'+id;const base={type:'JPG',label:'Panorama preview',url:publicImage,assetId,panorama:true,map:{type:'JPG'},exposure:{assetId,mapType:'JPG'}};const hdr={type:'HDR',label:'HDR · live exposure',url:publicImage,assetId,panorama:true,exposure:{assetId,mapType:'HDR'}};return {renders:[{type:'preview',label:'Render',url:image}],maps:provider==='openhdri'?[base]:[base,hdr],hdrAvailable:provider!=='openhdri',note:provider==='openhdri'?'OpenHDRI publishes 16K EXRs only. Live HDR exposure is disabled because 16K exceeds the safe 8K preview budget for most systems.':undefined}},
+     previews:async(provider,id)=>{const assetId=provider+':'+id;const base={type:'JPG',label:'Panorama preview',url:publicImage,assetId,panorama:true,map:{type:'JPG'},exposure:{assetId,mapType:'JPG'}};const hdr={type:'HDR',label:'HDR · live exposure',url:publicImage,assetId,panorama:true,exposure:{assetId,mapType:'HDR'}};if(surfaceMode)return {renders:[{type:'preview',label:'Render',url:image}],maps:[{type:'albedo',label:'Albedo',url:'https://example.invalid/fixture_albedo.png'},{type:'normal',label:'Normal',url:'https://example.invalid/fixture_normal.png'},{type:'roughness',label:'Roughness',url:'https://example.invalid/fixture_roughness.png'},{type:'displacement',label:'Displacement',url:'https://example.invalid/fixture_displacement.png'}],hdrAvailable:false};return {renders:[{type:'preview',label:'Render',url:image}],maps:provider==='openhdri'?[base]:[base,hdr],hdrAvailable:provider!=='openhdri',note:provider==='openhdri'?'OpenHDRI publishes 16K EXRs only. Live HDR exposure is disabled because 16K exceeds the safe 8K preview budget for most systems.':undefined}},
      highResolutionPreview:async(provider,id,type)=>{calls.push({kind:'publicHighResolution',provider,id,type});return {type,label:type,url:publicImage}},
      hdrPreview:async(provider,id)=>{calls.push({kind:'publicHdr',provider,id});return {width:2,height:1,resolution:'fixture',data:new Uint16Array(8).fill(15360)}},
      cancelPreviews:async(provider,id)=>{calls.push({kind:'publicCancelPreviews',provider,id})}},
@@ -114,6 +115,7 @@ contextBridge.exposeInMainWorld('fixturePublicMany',()=>{publicMany=true});
 contextBridge.exposeInMainWorld('fixturePaged',value=>{paged=value});
 contextBridge.exposeInMainWorld('fixturePreviewMode',mode=>{previewMode=mode});
 contextBridge.exposeInMainWorld('fixtureModelFail',value=>{modelFails=value});
+contextBridge.exposeInMainWorld('fixtureSurface',value=>{surfaceMode=value});
 contextBridge.exposeInMainWorld('fixturePauseDownload',()=>progressListener({...downloadItem,status:'paused',message:'Paused',
   diagnostics:{...downloadItem.diagnostics,activeTransfers:0,receiveBytesPerSecond:0,writeBytesPerSecond:0}}));
 contextBridge.exposeInMainWorld('fixtureDownloading',()=>progressListener(downloadItem));
@@ -519,6 +521,10 @@ app.whenReady().then(async()=>{
      const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
      const assert = (value, message) => { if (!value) throw new Error(message); };
      const button = (scope, text) => [...scope.querySelectorAll('button')].find(item => item.textContent.trim() === text);
+     const until = async (condition, message) => {
+       const deadline = performance.now() + 5000;
+       while (!condition()) { if (performance.now() > deadline) throw new Error(message); await wait(25); }
+     };
      window.fixturePublicEnabled();
      const discover = [...document.querySelectorAll('.nav-item')].find(item => item.querySelector('span')?.textContent === 'Discover'); discover.click(); await wait(200);
      for (const [provider, label] of [['ambientcg','ambientCG'],['blenderkit','BlenderKit'],['openhdri','OpenHDRI']]) {
@@ -638,6 +644,20 @@ app.whenReady().then(async()=>{
       assert(document.activeElement===globalInput && !document.querySelector('.global-search-panel'),'Escape should dismiss suggestions without moving focus');
       globalInput.blur();
       button(document.querySelector('.provider-switch'),'ambientCG').click(); await wait(250);
+      window.fixtureSurface(true);
+      button(document.querySelector('.provider-switch'),'ambientCG').click(); await wait(300);
+      document.querySelector('[data-asset-id^="ambientcg:fixture-ambientcg"]').click(); await wait(200);
+      const surfaceDrawer=document.querySelector('.drawer');
+      button(surfaceDrawer,'Sphere').click();
+      await until(()=>surfaceDrawer.querySelector('.surface-preview .model-viewer-canvas'),'Sphere surface preview did not render');
+      assert(surfaceDrawer.querySelector('.model-viewer-canvas').width>0,'Sphere canvas has no drawing buffer');
+      assert(!surfaceDrawer.querySelector('.image-viewer'),'Image viewer opened instead of the sphere');
+      button(surfaceDrawer,'Full screen').click();
+      await until(()=>document.querySelector('.model-viewer-overlay'),'Sphere fullscreen missing');
+      assert(document.querySelector('.model-viewer-overlay input[aria-label="Surface displacement strength"]'),'Displacement strength control missing');
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+      await until(()=>!document.querySelector('.model-viewer-overlay'),'Escape did not close the sphere fullscreen');
+      window.fixtureSurface(false);
    }.toString())}+')()');
    const publicScreenshots=process.env.OPENBRIDGE_UI_SCREENSHOTS;
    if(publicScreenshots){await writeFile(join(publicScreenshots,'public-provider-filters.png'),(await win.webContents.capturePage()).toPNG());}
@@ -657,7 +677,8 @@ app.whenReady().then(async()=>{
    })()\`);
    assert.ok(compact.sidebar<=208&&compact.fits&&compact.within,'Narrow workspace overflow: '+JSON.stringify(compact));
    if(compact.width>=1000){assert.equal(compact.rows,1,'Primary provider controls should fit on one row: '+JSON.stringify(compact));assert.ok(compact.controlHeight<=130&&compact.grid<=340,'Asset grid starts too far below the narrow toolbar: '+JSON.stringify(compact));}
-   if(publicScreenshots){await writeFile(join(publicScreenshots,'public-provider-1024.png'),(await win.webContents.capturePage()).toPNG());}
+   if(publicScreenshots){await writeFile(join(publicScreenshots,'public-provider-1024.png'),(await win.webContents.capturePage()).toPNG());await writeFile(join(publicScreenshots,'surface-sphere.png'),(await win.webContents.capturePage()).toPNG());}
+   await win.webContents.executeJavaScript("document.querySelector('.drawer [aria-label=Close]')?.click()");
    console.log('PASS compact 1024px workspace: readable providers, single-row primary filters, and no horizontal overflow');
     const modelSmoke = await win.webContents.executeJavaScript('('+${JSON.stringify(async function runModelSmoke() {
       const probe = document.createElement('canvas').getContext('webgl2');

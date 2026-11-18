@@ -5,7 +5,7 @@ import { CheckIcon, CloseIcon, DownloadIcon } from "../icons";
 import { AssetScaleDiagram } from "./AssetScaleDiagram";
 import { Dropdown } from "./Dropdown";
 import { ImageViewer } from "./ImageViewer";
-import { ModelPreviewPanel } from "./ModelViewer";
+import { ModelPreviewPanel, SurfacePreviewPanel } from "./ModelViewer";
 import { TransferStatus } from "./TransferStatus";
 import { usePolyHavenStore } from "../polyhaven-store";
 import { polyHavenTechnical } from "../polyhaven-technical";
@@ -117,7 +117,7 @@ export function PolyHavenDrawer() {
   const downloads = useStore(state => state.downloads);
   const settings = useStore(state => state.settings);
   const [section, setSection] = useState<"overview" | "download" | "technical" | "related">("overview");
-  const [mode, setMode] = useState<"renders" | "maps">("renders");
+  const [mode, setMode] = useState<"renders" | "maps" | "sphere">("renders");
   const [modelOpen, setModelOpen] = useState(false);
   const [renderIndex, setRenderIndex] = useState(0);
   const [mapIndex, setMapIndex] = useState(0);
@@ -223,7 +223,8 @@ export function PolyHavenDrawer() {
   }, [selection?.summary.id]);
 
   useEffect(() => {
-    if (mode !== "maps" || !summary) return;
+    if (mode !== "maps" && mode !== "sphere") return;
+    if (!summary) return;
     if (mapsAttempted) return;
     setMapsAttempted(true);
     setMapsLoading(true);
@@ -310,7 +311,7 @@ export function PolyHavenDrawer() {
     polyHavenMapRank(a.type) - polyHavenMapRank(b.type)
   );
   const active = mode === "renders" ? renders[renderIndex] : displayMaps[mapIndex];
-  const genuineLoading = mode === "maps" && fetchedMaps.length === 0 && (mapsLoading || !mapsAttempted);
+  const genuineLoading = (mode === "maps" || mode === "sphere") && fetchedMaps.length === 0 && (mapsLoading || !mapsAttempted);
   const activeLabel = active
     ? mode === "renders"
       ? active.label
@@ -565,6 +566,7 @@ export function PolyHavenDrawer() {
                 Maps
               </button>
               {summary.type === "models" && <button type="button" className={modelOpen ? "active" : ""} onClick={() => setModelOpen(value => !value)}>3D</button>}
+              {summary.type === "textures" && <button type="button" className={mode === "sphere" ? "active" : ""} onClick={() => setMode("sphere")} title="Preview the maps on a sphere">Sphere</button>}
             </div>
             {modelOpen && summary.type === "models" && <ModelPreviewPanel
               assetId={summary.id}
@@ -576,7 +578,23 @@ export function PolyHavenDrawer() {
               startFullscreen
             />}
 
-            {mode === "maps" && genuineLoading ? (
+            {mode === "sphere" && summary.type === "textures" ? (
+              genuineLoading ? (
+                <div className="poliigon-map-empty"><span className="spinner" aria-hidden="true" /><strong>Preparing maps for the sphere preview…</strong></div>
+              ) : fetchedMaps.length ? (
+                <div className="drawer-preview model-drawer-preview">
+                  <SurfacePreviewPanel
+                    maps={fetchedMaps.map(map => ({ url: map.url, type: map.type, label: map.label, resolution: map.resolution }))}
+                    assetId={summary.id}
+                    provider="polyhaven"
+                    name={summary.name}
+                    source={localPath ? "local" : "provider"}
+                  />
+                </div>
+              ) : (
+                <div className="poliigon-map-empty"><strong>Sphere preview unavailable</strong><p>No browser-readable maps are available for this asset.</p></div>
+              )
+            ) : mode === "maps" && genuineLoading ? (
               <div className="poliigon-map-empty">
                 <span className="spinner" aria-hidden="true" />
                 <strong>Preparing genuine map previews…</strong>
@@ -659,7 +677,7 @@ export function PolyHavenDrawer() {
             )}
           </div>
 
-          {previewItems.length > 0 && (
+          {previewItems.length > 0 && mode !== "sphere" && (
             <div className="preview-picker">
               <Dropdown
                 className="select-dropdown"

@@ -20,6 +20,7 @@ export type ModelFormat =
   | "ply"
   | "3mf"
   | "dae"
+  | "sphere"
   | "other";
 
 export type ModelMapType =
@@ -92,6 +93,8 @@ export interface ModelManifest {
   availableLods: number[];
   /** True for assets whose material uses alpha-cutout foliage cards. */
   alpha: boolean;
+  /** True when the viewer wraps a 2D surface map set around a sphere. */
+  surface?: boolean;
   notes: string[];
   /** Runtime formats that were published but cannot be displayed without conversion/download. */
   unsupported: Array<{ format: ModelFormat; url?: string; reason: string }>;
@@ -161,6 +164,13 @@ export function isUnsupportedNativeFormat(format: ModelFormat): boolean {
 export function is3dAssetType(type: string | null | undefined): boolean {
   return Boolean(type && /^(3d|3dplant|3d-model|model|models|terrain|plant|plants)$/i.test(type))
     || Boolean(type && /3d|model|plant|terrain/i.test(type));
+}
+
+/** Flat texture sets that benefit from a sphere material preview. */
+export function isSurfaceAssetType(type: string | null | undefined): boolean {
+  if (!type || is3dAssetType(type)) return false;
+  return /^(surface|surface-material|texture|textures|material|materials|atlas|atlases|decal|decals|brush|brushes|imperfection|imperfections|displacement|displacements)$/i.test(type)
+    || /surface|texture|material|atlas/i.test(type);
 }
 
 export function canonicalModelMapType(value: string): { mapType: ModelMapType; normalSpace?: "gl" | "dx" } {

@@ -5,7 +5,7 @@ import { CheckIcon, CloseIcon, DownloadIcon } from "../icons";
 import { AssetScaleDiagram } from "./AssetScaleDiagram";
 import { Dropdown } from "./Dropdown";
 import { ImageViewer } from "./ImageViewer";
-import { ModelPreviewPanel } from "./ModelViewer";
+import { ModelPreviewPanel, SurfacePreviewPanel } from "./ModelViewer";
 import { TransferStatus } from "./TransferStatus";
 import { usePoliigonStore } from "../poliigon-store";
 import { poliigonScaleDimensions, poliigonTechnical } from "../poliigon-technical";
@@ -125,7 +125,7 @@ export function PoliigonDrawer() {
   const downloads = useStore(state => state.downloads);
   const settings = useStore(state => state.settings);
   const [section, setSection] = useState<"overview" | "download" | "technical" | "related">("overview");
-  const [mode, setMode] = useState<"renders" | "maps">("renders");
+  const [mode, setMode] = useState<"renders" | "maps" | "sphere">("renders");
   const [modelOpen, setModelOpen] = useState(false);
   const [renderIndex, setRenderIndex] = useState(0);
   const [mapIndex, setMapIndex] = useState(0);
@@ -226,7 +226,8 @@ export function PoliigonDrawer() {
   }, [selection?.summary.id]);
 
   useEffect(() => {
-    if (mode !== "maps" || !summary || !detail) return;
+    if (mode !== "maps" && mode !== "sphere") return;
+    if (!summary || !detail) return;
     if (!previewEntitled) return;
     if (!["Models", "Textures", "Brushes", "HDRS"].includes(detail.type)) return;
     if (!detail.maps.some(map => map.type || (map.maps?.length ?? 0) > 0)) return;
@@ -322,7 +323,7 @@ export function PoliigonDrawer() {
       .sort((a, b) => mapPreviewRank(a.preview) - mapPreviewRank(b.preview) || a.index - b.index)
       .map(item => item.preview);
   }, [toolboxMaps, fetchedMaps]);
-  const genuineLoading = mode === "maps" && fetchedMaps.length === 0 && previewEntitled && (mapsLoading || !mapsAttempted);
+  const genuineLoading = (mode === "maps" || mode === "sphere") && fetchedMaps.length === 0 && previewEntitled && (mapsLoading || !mapsAttempted);
   const displayMaps = genuineLoading ? [] : maps;
   const active = mode === "renders" ? renders[renderIndex] : displayMaps[mapIndex];
   const description = detail?.description || summary?.description || "";
@@ -679,6 +680,7 @@ export function PoliigonDrawer() {
                 Maps
               </button>
               {selection.summary.type === "Models" && <button type="button" className={modelOpen ? "active" : ""} onClick={() => setModelOpen(value => !value)}>3D</button>}
+              {["Textures", "Brushes"].includes(selection.summary.type) && <button type="button" className={mode === "sphere" ? "active" : ""} onClick={() => setMode("sphere")} title="Preview the maps on a sphere">Sphere</button>}
             </div>
             {modelOpen && selection.summary.type === "Models" && <ModelPreviewPanel
               assetId={String(selection.summary.id)}
@@ -690,7 +692,23 @@ export function PoliigonDrawer() {
               startFullscreen
             />}
 
-            {mode === "maps" && genuineLoading ? (
+            {mode === "sphere" && ["Textures", "Brushes"].includes(selection.summary.type) ? (
+              genuineLoading ? (
+                <div className="poliigon-map-empty"><span className="spinner" aria-hidden="true" /><strong>Preparing maps for the sphere preview…</strong></div>
+              ) : maps.length ? (
+                <div className="drawer-preview model-drawer-preview">
+                  <SurfacePreviewPanel
+                    maps={maps.map(map => ({ url: map.url, type: map.mapCode ?? map.type, label: map.role ?? map.fileName }))}
+                    assetId={String(selection.summary.id)}
+                    provider="poliigon"
+                    name={selection.summary.name}
+                    source={localPath ? "local" : "provider"}
+                  />
+                </div>
+              ) : (
+                <div className="poliigon-map-empty"><strong>Sphere preview unavailable</strong><p>No browser-readable maps are available for this asset.</p></div>
+              )
+            ) : mode === "maps" && genuineLoading ? (
               <div className="poliigon-map-empty">
                 <span className="spinner" aria-hidden="true" />
                 <strong>Preparing genuine 1K map previews…</strong>
@@ -798,7 +816,7 @@ export function PoliigonDrawer() {
             )}
           </div>
 
-          {previewItems.length > 0 && (
+          {previewItems.length > 0 && mode !== "sphere" && (
             <div className="preview-picker">
               <Dropdown
                 className="select-dropdown"

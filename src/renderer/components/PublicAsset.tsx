@@ -8,8 +8,8 @@ import { useStore } from "../store";
 import { ProviderLogo, ProviderTag } from "./ProviderLogo";
 import { SmartThumbImage } from "./SmartThumbImage";
 import { ImageViewer } from "./ImageViewer";
-import { ModelPreviewPanel } from "./ModelViewer";
-import { is3dAssetType } from "../../shared/model-preview";
+import { ModelPreviewPanel, SurfacePreviewPanel } from "./ModelViewer";
+import { is3dAssetType, isSurfaceAssetType } from "../../shared/model-preview";
 import { CloseIcon, DownloadIcon, CheckIcon, PauseIcon, PlayIcon } from "../icons";
 import { previewProgressKey } from "../../shared/preview-keys";
 import { TransferStatus } from "./TransferStatus";
@@ -233,7 +233,7 @@ export function PublicDrawer() {
   const [index, setIndex] = useState(0);
   const [variant, setVariant] = useState(0);
   const [section, setSection] = useState("overview");
-  const [mode, setMode] = useState<"renders" | "maps" | "3d">("renders");
+  const [mode, setMode] = useState<"renders" | "maps" | "3d" | "sphere">("renders");
   const [previewSet, setPreviewSet] = useState<PublicPreviewSet | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -260,6 +260,7 @@ export function PublicDrawer() {
   const modelProvider = asset?.provider ?? local?.provider;
   const canModel = Boolean(modelProvider && ["ambientcg", "blenderkit"].includes(modelProvider)
     && is3dAssetType(asset?.type ?? local?.type));
+  const canSurface = !/^(hdr|hdri|hdri-element)$/i.test(drawerType ?? "") && isSurfaceAssetType(drawerType);
   const localAssetId = local?.id?.includes(":") ? local.id.split(":").slice(1).join(":") : local?.id;
   const move = useCallback((offset: number) => {
     const next = neighbors[neighborIndex + offset];
@@ -402,6 +403,7 @@ export function PublicDrawer() {
         <button type="button" className={mode === "renders" ? "active" : ""} onClick={() => { setMode("renders"); setIndex(0); }}>Render</button>
         <button type="button" className={mode === "maps" ? "active" : ""} disabled={!mapsAvailable && !local} title={mapsAvailable ? undefined : "This provider supplies a native package; separate texture maps are not published."} onClick={() => { setMode("maps"); setIndex(0); }}>Maps</button>
         {canModel && <button type="button" className={mode === "3d" ? "active" : ""} onClick={() => { setMode("3d"); setViewer(false); }}>3D</button>}
+        {canSurface && <button type="button" className={mode === "sphere" ? "active" : ""} onClick={() => { setMode("sphere"); setViewer(false); }} title="Preview the maps on a sphere">Sphere</button>}
       </div>
       {mode === "3d" && canModel ? <div className="drawer-preview model-drawer-preview">
         <ModelPreviewPanel
@@ -412,14 +414,22 @@ export function PublicDrawer() {
           type={asset?.type ?? local?.type}
           isPlant={is3dAssetType(asset?.type ?? local?.type) && /plant|foliage|leaf/i.test(`${asset?.type ?? ""} ${asset?.name ?? ""} ${local?.type ?? ""} ${local?.name ?? ""}`)}
         />
+      </div> : mode === "sphere" && canSurface ? <div className="drawer-preview model-drawer-preview">
+        {previewSet?.maps.length ? <SurfacePreviewPanel
+          maps={previewSet.maps}
+          assetId={assetId ?? ""}
+          provider={drawerProvider ?? ""}
+          name={asset?.name ?? local?.name ?? ""}
+          source={local ? "local" : "provider"}
+        /> : <span className="map-preview-status">{previewLoading ? "Preparing maps for the sphere preview…" : previewSet?.note || "No browser-readable maps are available for a sphere preview."}</span>}
       </div> : <>
-        {image && <div className="drawer-preview"><button className="expand-preview" type="button" onClick={() => { if (/^(hdr|hdri|hdri-element)$/.test(asset?.type ?? "") && previewSet?.maps.length) { setMode("maps"); setIndex(0); } setViewer(true); }}><SmartThumbImage source={image} direct={drawerDirect} crop={drawerProvider === "openhdri" && (local || !previewSet) ? "top-2-1" : undefined} alt={asset?.name ?? local?.name} /></button></div>}
+        {image && mode !== "sphere" && <div className="drawer-preview"><button className="expand-preview" type="button" onClick={() => { if (/^(hdr|hdri|hdri-element)$/.test(asset?.type ?? "") && previewSet?.maps.length) { setMode("maps"); setIndex(0); } setViewer(true); }}><SmartThumbImage source={image} direct={drawerDirect} crop={drawerProvider === "openhdri" && (local || !previewSet) ? "top-2-1" : undefined} alt={asset?.name ?? local?.name} /></button></div>}
         {!image && mode === "maps" && !previewLoading && <div className="poliigon-map-empty"><p>{previewSet?.note ?? "This provider does not publish separate browser-readable texture maps."}</p><button type="button" className="btn btn-ghost" onClick={() => setMode("renders")}>Show render</button></div>}
         {previewLoading && <TransferStatus progress={previewProgress} fallbackText="Loading genuine previews…" />}
         {previewError && <div className="error-box" role="alert">{previewError}<button type="button" className="text-btn" onClick={() => setPreviewRetry(value => value + 1)}>Retry previews</button></div>}
         {previewSet?.note && <p className="hint">{previewSet.note}</p>}
         {asset?.provider === "openhdri" && !previewSet?.note && <p className="hint">OpenHDRI publishes 16K EXRs only. Live HDR exposure is disabled because 16K exceeds the safe 8K preview budget for most systems. The 4K panorama preview remains available; download the original EXR for your DCC.</p>}
-        {previews.length > 0 && <div className="map-nav">
+        {previews.length > 0 && mode !== "sphere" && <div className="map-nav">
           <div className="map-nav-label">{mode === "maps" ? "Map" : "Preview"} {index + 1} / {previews.length}<strong>{previews[index]?.label}</strong></div>
           <div className="map-nav-actions">
             <button type="button" className="icon-btn" aria-label="Previous preview" disabled={index <= 0} onClick={() => setIndex(value => Math.max(0, value - 1))}>‹</button>

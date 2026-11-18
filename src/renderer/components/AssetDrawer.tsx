@@ -3,8 +3,8 @@ import { AssetScaleDiagram } from "./AssetScaleDiagram";
 import { useStore } from "../store";
 import { Dropdown } from "./Dropdown";
 import { ImageViewer } from "./ImageViewer";
-import { ModelPreviewPanel } from "./ModelViewer";
-import { is3dAssetType } from "../../shared/model-preview";
+import { ModelPreviewPanel, SurfacePreviewPanel } from "./ModelViewer";
+import { is3dAssetType, isSurfaceAssetType } from "../../shared/model-preview";
 import type {
   CatalogHit,
   DownloadMapFormat,
@@ -127,7 +127,7 @@ export function AssetDrawer() {
       if (tabs) scroll.scrollTop += tabs.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 20;
     }
   }, [section]);
-  const [previewMode, setPreviewMode] = useState<"render" | "maps" | "3d">("render");
+  const [previewMode, setPreviewMode] = useState<"render" | "maps" | "3d" | "sphere">("render");
   const [mapPreviews, setMapPreviews] = useState<MapPreview[]>([]);
   const [mapIndex, setMapIndex] = useState(0);
   const [mapsLoading, setMapsLoading] = useState(false);
@@ -150,6 +150,7 @@ export function AssetDrawer() {
 
   const assetType = extended?.type ?? hit?.type ?? local?.type ?? "";
   const threeD = is3d(extended, assetType);
+  const surfacePreview = !threeD && isSurfaceAssetType(assetType);
   const plant = isPlant(extended, assetType);
   const maxResolution = aclResolution(extended);
   const resolutionOptions = RESOLUTIONS.filter(value => !maxResolution || value <= maxResolution);
@@ -314,13 +315,12 @@ export function AssetDrawer() {
     : hits.findIndex(item => hitId(item) === assetId);
   const resultCount = local ? libraryAssets.length : hits.length;
 
-  async function openMaps(): Promise<void> {
-    if (local) { setPreviewMode("maps"); setMapIndex(0); return; }
+  async function loadMaps(): Promise<void> {
+    if (local) return;
     if (!auth.loggedIn) {
       await login();
       if (!useStore.getState().auth.loggedIn) return;
     }
-    setPreviewMode("maps");
     if (mapPreviews.length > 0 || mapsLoading) return;
     setMapsLoading(true);
     setMapsError(null);
@@ -342,6 +342,16 @@ export function AssetDrawer() {
       const current = useStore.getState().selection;
       if ((current?.hit ? hitId(current.hit) : current?.local?.id) === currentId) setMapsLoading(false);
     }
+  }
+
+  async function openMaps(): Promise<void> {
+    setPreviewMode("maps");
+    await loadMaps();
+  }
+
+  async function openSphere(): Promise<void> {
+    setPreviewMode("sphere");
+    await loadMaps();
   }
 
   function stepMap(delta: number): void {
@@ -560,6 +570,14 @@ export function AssetDrawer() {
                 >
                   3D
                 </button>}
+                {surfacePreview && <button
+                  type="button"
+                  className={previewMode === "sphere" ? "active" : ""}
+                  onClick={() => void openSphere()}
+                  title="Preview the maps on a sphere"
+                >
+                  Sphere
+                </button>}
               </div>
             )}
 
@@ -570,7 +588,17 @@ export function AssetDrawer() {
               path={local?.path}
               type={assetType}
               isPlant={/3dplant|plant|foliage/i.test(`${assetType} ${hit?.name ?? local?.name ?? ""}`)}
-            /> : activePreview ? (
+            /> : previewMode === "sphere" && surfacePreview ? (
+              availableMaps.length > 0 ? <SurfacePreviewPanel
+                maps={availableMaps}
+                assetId={assetId}
+                provider="megascans"
+                name={hit?.name ?? local?.name ?? assetId}
+                source={local ? "local" : "provider"}
+              /> : <span className="map-preview-status">
+                {mapsLoading ? "Preparing maps for the sphere preview…" : mapsError || "No browser-readable maps are available for a sphere preview."}
+              </span>
+            ) : activePreview ? (
               <button type="button" className="expand-preview" onClick={() => setViewerOpen(true)} aria-label="Expand preview" title="Expand preview">
                 <img src={activePreview} alt={activeMap?.label ?? "Asset render"} referrerPolicy="no-referrer" />
               </button>
@@ -653,7 +681,7 @@ export function AssetDrawer() {
             )}
           </div>
 
-          {previewMode !== "3d" && previewItems.length > 0 && <div className="preview-picker">
+          {previewMode !== "3d" && previewMode !== "sphere" && previewItems.length > 0 && <div className="preview-picker">
             <Dropdown className="select-dropdown" value={String(previewMode === "maps" ? mapIndex : renderIndex)}
               ariaLabel={previewMode === "maps" ? "Map and texture set" : "Render image"}
               onChange={value => previewMode === "maps" ? setMapIndex(Number(value)) : setRenderIndex(Number(value))}
