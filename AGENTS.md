@@ -8,23 +8,20 @@ as a second provider (auth/downloads still in progress). It is an Electron 45 + 
 application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution model.
 
 - Branch: `main`, tracking `origin/main`
-- Last verified application commit: `781c962` (tagged `v1.4.2`)
-- Current app version: `1.6.2` (release candidate)
-- Latest published release: `v1.4.2`
+- Last verified application commit: `6caa6b2` (tagged `v1.6.2`)
+- Current app version: `1.6.2`
+- Latest published release: `v1.6.2`
 - Repo visibility: public
 - Distribution: portable ZIP only; no installer, Linux or macOS build
 - The repository owner/name is discovered at build time and must not be hard-coded
 
-Changes after `v1.4.2` ship in `v1.6.2`. Choose the next version when new work is ready to publish.
+Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new work is ready to publish.
 
 ## 1.6.2 additional providers and browsing pass
 
-- Version 1.6.1 packages ambientCG, BlenderKit and OpenHDRI alongside Megascans, Poliigon and
-  Poly Haven. The current local portable build lives in `dist/OpenBridge-1.6.1-win-x64-portable`.
-  This is a local test build only: no commit, tag, push or GitHub release has been created.
-  The packaged ZIP is 162,315,169 bytes with SHA-256
-  `98B94A46B7D2DDCF71D3FC00EDD44BE19093E25923C96B15AAC3233083E1C086`.
-  The 1.6.0 local build is preserved as the previous build.
+- Version 1.6.2 packages ambientCG, BlenderKit and OpenHDRI alongside Megascans, Poliigon and
+  Poly Haven. It was released from commit `6caa6b2`; see the release status section for the
+  verified CI asset details.
 - A Three.js 0.187 3D viewer is now integrated for local and catalog assets. glTF/GLB, FBX,
   OBJ/MTL, USD/USDA/USDC/USDZ, STL, PLY and DAE load directly; ABC resolves to the provider's
   published FBX/Alembic alternative, and native `.blend`/`.max`/`.c4d`/`.ma`/`.mb`/`.skp` remain
@@ -463,7 +460,7 @@ Changes after `v1.4.2` ship in `v1.6.2`. Choose the next version when new work i
   and explicitly partial cached library measurements. No new live library scan is started by the rail.
 - New renderer components: `DownloadActivity.tsx`, `DownloadsRail.tsx`; aggregate/ETA helpers in
   `src/renderer/download-summary.ts`. Catalogue and Library use `FilterWorkbench` from `BrowsingTools`.
-- Do not tag or publish without user confirmation. The latest published release remains `v1.4.2`.
+- Do not tag or publish without user confirmation. The latest published release is `v1.6.2`.
 - Overview now includes `AssetScaleDiagram.tsx`: an SVG front orthographic human (1.78 m) and asset
   bounds sharing one metres-to-pixels scale and ground line. `src/shared/asset-scale.ts` reads the
   existing length/width/height metadata or recorded variations; scan area alone never creates bounds.
@@ -601,6 +598,16 @@ Do not delete or rename released tags. The updater and pack downloader resolve a
 `releases/latest/download` and tag-specific release URLs.
 
 ## Release status and known facts
+
+`v1.6.2` assets (published 2026-11-18, tag `v1.6.2`, commit `6caa6b2`):
+
+- Portable ZIP: `162,443,482` bytes
+- ZIP SHA-256: `B3B88D253BA541191D466A0DFE68B6BD81BE34304172E8D4414AB9826CF91F98`
+- `latest.json` reports version `1.6.2`, the same size and SHA-256 as the uploaded ZIP.
+- Verified after upload: the downloaded ZIP hash matches `latest.json` and the packaged
+  `resources/app/package.json` reports `1.6.2`.
+- `Quality` passed on `6caa6b2` before tagging; the tag-triggered `Quality` and `Release`
+  workflows both passed (Release run `44360255012`).
 
 `v1.4.2` assets (published 2026-10-27):
 

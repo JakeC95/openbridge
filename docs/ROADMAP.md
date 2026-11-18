@@ -98,7 +98,7 @@ Still open:
 - GitHub Support must purge old unreachable commit objects that remain accessible by SHA.
 - Publish the 1.6.2 maintenance and provider changes as the next patch release.
 
-## Browsing productivity (implemented, unreleased)
+## Browsing productivity (shipped in 1.6.2)
 
 - Local asset-type/category navigation with indexed counts, favorites and name/type/modified sorting.
 - Searchable recorded-pack browser and drawer links, backed by optional catalogue metadata or local
@@ -117,7 +117,7 @@ Still open:
 Pack data audit of the published metadata: 7,031 of 18,835 records have pack names/IDs, covering
 190 packs (largest: 205 assets). The browser does not infer membership for unlabelled assets.
 
-## Networking hardening (implemented, unreleased)
+## Networking hardening (shipped in 1.6.2)
 
 - Shared bounded JSON transport with deadlines, safe retries, jitter, Retry-After and origin queues.
 - Short-lived bounded read caches, in-flight coalescing, independent subscriber cancellation and
@@ -154,7 +154,7 @@ end-to-end benchmark against original Bridge has been performed.
 - Opt-in crash reporting, diagnostics export and update channels.
 - Accessibility, high-DPI, localization and a broader Windows test matrix.
 
-## Workspace quality (1.5.0, unreleased)
+## Workspace quality (shipped in 1.6.2)
 
 - Dock the inspector above 1180px; reserve workspace width so virtualized grids and filters reflow.
 - Overview, Download settings/Files, Technical and Related sections, with a pinned plan/resolution/
@@ -170,7 +170,7 @@ end-to-end benchmark against original Bridge has been performed.
   finished queue entries does not delete history. Earlier completions cannot be recovered retroactively.
 - Version selected locally; no tag or GitHub release published yet.
 
-## Phase 8 - Poliigon provider (implemented, unreleased)
+## Phase 8 - Poliigon provider (shipped in 1.6.2)
 
 - Provider dimension (`megascans` | `poliigon`) in types, settings, IPC and renderer state.
 - Shared library root with per-provider folders; existing Megascans paths preserved.
@@ -247,7 +247,7 @@ end-to-end benchmark against original Bridge has been performed.
 
 See [POLIIGON.md](POLIIGON.md).
 
-## Phase 9 - Poly Haven provider (implemented, unreleased)
+## Phase 9 - Poly Haven provider (shipped in 1.6.2)
 
 - Public CC0 catalogue (`/assets?t=hdris|textures|models`) indexed into
   `polyhaven-catalog.sqlite` with FTS search, type/category/resolution/map/collection facets,
@@ -266,7 +266,7 @@ See [POLIIGON.md](POLIIGON.md).
 
 See [POLYHAVEN.md](POLYHAVEN.md).
 
-## Filter workbench audit (1.5.9, unreleased)
+## Filter workbench audit (shipped in 1.6.2)
 
 - One searchable filter workbench is shared by Discover, All sources, Poliigon, Poly Haven and the
   local Library, with a group rail and value pane that scroll independently in a viewport-capped
@@ -286,7 +286,7 @@ See [POLYHAVEN.md](POLYHAVEN.md).
 - Hidden filters reset when switching type or provider, and focused provider views clear size
   bounds that do not apply to the newly selected type.
 
-## HDRI category and sky-condition pass (1.5.10, unreleased)
+## HDRI category and sky-condition pass (shipped in 1.6.2)
 
 - Poly Haven's live three-level HDRI environment taxonomy is attached to the combined Discover
   tree at runtime, grouped under Skies & Skyboxes, Nature & Landscapes, Urban & Built, Interiors,
