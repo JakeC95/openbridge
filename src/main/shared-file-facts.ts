@@ -5,7 +5,7 @@ import type { SharedFileFacts } from "../shared/types";
 import { inspectSharedHdrFacts } from "./shared-hdr-facts";
 import { inspectSharedModelFacts } from "./shared-model-facts";
 
-export const SHARED_FACTS_REVISION = 1;
+export const SHARED_FACTS_REVISION = 2;
 
 /** File-level facts only. Account or semantic attributes require separate evidence. */
 export async function readSharedFileFacts(path: string, signal?: AbortSignal): Promise<SharedFileFacts> {

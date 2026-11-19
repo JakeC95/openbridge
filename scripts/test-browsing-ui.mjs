@@ -76,6 +76,7 @@ const api = {
   librarySnapshot:async()=>({refs:assets.map(a=>({id:a.id,path:a.path})),counts,total:80,scannedAt:1,libraryPath:'fixture'}),
   queryLibrary:async query=>{calls.push({kind:'library',query});return {assets,total:80,counts,offset:0,limit:300,hasMore:false,tookMs:1,categories,packs:[pack]}},
   queryLibraryIds:async query=>{calls.push({kind:'localIds',query});return assets.map(a=>a.id)},
+  sharedLibrary:{inspectionState:async()=>({progress:null,failures:[]}),onInspectionProgress:noop},
   localPreviews:async()=>({renders:[{type:'render',label:'Render',url:image}],maps:[{type:'albedo',label:'Set A / Albedo',url:image},{type:'normal',label:'Set A / Normal',url:image}]}),
   toFileUrl:path=>image,
   model:{manifest:async request=>{calls.push({kind:'model',request});if(modelFails)throw new Error('Fixture preview unavailable');const mesh={url:${JSON.stringify(pathToFileURL(modelPath).href)},format:'obj',label:'Fixture',lod:0,quality:null,bytes:32,triangles:1};return {assetId:request.assetId,name:'Fixture',provider:request.provider,source:'local',meshes:[mesh],defaultMesh:mesh,textures:[],availableQualities:[1024,2048],availableLods:[0],alpha:false,notes:[],unsupported:[]};}},

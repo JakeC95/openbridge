@@ -1,4 +1,8 @@
-import { prepareLocalState, finalizeLocalState } from "./local-state";
+import { modelGeometryThumbnail } from "./model-thumbnail";
+import { withAbort } from "./abortable";
+import { SharedHdrThumbnailCache } from "./shared-hdr-thumbnails";
+import { pathToFileURL } from "node:url";
+import { prepareLocalState, finalizeLocalState, localStatePath } from "./local-state";
 import { copySharedModelPackage, copySharedSelection, inspectSharedModelDependencies } from "./shared-package";
 import { sharedHdrInfo, isInside, sharedRootId } from "./shared-library";
 import { decodeHdrFile } from "./hdr-decode";
@@ -619,39 +623,103 @@ function registerIpc(): void {
     if (!library) throw new Error("Library service is not ready");
     return library.saveSharedOrganization(id, value);
   });
+  async function sharedModelManifest(id: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+      const { asset, path } = await requireSharedFile(id);
+      if (asset.type !== "3d") throw new Error("This shared asset is not a 3D model.");
+      const configured = settings().sharedLibraryRoots?.find(root => root.id === sharedRootId(asset.id));
+      const dependencies = configured && /\.(obj|gltf|glb)$/i.test(path)
+        ? await inspectSharedModelDependencies(await realpath(configured.path), path, signal)
+        : undefined;
+      const manifest = await scanLocalModel(dirname(path), asset.id, "shared", asset.type, path, dependencies?.files);
+      if (dependencies) manifest.notes.push(...dependencies.notes);
+      return manifest;
+  }
+  let sharedThumbnails: SharedHdrThumbnailCache | undefined;
+  const thumbnailJobs = new Map<string, AbortController>();
+  ipcMain.handle("shared:cancelThumbnail", (event, requestId: string) => {
+    thumbnailJobs.get(`${event.sender.id}:${requestId}`)?.abort();
+  });
+  ipcMain.handle("shared:thumbnail", async (event, id: string, requestId: string) => {
+    if (typeof requestId !== "string" || !/^[a-z0-9-]{8,80}$/i.test(requestId)) throw new Error("Invalid thumbnail request.");
+    const key = `${event.sender.id}:${requestId}`;
+    if (thumbnailJobs.has(key)) throw new Error("Thumbnail request already exists.");
+    const controller = new AbortController();
+    const request = AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]);
+    thumbnailJobs.set(key, controller);
+    const close = () => controller.abort();
+    event.sender.once("destroyed", close);
+    try {
+      const { asset, path } = await withAbort(() => requireSharedFile(id), request);
+      if (asset.type !== "hdri") {
+        if (!/\.(obj|fbx|gltf|glb|stl|ply|dae)$/i.test(path)) return { url: null, width: 0, height: 0, panorama: false,
+          reason: "This format needs a source render or a supported mesh representation for a geometry thumbnail." };
+        const knownVertices = asset.technical?.local?.model?.vertices;
+        const knownTriangles = asset.technical?.maxTris;
+        if ((knownVertices ?? 0) > 2_000_000 || (knownTriangles ?? 0) > 4_000_000) return { url: null, width: 0, height: 0, panorama: false,
+          reason: "This mesh exceeds the geometry-thumbnail budget. Open the 3D viewer or choose a lower-detail representation." };
+        const manifest = await withAbort(() => sharedModelManifest(id, request), request);
+        const output = await modelGeometryThumbnail(manifest, JSON.stringify([id, path, asset.sizeBytes, asset.mtime]),
+          localStatePath(app.getPath("userData"), "shared-model-thumbnails"), request);
+        return { url: pathToFileURL(output).href, width: 512, height: 512, panorama: false, kind: "geometry" };
+      }
+      sharedThumbnails ??= new SharedHdrThumbnailCache(localStatePath(app.getPath("userData"), "shared-hdr-thumbnails"));
+      const result = await sharedThumbnails.get(path, request);
+      return { width: result.width, height: result.height, panorama: result.panorama,
+        url: result.path ? pathToFileURL(result.path).href : null, kind: "hdr", reason: result.reason };
+    } finally {
+      event.sender.off("destroyed", close);
+      thumbnailJobs.delete(key);
+    }
+  });
+  ipcMain.handle("shared:dependencies", (_event, id: string) => {
+    if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");
+    return library.sharedDependencies(id);
+  });
   ipcMain.handle("shared:inspectFile", (_event, id: string) => {
     if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");
     return library.inspectSharedMetadata(id);
   });
   const sharedInspectionJobs = new Map<number, AbortController>();
+  const inspectionStates = new Map<number, { progress: { completed: number; total: number } | null; failures: Array<{ name: string; message: string }> }>();
+  ipcMain.handle("shared:inspectionState", event => inspectionStates.get(event.sender.id) ?? { progress: null, failures: [] });
   ipcMain.handle("shared:cancelInspection", event => sharedInspectionJobs.get(event.sender.id)?.abort());
-  ipcMain.handle("shared:inspectSelection", async (event, ids: string[], scope: LibraryQuery) => {
-    if (!library || !Array.isArray(ids) || !ids.length || ids.length > 500 ||
-        ids.some(id => typeof id !== "string" || !sharedRootId(id))) throw new Error("Select between 1 and 500 shared assets to inspect.");
+  async function inspectSharedScope(event: Electron.IpcMainInvokeEvent, ids: string[] | null, scope: LibraryQuery) {
+    if (!library || (ids !== null && (!Array.isArray(ids) || !ids.length || ids.length > 500 ||
+        ids.some(id => typeof id !== "string" || !sharedRootId(id))))) throw new Error("Select between 1 and 500 shared assets to inspect.");
     const sender = event.sender;
     if (sharedInspectionJobs.has(sender.id)) throw new Error("Metadata inspection is already running.");
     const controller = new AbortController();
     sharedInspectionJobs.set(sender.id, controller);
+    inspectionStates.set(sender.id, { progress: { completed: 0, total: 0 }, failures: [] });
     const close = () => controller.abort();
     sender.once("destroyed", close);
     const failures: Array<{ name: string; message: string }> = [];
     let inspected = 0;
     let completed = 0;
     try {
-      const records = library.matchingAssets([...new Set(ids)], { ...scope, provider: "shared" });
-      for (const record of records) {
+      const selected = ids === null ? library.ids({ ...scope, provider: "shared" })
+        : library.matchingAssets([...new Set(ids)], { ...scope, provider: "shared" }).map(asset => asset.id);
+      inspectionStates.set(sender.id, { progress: { completed: 0, total: selected.length }, failures });
+      if (!sender.isDestroyed()) sender.send("shared:inspectionProgress", { completed: 0, total: selected.length });
+      for (const id of selected) {
         if (controller.signal.aborted) break;
-        try { await library.inspectSharedMetadata(record.id); inspected++; }
-        catch (error) { failures.push({ name: record.name, message: error instanceof Error ? error.message : String(error) }); }
+        try { await library.inspectSharedMetadata(id); inspected++; }
+        catch (error) { failures.push({ name: library.getAsset(id)?.name ?? "Unavailable asset", message: error instanceof Error ? error.message : String(error) }); }
         completed++;
-        if (!sender.isDestroyed()) sender.send("shared:inspectionProgress", { completed, total: records.length });
+        inspectionStates.set(sender.id, { progress: { completed, total: selected.length }, failures });
+        if (!sender.isDestroyed()) sender.send("shared:inspectionProgress", { completed, total: selected.length });
       }
-      return { inspected, cancelled: completed < records.length, failures };
+      return { inspected, cancelled: completed < selected.length, failures };
     } finally {
       sender.off("destroyed", close);
       sharedInspectionJobs.delete(sender.id);
+      if (sender.isDestroyed()) inspectionStates.delete(sender.id);
+      else inspectionStates.set(sender.id, { progress: null, failures });
     }
-  });
+  }
+  ipcMain.handle("shared:inspectSelection", (event, ids: string[], scope: LibraryQuery) => inspectSharedScope(event, ids, scope));
+  ipcMain.handle("shared:inspectScope", (event, scope: LibraryQuery) => inspectSharedScope(event, null, scope));
   const sharedHdrJobs = new Map<string, AbortController>();
   async function inspectIndexedSharedHdr(id: string) {
     if (!library) throw new Error("Library service is not ready");
@@ -748,15 +816,7 @@ function registerIpc(): void {
       throw new Error("Invalid 3D model request");
     }
     if (request.provider === "shared" || sharedRootId(request.assetId)) {
-      const { asset, path } = await requireSharedFile(request.assetId);
-      if (asset.type !== "3d") throw new Error("This shared asset is not a 3D model.");
-      const configured = settings().sharedLibraryRoots?.find(root => root.id === sharedRootId(asset.id));
-      const dependencies = configured && /\.(obj|gltf|glb)$/i.test(path)
-        ? await inspectSharedModelDependencies(await realpath(configured.path), path)
-        : undefined;
-      const manifest = await scanLocalModel(dirname(path), asset.id, "shared", asset.type, path, dependencies?.files);
-      if (dependencies) manifest.notes.push(...dependencies.notes);
-      return manifest;
+      return sharedModelManifest(request.assetId);
     }
     if (typeof request.path === "string" && request.path.trim()) {
       let local = await scanLocalModel(request.path, request.assetId, request.provider, request.type ?? "");

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { AssetTechnicalSummary } from "../../shared/types";
 import { assetBounds, scaleMeasurement } from "../../shared/asset-scale";
 import { formatMeasurementText } from "../../shared/measurements";
@@ -11,6 +11,7 @@ export interface AssetListItem {
   type: string;
   id?: string;
   image?: string | null;
+  previewFallback?: ReactNode;
   crop?: "top-2-1";
   direct?: boolean;
   technical?: AssetTechnicalSummary;
@@ -50,10 +51,11 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
         {chosen.map(item => {
           const technical = item.technical;
           const bounds = technical ? assetBounds(technical) : null;
+          const isHdri = /hdri/i.test(item.type);
           const isSurface = /surface|atlas|decal|imperfection|displacement|brush/i.test(item.type);
           const max = bounds ? Math.max(bounds.height, 1.78) : 1.78;
           return <article className="comparison-card" key={item.key}>
-            <div className="comparison-preview">{item.image ? <SmartThumbImage source={item.image} crop={item.crop} direct={item.direct} alt="" /> : <span>No preview available</span>}
+            <div className="comparison-preview">{item.image ? <SmartThumbImage source={item.image} crop={item.crop} direct={item.direct} alt="" fallbackContent={item.previewFallback} /> : item.previewFallback ?? <span>No preview available</span>}
               <span className="comparison-status">{item.status || "Unknown status"}</span></div>
             <div className="comparison-card-body"><div className="comparison-title"><div><span>{item.type || "Asset"}</span><h3 title={item.name}>{item.name}</h3></div>
               <button type="button" className="icon-btn" onClick={() => toggle(item.key)} aria-label={`Remove ${item.name} from comparison`}>×</button></div>
@@ -62,14 +64,14 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
               <div className="comparison-metrics">
                 <div><span>Dimensions</span><strong>{item.dimensions ? formatMeasurementText(item.dimensions) : "Not available"}</strong></div>
                 <div><span>Max resolution</span><strong>{item.resolution || "Not available"}</strong></div>
-                {!isSurface && <><div><span>Triangles</span><strong>{technical?.maxTris ? technical.maxTris.toLocaleString() : "Not available"}</strong></div>
+                {!isSurface && !isHdri && <><div><span>Triangles</span><strong>{technical?.maxTris ? technical.maxTris.toLocaleString() : "Not available"}</strong></div>
                 <div><span>LODs</span><strong>{technical?.lodCount || "Not available"}</strong></div></>}
-                <div><span>Maps</span><strong>{technical?.mapCount || "Not available"}</strong></div>
-                <div><span>Workflow</span><strong>{technical?.materialWorkflow === "metal-rough" ? "Metal / Rough" : technical?.materialWorkflow === "spec-gloss" ? "Specular / Gloss" : technical?.materialWorkflow === "mixed" ? "Mixed" : "Not available"}</strong></div>
+                {!isHdri && <><div><span>Maps</span><strong>{technical?.mapCount || "Not available"}</strong></div>
+                <div><span>Workflow</span><strong>{technical?.materialWorkflow === "metal-rough" ? "Metal / Rough" : technical?.materialWorkflow === "spec-gloss" ? "Specular / Gloss" : technical?.materialWorkflow === "mixed" ? "Mixed" : "Not available"}</strong></div></>}
                 {isSurface && <><div><span>Tileable</span><strong>{technical?.tileable == null ? "Not available" : technical.tileable ? "Yes" : "No"}</strong></div>
                 <div><span>Scan area</span><strong>{technical?.scanArea ? formatMeasurementText(technical.scanArea) : "Not available"}</strong></div></>}
               </div>
-              {!isSurface && <div className="comparison-scale"><div className="comparison-scale-label"><span>Height reference</span><strong>{bounds ? scaleMeasurement(bounds.height) : "Not available"}</strong></div>
+              {!isSurface && !isHdri && <div className="comparison-scale"><div className="comparison-scale-label"><span>Height reference</span><strong>{bounds ? scaleMeasurement(bounds.height) : "Not available"}</strong></div>
                 {bounds ? <div className="comparison-bars" aria-label={`Asset height ${scaleMeasurement(bounds.height)}; human 1.78 metres`}>
                   <div><i style={{ width: `${Math.max(0, bounds.height / max * 100)}%` }} /><small>Asset</small></div>
                   <div><i style={{ width: `${1.78 / max * 100}%` }} /><small>Human · 1.78 m</small></div>

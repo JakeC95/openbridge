@@ -4,18 +4,23 @@ import { basename, dirname, extname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { SharedCopyReport } from "../shared/types";
 import { isInside } from "./shared-library";
+import type { ModelMapType } from "../shared/model-preview";
 
 const MAX_MANIFEST = 24 * 1024 * 1024;
 const MAX_DEPENDENCIES = 2048;
 
 class MissingDependencyError extends Error {}
+class UnsafeDependencyError extends Error {}
 
 export interface SharedModelDependencies {
   files: string[];
   notes: string[];
+  maps: Array<{ path: string; type: ModelMapType; material: string; role: string }>;
+  complete: boolean;
 }
 
-async function readManifest(path: string, binary = false): Promise<string> {
+async function readManifest(path: string, binary = false, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   const file = await open(path);
   try {
     const info = await file.stat();
@@ -35,6 +40,7 @@ async function readManifest(path: string, binary = false): Promise<string> {
     const body = Buffer.alloc(length);
     let read = 0;
     while (read < length) {
+      signal?.throwIfAborted();
       const result = await file.read(body, read, length - read, offset + read);
       if (!result.bytesRead) throw new Error("The model changed during dependency inspection.");
       read += result.bytesRead;
@@ -51,14 +57,14 @@ async function dependency(root: string, author: string, reference: string, encod
   const ref = encoded ? literal : literal.split("/").map(encodeURIComponent).join("/");
   const url = new URL(ref, pathToFileURL(author));
   if (url.protocol !== "file:" || url.search || url.hash || literal.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(literal)) {
-    throw new Error("This model references an absolute or remote dependency. Use relative project files to package it.");
+    throw new UnsafeDependencyError("This model references an absolute or remote dependency. Use relative project files to package it.");
   }
   const expected = fileURLToPath(url);
-  if (!isInside(root, expected)) throw new Error("A model dependency is outside its shared root.");
+  if (!isInside(root, expected)) throw new UnsafeDependencyError("A model dependency is outside its shared root.");
   const actual = await realpath(expected).catch(() => null);
+  if (actual && relative(expected, actual) !== "") throw new UnsafeDependencyError("A linked model dependency cannot be copied safely.");
   const info = actual ? await lstat(actual).catch(() => null) : null;
   if (!actual || !info?.isFile()) throw new MissingDependencyError(`Missing model dependency: ${basename(expected)}`);
-  if (relative(expected, actual) !== "") throw new Error("A linked model dependency cannot be copied safely.");
   return actual;
 }
 
@@ -78,8 +84,9 @@ function mtlTexture(value: string): string {
   return words.join(" ");
 }
 
-async function listSharedDependencies(root: string, primary: string, tolerateMissing: boolean): Promise<SharedModelDependencies> {
+async function listSharedDependencies(root: string, primary: string, tolerateMissing: boolean, signal?: AbortSignal): Promise<SharedModelDependencies> {
   if (!isInside(root, primary)) throw new Error("The shared model is outside its registered root.");
+  signal?.throwIfAborted();
   const locator = relative(root, primary);
   const [canonicalRoot, canonicalPrimary] = await Promise.all([realpath(root), realpath(primary)]);
   if (relative(join(canonicalRoot, locator), canonicalPrimary) !== "") {
@@ -89,8 +96,17 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
   primary = canonicalPrimary;
   const files = new Set([primary]);
   const notes = new Set<string>();
+  const maps: SharedModelDependencies["maps"] = [];
+  let complete = true;
+  const addMap = (path: string | null | undefined, type: ModelMapType, material: string, role = type as string) => {
+    if (path && !maps.some(map => map.path === path && map.type === type && map.material === material)) {
+      if (maps.length >= MAX_DEPENDENCIES) throw new Error("The model has too many material map assignments.");
+      maps.push({ path, type, material, role });
+    }
+  };
   let references = 0;
   async function add(author: string, reference: string, encoded = false): Promise<string | null> {
+    signal?.throwIfAborted();
     if (++references > MAX_DEPENDENCIES) throw new Error("The model has too many dependencies for one package.");
     const file = await dependency(root, author, reference, encoded);
     if (file) files.add(file);
@@ -98,7 +114,8 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
     return file;
   }
   function missing(error: unknown): boolean {
-    if (!tolerateMissing || !(error instanceof MissingDependencyError)) return false;
+    if (!tolerateMissing || !(error instanceof MissingDependencyError || error instanceof UnsafeDependencyError)) return false;
+    complete = false;
     notes.add(`${error.message}. The available model resources remain usable in preview.`);
     return true;
   }
@@ -108,16 +125,44 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
   }
   const extension = extname(primary).toLowerCase();
   if (extension === ".gltf" || extension === ".glb") {
-    const manifest = JSON.parse(await readManifest(primary, extension === ".glb")) as {
+    const manifest = JSON.parse(await readManifest(primary, extension === ".glb", signal)) as {
       buffers?: Array<{ uri?: string }>;
       images?: Array<{ uri?: string }>;
+      textures?: Array<{ source?: number }>;
+      materials?: Array<Record<string, unknown>>;
     };
+    const imageFiles = new Map<number, string>();
     for (const list of [manifest.buffers, manifest.images]) {
       if (!Array.isArray(list)) continue;
-      for (const entry of list) if (typeof entry?.uri === "string") await addAvailable(primary, entry.uri, true);
+      if (list.length > MAX_DEPENDENCIES) throw new Error("The model has too many resource references.");
+      for (const [index, entry] of list.entries()) if (typeof entry?.uri === "string") {
+        const path = await addAvailable(primary, entry.uri, true);
+        if (path && list === manifest.images) imageFiles.set(index, path);
+      }
+    }
+    if (Array.isArray(manifest.materials)) {
+      if (manifest.materials.length > MAX_DEPENDENCIES || (manifest.textures?.length ?? 0) > MAX_DEPENDENCIES) throw new Error("The model has too many materials or textures.");
+      for (const [index, value] of manifest.materials.entries()) {
+        if (!value || typeof value !== "object") continue;
+        const material = typeof value.name === "string" ? value.name : `Material ${index + 1}`;
+        const pbr = value.pbrMetallicRoughness as Record<string, unknown> | undefined;
+        const bind = (info: unknown, type: ModelMapType) => {
+          const index = (info as { index?: number } | undefined)?.index;
+          if (!Number.isSafeInteger(index) || !Array.isArray(manifest.textures)) return;
+          const image = manifest.textures[index!]?.source;
+          if (Number.isSafeInteger(image)) addMap(imageFiles.get(image!), type, material);
+        };
+        bind(pbr?.baseColorTexture, "basecolor");
+        bind(pbr?.metallicRoughnessTexture, "metalness");
+        bind(pbr?.metallicRoughnessTexture, "roughness");
+        bind(value.normalTexture, "normal");
+        bind(value.occlusionTexture, "ao");
+        bind(value.emissiveTexture, "emissive");
+        if (["MASK", "BLEND"].includes(String(value.alphaMode))) bind(pbr?.baseColorTexture, "opacity");
+      }
     }
   } else if (extension === ".obj") {
-    const source = await readManifest(primary);
+    const source = await readManifest(primary, false, signal);
     const materials = new Set<string>();
     for (const match of source.matchAll(/^\s*mtllib[ \t]+([^\r\n]+)$/gim)) {
       const reference = match[1].trim();
@@ -127,6 +172,7 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
       } catch (error) {
         // Some exporters list several space-delimited libraries on one line.
         const names = reference.match(/"[^"]*"|[^\s]+/g) ?? [];
+        if (error instanceof UnsafeDependencyError && missing(error)) continue;
         if (!(error instanceof MissingDependencyError)) throw error;
         if (names.length < 2) {
           if (missing(error)) continue;
@@ -139,20 +185,25 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
       }
     }
     for (const material of materials) {
-      const contents = await readManifest(material);
-      for (const match of contents.matchAll(/^[ \t]*(?:map_\w+|bump|disp|decal|refl|norm)[ \t]+([^\r\n]+)$/gim)) {
-        await addAvailable(material, mtlTexture(match[1]));
+      const contents = await readManifest(material, false, signal);
+      let materialName = basename(material);
+      const types: Record<string, ModelMapType> = { map_kd: "basecolor", map_ka: "unknown", map_ks: "specular", map_ns: "gloss", map_d: "opacity", map_ke: "emissive", map_pr: "roughness", map_pm: "metalness", map_bump: "displacement", bump: "displacement", norm: "normal", disp: "displacement" };
+      for (const match of contents.matchAll(/^[ \t]*(newmtl|map_\w+|bump|disp|decal|refl|norm)[ \t]+([^\r\n]+)$/gim)) {
+        const key = match[1].toLowerCase();
+        if (key === "newmtl") { materialName = match[2].trim(); continue; }
+        const path = await addAvailable(material, mtlTexture(match[2]));
+        addMap(path, types[key] ?? "unknown", materialName, match[1]);
       }
     }
   } else {
     throw new Error("Dependency packaging supports glTF, GLB and OBJ.");
   }
-  return { files: [...files], notes: [...notes] };
+  return { files: [...files], notes: [...notes], maps, complete };
 }
 
-/** Preview can retain available resources; unsafe references still reject the whole request. */
-export function inspectSharedModelDependencies(root: string, primary: string): Promise<SharedModelDependencies> {
-  return listSharedDependencies(root, primary, true);
+/** Preview omits and reports missing/unsafe references; only validated resources are returned. */
+export function inspectSharedModelDependencies(root: string, primary: string, signal?: AbortSignal): Promise<SharedModelDependencies> {
+  return listSharedDependencies(root, primary, true, signal);
 }
 
 /** Copying requires a complete, self-contained dependency set. */

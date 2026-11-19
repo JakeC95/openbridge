@@ -1,5 +1,6 @@
 import { open } from "node:fs/promises";
 import { extname } from "node:path";
+import { inspectSharedFbxFacts } from "./shared-fbx-facts";
 
 const MAX_TEXT_BYTES = 24 * 1024 * 1024;
 const MAX_JSON_BYTES = 8 * 1024 * 1024;
@@ -9,7 +10,7 @@ const MAX_JSON_RECORDS = 100_000;
 type Point = [number, number, number];
 
 export interface SharedModelFacts {
-  format: "obj" | "gltf" | "glb" | "unsupported";
+  format: "obj" | "gltf" | "glb" | "fbx" | "unsupported";
   status: "ready" | "limited" | "unsupported";
   /** Counts describe stored geometry, before instancing or subdivision. */
   vertices: number | null;
@@ -18,6 +19,8 @@ export interface SharedModelFacts {
   textureImages: number | null;
   uvCoordinates: number | null;
   normals: number | null;
+  geometryCount?: number;
+  sourceUnits?: { metresPerUnit: number; basis: "FBX UnitScaleFactor" };
   bounds: { min: Point; max: Point; space: "mesh-local"; unit: "metres" | "unknown" } | null;
   materialLibraries: string[];
   mapTypes: string[];
@@ -237,8 +240,9 @@ async function readExactly(file: Awaited<ReturnType<typeof open>>, length: numbe
 export async function inspectSharedModelFacts(path: string, signal?: AbortSignal): Promise<SharedModelFacts> {
   signal?.throwIfAborted();
   const extension = extname(path).toLowerCase();
+  if (extension === ".fbx") return inspectSharedFbxFacts(path, signal);
   if (![".obj", ".gltf", ".glb"].includes(extension)) {
-    return { ...empty("unsupported"), status: "unsupported", notes: ["Geometry metadata inspection supports OBJ and glTF 2.0 files."] };
+    return { ...empty("unsupported"), status: "unsupported", notes: ["Geometry metadata inspection supports OBJ, binary FBX and glTF 2.0 files."] };
   }
   const format = extension.slice(1) as "obj" | "gltf" | "glb";
   const file = await open(path);

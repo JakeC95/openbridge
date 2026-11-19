@@ -56,6 +56,8 @@ const api: OpenBridgeApi = {
   localPreviews: (assetId, indexedPath) => ipcRenderer.invoke("library:previews", assetId, indexedPath),
   sharedLibrary: {
     inspectSelection: (ids, scope) => ipcRenderer.invoke("shared:inspectSelection", ids, scope),
+    inspectionState: () => ipcRenderer.invoke("shared:inspectionState"),
+    inspectScope: scope => ipcRenderer.invoke("shared:inspectScope", scope),
     cancelInspection: () => ipcRenderer.invoke("shared:cancelInspection"),
     onInspectionProgress: callback => {
       const listener = (_event: unknown, progress: SharedCopyProgress) => callback(progress);
@@ -63,6 +65,9 @@ const api: OpenBridgeApi = {
       return () => ipcRenderer.removeListener("shared:inspectionProgress", listener);
     },
     inspectFile: id => ipcRenderer.invoke("shared:inspectFile", id),
+    dependencies: id => ipcRenderer.invoke("shared:dependencies", id),
+    thumbnail: (id, requestId) => ipcRenderer.invoke("shared:thumbnail", id, requestId),
+    cancelThumbnail: requestId => ipcRenderer.invoke("shared:cancelThumbnail", requestId),
     stopScanning: () => ipcRenderer.invoke("shared:stopScanning"),
     variants: id => ipcRenderer.invoke("shared:variants", id),
     organization: id => ipcRenderer.invoke("shared:organization", id),

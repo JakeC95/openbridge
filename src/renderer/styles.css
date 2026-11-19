@@ -6068,3 +6068,136 @@ body {
   border-radius: 4px;
   padding: 8px;
 }
+
+.shared-preview-modes {
+  flex-wrap: wrap;
+}
+.shared-resource-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.shared-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.shared-section-heading h3,
+.shared-resource-section h3,
+.shared-resource-section h4,
+.shared-resource-section p {
+  margin: 0;
+}
+.shared-resource-filter {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.shared-resource-filter input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-deep);
+  color: var(--text);
+}
+.shared-resource-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.shared-resource-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.shared-resource-list li > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.shared-resource-list li > :nth-child(2) {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.shared-map-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.shared-map-card {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+}
+.shared-map-card > span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.shared-map-image,
+.shared-map-unavailable {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-deep);
+  overflow: hidden;
+}
+.shared-map-image {
+  cursor: zoom-in;
+}
+.shared-map-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.shared-map-unavailable {
+  padding: 12px;
+  box-sizing: border-box;
+  color: var(--muted);
+  text-align: center;
+}
+.shared-variant-list {
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.shared-variant-button {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-deep);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.shared-variant-button:hover {
+  background: var(--panel-3);
+}
+.shared-variant-button span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.shared-inline-error {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}

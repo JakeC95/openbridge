@@ -42,6 +42,22 @@ export interface SharedOrganizationOptions {
   collections: string[];
 }
 
+export interface SharedAssetThumbnail {
+  kind?: "hdr" | "geometry";
+  url: string | null;
+  width: number;
+  height: number;
+  panorama: boolean;
+  reason?: string;
+}
+
+export interface SharedAssetDependencies {
+  files: Array<{ name: string; bytes: number }>;
+  maps: Array<{ name: string; type: import("./model-preview").ModelMapType; material: string; role: string; url: string | null }>;
+  notes: string[];
+  complete: boolean;
+}
+
 export interface SharedFileFacts {
   revision: number;
   inspectedAt: number;
@@ -1073,9 +1089,14 @@ export interface OpenBridgeApi {
   localPreviews(assetId: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }>;
   sharedLibrary: {
     inspectSelection(ids: string[], scope: LibraryQuery): Promise<{ inspected: number; cancelled: boolean; failures: Array<{ name: string; message: string }> }>;
+    inspectionState(): Promise<{ progress: SharedCopyProgress | null; failures: Array<{ name: string; message: string }> }>;
+    inspectScope(scope: LibraryQuery): Promise<{ inspected: number; cancelled: boolean; failures: Array<{ name: string; message: string }> }>;
     cancelInspection(): Promise<void>;
     onInspectionProgress(callback: (progress: SharedCopyProgress) => void): () => void;
     inspectFile(id: string): Promise<SharedFileFacts>;
+    dependencies(id: string): Promise<SharedAssetDependencies>;
+    thumbnail(id: string, requestId: string): Promise<SharedAssetThumbnail>;
+    cancelThumbnail(requestId: string): Promise<void>;
     stopScanning(): Promise<void>;
     variants(id: string): Promise<AssetRecord[]>;
     organization(id: string): Promise<SharedAssetOrganization>;

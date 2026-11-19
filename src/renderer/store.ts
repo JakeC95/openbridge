@@ -17,6 +17,7 @@ import type {
   DownloadProgress,
   ExtendedAsset,
   LibraryCounts,
+  LibraryQueryResult,
   LibrarySort,
   PackRef,
   PackSummary,
@@ -56,6 +57,7 @@ function isAssetProvider(value: unknown): value is AssetProvider {
 
 let catalogRequest = 0;
 let libraryRequest = 0;
+let libraryMetadataRefresh: Promise<void> | null = null;
 
 interface Versions {
   app: string;
@@ -210,6 +212,7 @@ interface State {
   search(reset?: boolean): Promise<void>;
   refreshLibrary(force?: boolean): Promise<void>;
   queryLocalLibrary(reset?: boolean): Promise<void>;
+  refreshLocalLibrary(): Promise<void>;
   setLocalQuery(query: string): void;
   setLocalRepo(repo: LocalRepo): void;
   toggleLocalReady(value: string): void;
@@ -1091,6 +1094,47 @@ export const useStore = create<State>((set, get) => ({
       set({ libraryLoading: false });
       get().toast(error instanceof Error ? error.message : String(error), true);
     }
+  },
+
+  async refreshLocalLibrary() {
+    if (libraryMetadataRefresh) return libraryMetadataRefresh;
+    if (get().libraryLoading) return;
+    const requestId = ++libraryRequest;
+    const filters = libraryFilterQuery(get());
+    const signature = JSON.stringify(filters);
+    const loaded = Math.max(300, get().libraryAssets.length);
+    const isCurrent = () => requestId === libraryRequest && signature === JSON.stringify(libraryFilterQuery(get()));
+    const refresh = (async () => {
+      try {
+        const assets: AssetRecord[] = [];
+        let first: LibraryQueryResult | undefined;
+        let last: LibraryQueryResult | undefined;
+        while (assets.length < loaded) {
+          const result = await window.openbridge.queryLibrary({ ...filters,
+            limit: Math.min(300, loaded - assets.length), offset: assets.length,
+            includeFacets: assets.length === 0
+          });
+          if (!isCurrent()) return;
+          first ??= result;
+          last = result;
+          assets.push(...result.assets);
+          if (!result.hasMore || !result.assets.length) break;
+        }
+        if (!first || !last || !isCurrent()) return;
+        const initialPage = first;
+        const finalPage = last;
+        set(state => ({ libraryAssets: assets, libraryCounts: finalPage.counts,
+          libraryTotal: finalPage.counts.all, libraryFilteredTotal: finalPage.total,
+          libraryHasMore: finalPage.hasMore, localCategories: initialPage.categories,
+          localPacks: initialPage.packs, sharedOrganization: initialPage.sharedOrganization ?? state.sharedOrganization
+        }));
+      } catch (error) {
+        if (isCurrent()) get().toast(error instanceof Error ? error.message : String(error), true);
+      }
+    })();
+    libraryMetadataRefresh = refresh;
+    try { await refresh; }
+    finally { if (libraryMetadataRefresh === refresh) libraryMetadataRefresh = null; }
   },
 
   setLocalQuery(localQuery) {

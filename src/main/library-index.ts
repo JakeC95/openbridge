@@ -561,7 +561,10 @@ export class LibraryIndex {
       clauses.push("a.repo = 'shared'", "a.id GLOB ?");
       params.push(`shared:${options.sharedRoot}:*`);
     }
-    if (options.sharedFormat) {
+    if (options.sharedFormat === "viewer") {
+      clauses.push("a.repo = 'shared'", "a.type = '3d'", "a.bytes > 0", "a.bytes <= 100663296",
+        "json_extract(a.tags, '$[0]') IN ('gltf','glb','fbx','obj','usd','usda','usdc','usdz','stl','ply','dae','3mf')");
+    } else if (options.sharedFormat) {
       clauses.push("a.repo = 'shared'", "json_extract(a.tags, '$[0]') = ?");
       params.push(options.sharedFormat);
     }

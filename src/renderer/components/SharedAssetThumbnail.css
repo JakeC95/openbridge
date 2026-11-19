@@ -1,0 +1,5 @@
+.shared-thumbnail { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; overflow: hidden; }
+.shared-thumbnail > img { width: 100%; height: 100%; object-fit: contain; }
+.shared-thumbnail .asset-placeholder { padding: 12px; text-align: center; font-size: 12px; }
+
+.shared-thumbnail-kind { position: absolute; bottom: 8px; right: 8px; padding: 3px 5px; border-radius: 4px; background: rgb(0 0 0 / 65%); color: #ddd; font-size: 10px; pointer-events: none; }

@@ -40,10 +40,12 @@ folders, dependency packaging for more formats, and explicit shared file edits r
 ## Source metadata inspection
 
 Opening a shared asset inspects its source in a separate bounded worker and caches the
-result in the local index. Select up to 500 shared files and choose **Inspect metadata**
+result in the local index. Select up to 500 shared files and choose **Inspect metadata**, or use **Inspect matching files**
+to process the full current shared-folder/filter scope
 to enrich a batch, with progress, per-file errors and **Stop after current file**.
 Unchanged files reuse cached facts; source size/timestamp changes invalidate them.
-The shared roots remain read-only.
+The shared roots remain read-only. Progress and stop controls remain available after navigating
+away from Library and back; completed facts stay cached across app restarts.
 
 - HDR/EXR: pixel dimensions, aspect-ratio projection hint, channel names and precision,
   compression and EXR layout/view information. Inspection reads at most 1 MiB of headers,
@@ -58,6 +60,11 @@ The shared roots remain read-only.
   in mesh-local metres. Only JSON is inspected (at most 8 MiB), without reading external
   buffers or images. Scene transforms, instances, morphs and skinning are excluded from
   these geometry bounds/counts. The inspector explains those limits.
+- Binary FBX: selective source-record inspection for stored geometry/material/image counts,
+  unit-scale evidence and mesh-local bounds. Both 32-bit and 64-bit record layouts are supported.
+  Inspection reads at most 32 MiB, decodes at most 24 MiB of selected arrays and caps individual
+  arrays at 8 MiB. Larger arrays retain labelled declared element counts; their triangles/bounds
+  remain unknown. ASCII FBX remains available in the 3D viewer with limited source metadata.
 - Filename LOD/version tokens are labelled as filename information. Other native model
   formats retain their file facts and show that geometry inspection is unavailable.
 
@@ -68,8 +75,37 @@ ownership, licensing, semantic categories, weather or physically measured scale.
 Model previews retain valid OBJ/glTF dependencies when another referenced file is missing and
 show a missing-resource note. Copying a model package still rejects incomplete dependencies.
 
-The next priorities are local preview/proxy generation for HDR files without thumbnails,
-additional geometry formats, dependency health, and explicit asset-family grouping.
+## Resource browsing and thumbnails
+
+The shared model inspector offers **3D** and **Resources** views, plus a **Render** view when a
+matching source preview exists. Resources lists project-relative dependency files and sizes,
+material names and original map slots, with searchable PNG/JPEG/WebP map cards and fullscreen
+navigation. OBJ/MTL and glTF/GLB references supply map semantics; arbitrary filename matches do
+not create material evidence. Packed glTF textures retain their separate channel roles. Unsupported
+image formats remain listed without pretending a browser preview is available. Missing and unsafe reference
+notes remain visible; preview omits those references while retaining validated resources, and copying requires the full external dependency set.
+
+Shared HDR grid and comparison cards lazily generate genuine tone-mapped PNG thumbnails when
+visible. These use the existing bounded HDR decoder, two pending UI requests, source-identity
+invalidation and cancellation when cards leave view. Generated images have a maximum 512-pixel
+axis and live in a 128 MiB cache beside the local database state. The cache prunes by tracked LRU
+usage. Source files are never modified. Tiled, deep, multipart, multiview and oversized sources
+retain explicit preview-unavailable explanations and their inspectable metadata.
+
+Shared OBJ, FBX, glTF/GLB, STL, PLY and DAE cards can also generate cached **Geometry previews**.
+A separate sandboxed renderer uses the existing camera/framing and neutral lit materials, without
+loading authored texture images or sharing account cookies. It accepts only validated geometry
+resources, blocks network requests, serializes jobs and enforces source-byte, vertex, triangle,
+output and timeout budgets. Generated geometry images use a separate 128 MiB local LRU cache.
+Open the normal 3D viewer for textured inspection. Native DCC files and USD archives require a
+source render or a supported mesh representation for a generated card. The **3D viewer formats**
+format filter selects supported, nonempty source files within the existing 96 MiB viewer limit.
+
+The next priorities are proxies for oversized/special HDR layouts, additional geometry formats,
+broader dependency health and explicit asset-family/preview associations. Native scenes often
+lack an unambiguous render or mesh proxy. Nearby textures, reference photos and repeated generic
+filenames must not be treated as proof of an asset representation. User-confirmed path aliases
+for older authored references and explicit preview associations remain planned.
 Keep geometry metadata separate from runtime preview measurements so scene instances and
 transforms cannot silently change the meaning of a stored metric.
 

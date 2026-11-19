@@ -9,7 +9,7 @@ application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution 
 
 - Branch: `main`, tracking `origin/main`
 - Release tag: `v1.7.1` (published and verified)
-- Current app version: `1.7.1`
+- Current app version: `1.8.0` (release candidate)
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -20,6 +20,24 @@ clears stale ambientCG and OpenHDRI indexing status and shows when Epic sign-in 
 the current session. A cold start and the upgrade from 1.6.3 were verified on Linux. The subsequent
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
+
+## 1.8.0 local asset parity work
+
+- Shared Resources view exposes explicit OBJ/MTL and glTF material-map references, safe map
+  galleries, root-relative dependency file sizes and incomplete-resource notes. Renderer state
+  resets on asset changes. Source directives remain distinct from filename inference.
+- Shared model grid/comparison thumbnails render neutral512px geometry previews in a dedicated
+  sandboxed, isolated renderer with no account session, no external requests and explicit budgets.
+  Actual OBJ/FBX/glTF fixtures, invalidation, cancellation, isolation and recovery are tested.
+- Shared HDR grid/comparison thumbnails generate lazily through a cancellable serialized decoder,
+  capped to 512 pixels per axis, in a 128 MiB LRU cache under local database state.
+- Binary FBX facts support 32/64-bit record offsets, selective bounded reads/decompression and
+  explicit source-unit evidence. Capped arrays retain labelled declared counts, not invented
+  decoded bounds/triangles. Facts revision is now 2 so old FBX unsupported cache entries refresh.
+- Inspect matching files covers the full shared filter scope with progress, cancellation after
+  the current file and navigation-safe status. Completed per-file facts persist.
+- Shared regression fixtures include real MTL/PNG map browsing, HDR card generation and scope
+  selection. New FBX and thumbnail tests run on Windows/Linux via test:shared-facts.
 
 ## 1.7.1 shared source facts and Linux state
 

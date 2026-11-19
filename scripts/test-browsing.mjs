@@ -205,6 +205,64 @@ try {
     assert.equal(index.query({ sort: "name", limit: 1 }).assets[0].id, "bark");
     assert.equal(index.query({ sort: "name", limit: 1, offset: 1 }).assets[0].id, "fern");
   });
+  const pagedIndex = new LibraryIndex(join(directory, "paged-refresh.sqlite"), logger);
+  const previousStore = useStore.getState();
+  const previousApi = window.openbridge;
+  try {
+    const rows = Array.from({ length: 625 }, (_, value) => makeAsset(`shared:refresh:${value.toString(16).padStart(32, "0")}`, "3d", ["3d"], {
+      name: `Item ${String(value).padStart(4, "0")}`, repo: "shared", tags: ["obj"],
+      technical: { ...assetTechnicalFacts({}), maxTris: value + 1 }
+    }));
+    pagedIndex.upsertMany([...rows, makeAsset("outside-refresh", "3d", ["3d"])].map(asset => ({ asset, folderMtime: 1, jsonMtime: 1 })));
+    useStore.setState({ localProvider: "shared", localQuery: "", localRepo: "all", localType: "3d",
+      localSort: "triangles", localCategoryPath: [], localFavoritesOnly: false, groupSharedVariants: false,
+      sharedRoot: "refresh", sharedFormat: "obj", sharedTag: "", sharedCollection: "", localPack: null,
+      localReady: [], localMaxTris: null, localColor: "", localState: "", localInterior: "", libraryLoading: false });
+    const scope = libraryFilterQuery(useStore.getState());
+    const original = pagedIndex.query({ ...scope, limit: 600 });
+    useStore.setState({ libraryAssets: original.assets, libraryHasMore: true });
+    pagedIndex.saveSharedTechnical(rows[0].id, rows[0].path, { ...rows[0].technical, maxTris: 99999 });
+    const calls = [];
+    window.openbridge = { ...previousApi, queryLibrary: async query => { calls.push(query); return pagedIndex.query(query); } };
+    await useStore.getState().refreshLocalLibrary();
+    check("metadata refresh keeps 600 loaded rows in bounded pages and reapplies their current sort/filter scope", () => {
+      const refreshed = useStore.getState();
+      assert.equal(refreshed.libraryAssets.length, 600);
+      assert.equal(refreshed.libraryHasMore, true);
+      assert.equal(refreshed.libraryFilteredTotal, 625);
+      assert.equal(refreshed.libraryAssets[0].id, rows[0].id);
+      assert.equal(refreshed.libraryAssets[0].technical.maxTris, 99999);
+      assert.deepEqual(refreshed.libraryAssets.map(asset => asset.id), pagedIndex.query({ ...scope, limit: 600 }).assets.map(asset => asset.id));
+      assert.deepEqual(calls.map(query => [query.offset, query.limit]), [[0, 300], [300, 300]]);
+      assert.ok(calls.every(query => query.provider === "shared" && query.sharedRoot === "refresh" && query.sort === "triangles" && query.sharedFormat === "obj"));
+      assert.equal(refreshed.libraryLoading, false);
+    });
+    let release;
+    window.openbridge.queryLibrary = query => new Promise(resolve => { release = () => resolve(pagedIndex.query(query)); });
+    const before = useStore.getState().libraryAssets;
+    const pendingRefresh = useStore.getState().refreshLocalLibrary();
+    useStore.setState({ localQuery: "changed scope" });
+    release();
+    await pendingRefresh;
+    check("background metadata refresh cannot overwrite a newly changed scope", () => {
+      assert.equal(useStore.getState().libraryAssets, before);
+      assert.equal(useStore.getState().localQuery, "changed scope");
+    });
+  } finally { pagedIndex.close(); useStore.setState(previousStore); window.openbridge = previousApi; }
+
+  const stalledLibrary = new LibraryService(() => "", () => "", () => "", () => null, () => null,
+    join(directory, "stalled-preflight.sqlite"), logger);
+  try {
+    let started = false;
+    stalledLibrary.sharedFile = () => { started = true; return new Promise(() => {}); };
+    const pendingInspection = stalledLibrary.inspectSharedMetadata("shared:stalled:" + "0".repeat(32));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(started, true);
+    stalledLibrary.close();
+    await assert.rejects(pendingInspection, { name: "AbortError" });
+    check("closing Library cancels a stalled shared-file preflight before its metadata worker starts", () => {});
+  } finally { stalledLibrary.close(); }
+
   const packFile = join(directory, "fixture-pack.jsonl");
   await writeFile(packFile, [JSON.stringify({ format: "openbridge-catalog-metadata", version: 1 }),
     ...assets.slice(0, 3).map(asset => JSON.stringify({ id: asset.id, name: asset.name,
@@ -464,6 +522,9 @@ try {
     check("a missing MTL map preserves valid referenced textures outside the model directory for preview", () => {
       assert.equal(availableDependencies.files.length, 3);
       assert.ok(availableDependencies.files.includes(canonicalTexture));
+      assert.equal(availableDependencies.complete, false);
+      assert.deepEqual(availableDependencies.maps.map(map => ({ type: map.type, material: map.material, role: map.role })),
+        [{ type: "basecolor", material: "Wood", role: "map_Kd" }]);
       assert.equal(availableDependencies.notes.length, 1);
       assert.match(availableDependencies.notes[0], /Missing\.png/);
       const validTextureUrl = new URL("../Textures/Wood%20%23%20colour.png", incompleteManifest.meshes[0].mtlUrl).href;
@@ -476,6 +537,30 @@ try {
       assert.deepEqual(incompleteCopies, []);
     });
     await writeFile(materialFile, completeMaterial);
+    const resources = await shared.sharedDependencies(chair.id);
+    const localMaps = await shared.previews(chair.id);
+    check("shared resources retain explicit MTL semantics and expose only referenced browser maps", () => {
+      assert.equal(resources.complete, true);
+      assert.equal(resources.files.length, 3);
+      assert.equal(resources.maps[0].type, "basecolor");
+      assert.equal(resources.maps[0].material, "Wood");
+      assert.match(resources.maps[0].name, /Textures\/Wood # colour.png$/);
+      assert.ok(resources.maps[0].url.startsWith("file:"));
+      assert.equal(localMaps.maps.length, 1);
+      assert.equal(localMaps.maps[0].map.type, "basecolor");
+      assert.ok(!resources.files.some(file => file.name.startsWith("../")));
+    });
+    await writeFile(materialFile, "newmtl Wood\nmap_Kd -s 1 1 1 ../Textures/Wood # colour.png\nmap_Bump Q:/authoring/private/height.png\n");
+    const portablePreview = await api.inspectSharedModelDependencies(sharedRoot, model);
+    check("authored absolute references are omitted without hiding valid local material maps", () => {
+      assert.equal(portablePreview.maps.length, 1);
+      assert.equal(portablePreview.maps[0].type, "basecolor");
+      assert.equal(portablePreview.complete, false);
+      assert.ok(!portablePreview.files.some(file => file.includes("authoring")));
+      assert.match(portablePreview.notes[0], /absolute or remote/);
+    });
+    await assert.rejects(() => api.copySharedModelPackage(sharedRoot, model, copyRoot), /absolute or remote/);
+    await writeFile(materialFile, completeMaterial);
     const copied = await api.copySharedModelPackage(sharedRoot, model, copyRoot);
     check("shared OBJ package preserves relative MTL and texture paths", () => assert.equal(copied.files, 3));
     assert.equal(await readFile(join(copied.folder, "Textures", "Wood # colour.png"), "utf8"), "fixture texture");
@@ -483,13 +568,25 @@ try {
     const unsafe = join(nested, "Unsafe.gltf");
     await writeFile(unsafe, JSON.stringify({ buffers: [{ uri: "../../outside.bin" }] }));
     await assert.rejects(() => api.listSharedModelPackage(sharedRoot, unsafe), /outside its shared root/);
-    await assert.rejects(() => api.inspectSharedModelDependencies(sharedRoot, unsafe), /outside its shared root/);
+    const escapedPreview = await api.inspectSharedModelDependencies(sharedRoot, unsafe);
+    assert.deepEqual(escapedPreview.files, [await realpath(unsafe)]);
+    assert.equal(escapedPreview.complete, false);
+    assert.match(escapedPreview.notes[0], /outside its shared root/);
     await rm(unsafe);
     await writeFile(join(nested, "model.bin"), "mesh data");
     const gltf = join(nested, "Fixture.gltf");
     await writeFile(gltf, JSON.stringify({ buffers: [{ uri: "model.bin" }], images: [{ uri: "data:image/png;base64,eA==" }] }));
+    await writeFile(gltf, JSON.stringify({ buffers: [{ uri: "model.bin" }],
+      images: [{ uri: "../Textures/Wood%20%23%20colour.png" }, { uri: "data:image/png;base64,eA==" }],
+      textures: [{ source: 0 }], materials: [{ name: "Packed PBR", pbrMetallicRoughness: { metallicRoughnessTexture: { index: 0 } }, normalTexture: { index: 0 } }] }));
+    const gltfResources = await api.inspectSharedModelDependencies(sharedRoot, gltf);
+    check("glTF material slots preserve packed map channel assignments without filename guesses", () => {
+      assert.deepEqual(gltfResources.maps.map(map => map.type), ["metalness", "roughness", "normal"]);
+      assert.ok(gltfResources.maps.every(map => map.material === "Packed PBR"));
+      assert.equal(gltfResources.complete, true);
+    });
     const gltfFiles = await api.listSharedModelPackage(sharedRoot, gltf);
-    const gltfExpected = await Promise.all([gltf, join(nested, "model.bin")].map(file => realpath(file)));
+    const gltfExpected = await Promise.all([gltf, join(nested, "model.bin"), texture].map(file => realpath(file)));
     check("shared glTF package includes local buffers and rejects escaping references", () =>
       assert.deepEqual(gltfFiles, gltfExpected));
     const glb = join(nested, "Fixture.glb");
@@ -509,7 +606,10 @@ try {
       await symlink(external, linked);
       await writeFile(gltf, JSON.stringify({ buffers: [{ uri: "linked.bin" }] }));
       await assert.rejects(() => api.listSharedModelPackage(sharedRoot, gltf), /linked model dependency/);
-      await assert.rejects(() => api.inspectSharedModelDependencies(sharedRoot, gltf), /linked model dependency/);
+      const linkedPreview = await api.inspectSharedModelDependencies(sharedRoot, gltf);
+      assert.deepEqual(linkedPreview.files, [await realpath(gltf)]);
+      assert.equal(linkedPreview.complete, false);
+      assert.match(linkedPreview.notes[0], /linked model dependency/);
     }
     await rm(gltf);
     await rm(glb);
@@ -596,7 +696,7 @@ try {
   await mkdir(factsImageRoot);
   const factsModel = join(factsRoot, "Fixture_LOD2_v003.obj");
   const factsHdr = join(factsImageRoot, "Panorama.hdr");
-  const factsNative = join(factsRoot, "Native.fbx");
+  const factsNative = join(factsRoot, "Native.mb");
   const factsSource = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nusemtl Paint\nf 1 2 3 4\n";
   await writeFile(factsModel, factsSource);
   await writeFile(factsHdr, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 32 +X 64\n");
@@ -614,7 +714,13 @@ try {
     await factsLibrary.snapshot(true);
     const sourceAsset = factsLibrary.query({ provider: "shared", sharedFormat: "obj" }).assets[0];
     const imageAsset = factsLibrary.query({ provider: "shared", sharedFormat: "hdr" }).assets[0];
-    const nativeAsset = factsLibrary.query({ provider: "shared", sharedFormat: "fbx" }).assets[0];
+    const nativeAsset = factsLibrary.query({ provider: "shared", sharedFormat: "mb" }).assets[0];
+    check("shared viewer-format filtering excludes native scenes and HDR images without reading sources", () => {
+      const viewer = factsLibrary.query({ provider: "shared", sharedFormat: "viewer" });
+      assert.equal(viewer.total, 1);
+      assert.equal(viewer.assets[0].id, sourceAsset.id);
+      assert.deepEqual(factsLibrary.ids({ provider: "shared", sharedFormat: "viewer" }), [sourceAsset.id]);
+    });
     const pendingFacts = factsLibrary.inspectSharedMetadata(sourceAsset.id);
     assert.equal(factsLibrary.inspectSharedMetadata(sourceAsset.id), pendingFacts);
     const modelFacts = await pendingFacts;

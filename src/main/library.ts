@@ -1,9 +1,11 @@
+import { withAbort } from "./abortable";
+import { inspectSharedModelDependencies } from "./shared-package";
 import { inspectSharedFileFacts, SHARED_FACTS_REVISION } from "./shared-file-facts";
 import type { SharedFileFacts } from "../shared/types";
 import { isInside, resolveSharedFile, scanSharedRoot, sharedRootId, variantFamily } from "./shared-library";
-import type { SharedAssetOrganization, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
+import type { SharedAssetOrganization, SharedAssetDependencies, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
 import { realpath, readdir, readFile, rm, stat } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
   AssetJson,
@@ -1159,11 +1161,12 @@ export class LibraryService {
     if (pending) return pending;
     const result = this.fileInspectionQueue.catch(() => {}).then(async () => {
       if (this.closed) throw new Error("The Library is closed.");
-      const { asset, path } = await this.sharedFile(id);
-      const current = await stat(path);
+      const request = AbortSignal.any([this.fileInspectionAbort.signal, AbortSignal.timeout(45_000)]);
+      const { asset, path } = await withAbort(() => this.sharedFile(id), request);
+      const current = await withAbort(() => stat(path), request);
       const cached = asset.technical?.local;
       if (cached?.revision === SHARED_FACTS_REVISION && cached.bytes === current.size && cached.mtimeMs === current.mtimeMs) return cached;
-      const facts = await inspectSharedFileFacts(path, this.fileInspectionAbort.signal);
+      const facts = await inspectSharedFileFacts(path, request);
       const technical = assetTechnicalFacts({ id: asset.id, name: asset.name });
       technical.local = facts;
       if (facts.image) technical.resolution = Math.max(facts.image.width, facts.image.height);
@@ -1255,6 +1258,36 @@ export class LibraryService {
     return this.index.ids(options);
   }
 
+  async sharedDependencies(id: string): Promise<SharedAssetDependencies> {
+    const request = AbortSignal.any([this.fileInspectionAbort.signal, AbortSignal.timeout(30_000)]);
+    return withAbort(() => this.readSharedDependencies(id, request), request);
+  }
+
+  private async readSharedDependencies(id: string, signal: AbortSignal): Promise<SharedAssetDependencies> {
+    signal.throwIfAborted();
+    const { asset, path } = await this.sharedFile(id);
+    const registered = this.getSharedRoots().find(root => root.id === sharedRootId(id));
+    if (!registered) throw new Error("This shared root is no longer registered.");
+    const root = await realpath(registered.path);
+    const name = (file: string) => relative(root, file).split(sep).join("/");
+    const supported = /\.(obj|gltf|glb)$/i.test(path);
+    const result = supported ? await inspectSharedModelDependencies(root, path, signal) : {
+      files: [path], maps: [], complete: false,
+      notes: [asset.type === "hdri" ? "This is an individual HDR image source." : "Dependency inspection currently supports OBJ and glTF/GLB. This file can still be opened in its associated application."]
+    };
+    const files: SharedAssetDependencies["files"] = [];
+    // Bound filesystem concurrency on shared mounts.
+    for (let offset = 0; offset < result.files.length; offset += 8) {
+      signal.throwIfAborted();
+      files.push(...await Promise.all(result.files.slice(offset, offset + 8).map(async file => ({ name: name(file), bytes: (await stat(file)).size }))));
+    }
+    signal.throwIfAborted();
+    return { files, notes: result.notes, complete: result.complete, maps: result.maps.map(map => ({
+      name: name(map.path), type: map.type, material: map.material, role: map.role,
+      url: /\.(png|jpe?g|webp)$/i.test(map.path) ? pathToFileURL(map.path).href : null
+    })) };
+  }
+
   async previews(id: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }> {
     const asset = indexedPath ? this.index.getByIds([id]).find(item => item.path === indexedPath) : this.index.getById(id);
     if (!asset) throw new Error("Local asset is no longer indexed. Rescan the library.");
@@ -1264,6 +1297,13 @@ export class LibraryService {
       if (asset.preview) {
         const path = await resolveSharedFile(asset, this.getSharedRoots(), asset.preview).catch(() => "");
         if (path) renders.push({ type: "render", label: basename(path), url: pathToFileURL(path).href, panorama: false });
+      }
+      if (asset.type !== "hdri" && /\.(obj|gltf|glb)$/i.test(asset.path)) {
+        const resources = await this.sharedDependencies(id).catch(() => null);
+        for (const map of resources?.maps ?? []) if (map.url) maps.push({
+          type: map.type, label: `${map.material} · ${map.role} · ${basename(map.name)}`, url: map.url,
+          map: { type: map.type, referenceUri: map.name }
+        });
       }
       return { renders, maps };
     }

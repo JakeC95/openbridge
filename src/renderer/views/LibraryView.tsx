@@ -1,3 +1,4 @@
+import { SharedAssetThumbnail } from "../components/SharedAssetThumbnail";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { assetCountLabel, readinessBadges, typeLabel } from "../catalog-utils";
@@ -84,6 +85,7 @@ export function LibraryView() {
   const repo = useStore(state => state.localRepo);
   const setRepo = useStore(state => state.setLocalRepo);
   const queryLocalLibrary = useStore(state => state.queryLocalLibrary);
+  const refreshLocalLibrary = useStore(state => state.refreshLocalLibrary);
   const localReady = useStore(state => state.localReady);
   const localMaxTris = useStore(state => state.localMaxTris);
   const localColor = useStore(state => state.localColor);
@@ -113,8 +115,39 @@ export function LibraryView() {
   const cancellingHealth = useRef(false);
   const [healthProgress, setHealthProgress] = useState<{ checked: number; total: number; percent: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const lastRefreshedInspection = useRef(0);
   const [inspectionProgress, setInspectionProgress] = useState<SharedCopyProgress | null>(null);
   const [inspectionFailures, setInspectionFailures] = useState<Array<{ name: string; message: string }>>([]);
+  useEffect(() => {
+    let active = true;
+    void window.openbridge.sharedLibrary.inspectionState().then(state => {
+      if (active) {
+        setInspectionProgress(state.progress); setInspectionFailures(state.failures);
+        lastRefreshedInspection.current = state.progress?.completed ?? 0;
+        void refreshLocalLibrary();
+      }
+    }).catch(() => {});
+    const dispose = window.openbridge.sharedLibrary.onInspectionProgress(progress => {
+      setInspectionProgress(progress);
+    });
+    return () => { active = false; dispose(); };
+  }, [refreshLocalLibrary]);
+  useEffect(() => {
+    if (!inspectionProgress) return;
+    let active = true;
+    const timer = setInterval(() => {
+      void window.openbridge.sharedLibrary.inspectionState().then(state => {
+        if (!active) return;
+        setInspectionProgress(state.progress);
+        setInspectionFailures(state.failures);
+        if ((!state.progress || state.progress.completed !== lastRefreshedInspection.current) && !useStore.getState().libraryLoading) {
+          lastRefreshedInspection.current = state.progress?.completed ?? 0;
+          void refreshLocalLibrary();
+        }
+      }).catch(() => {});
+    }, 2000);
+    return () => { active = false; clearInterval(timer); };
+  }, [Boolean(inspectionProgress), refreshLocalLibrary]);
   const [copyProgress, setCopyProgress] = useState<SharedCopyProgress | null>(null);
   const [copyReport, setCopyReport] = useState<SharedCopyReport | null>(null);
   const [copyStopping, setCopyStopping] = useState(false);
@@ -122,6 +155,12 @@ export function LibraryView() {
   const bodyRef = useRef<HTMLDivElement>(null);
   useBrowseScroll(bodyRef, "library", JSON.stringify(libraryFilterQuery(useStore.getState())));
   const firstQuery = useRef(true);
+  const filterSignature = JSON.stringify(libraryFilterQuery(useStore.getState()));
+  const settledFilters = useRef(filterSignature);
+  const filterRequest = useRef(0);
+  const [pendingFilters, setPendingFilters] = useState(false);
+  // Retained cards belong to the old scope until its replacement query finishes.
+  const selectionPending = pendingFilters || loading || settledFilters.current !== filterSignature;
 
   useEffect(() => {
     return window.openbridge.onLibraryHealthProgress(setHealthProgress);
@@ -132,36 +171,23 @@ export function LibraryView() {
       firstQuery.current = false;
       return;
     }
+    const generation = ++filterRequest.current;
+    let active = true;
+    setPendingFilters(true);
     setSelectedIds(new Set());
     const timer = setTimeout(() => {
       bodyRef.current?.scrollTo({ top: 0 });
-      void queryLocalLibrary(true);
+      void queryLocalLibrary(true).finally(() => {
+        if (!active || generation !== filterRequest.current) return;
+        settledFilters.current = filterSignature;
+        setPendingFilters(false);
+      });
     }, 140);
-    return () => clearTimeout(timer);
-  }, [
-    query,
-    repo,
-    localProvider,
-    localType,
-    localCategoryPath,
-    localSort,
-    localFavoritesOnly,
-    favorites,
-    localPack,
-    localReady,
-    localMaxTris,
-    localColor,
-    localState,
-    localInterior,
-    groupSharedVariants,
-    sharedRoot,
-    sharedFormat,
-    sharedTag,
-    sharedCollection,
-    queryLocalLibrary
-  ]);
+    return () => { active = false; clearTimeout(timer); };
+  }, [filterSignature, queryLocalLibrary]);
 
   function toggleSelected(id: string): void {
+    if (selectionPending) return;
     setSelectedIds(current => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -171,10 +197,11 @@ export function LibraryView() {
   }
 
   function selectVisible(): void {
+    if (selectionPending) return;
     setSelectedIds(new Set(assets.map(asset => asset.id)));
   }
   async function selectAllFiltered(): Promise<void> {
-    if (selectingAll) return;
+    if (selectingAll || selectionPending) return;
     setSelectingAll(true);
     try {
       const filters = libraryFilterQuery(useStore.getState());
@@ -207,19 +234,20 @@ export function LibraryView() {
   const includesShared = [...selectedIds].some(id => id.startsWith("shared:"));
   const onlyShared = includesShared && [...selectedIds].every(id => id.startsWith("shared:"));
 
-  async function inspectSelectedShared() {
-    if (!onlyShared || selectedIds.size > 500 || inspectionProgress) return;
+  async function inspectSelectedShared(scope = false) {
+    if (inspectionProgress || (scope ? localProvider !== "shared" || !total : !onlyShared || selectedIds.size > 500)) return;
     setInspectionFailures([]);
-    setInspectionProgress({ completed: 0, total: selectedIds.size });
-    const dispose = window.openbridge.sharedLibrary.onInspectionProgress(setInspectionProgress);
+    setInspectionProgress({ completed: 0, total: scope ? total : selectedIds.size });
     try {
-      const report = await window.openbridge.sharedLibrary.inspectSelection([...selectedIds], libraryFilterQuery(useStore.getState()));
+      const query = libraryFilterQuery(useStore.getState());
+      const report = await (scope ? window.openbridge.sharedLibrary.inspectScope(query)
+        : window.openbridge.sharedLibrary.inspectSelection([...selectedIds], query));
       setInspectionFailures(report.failures);
-      await queryLocalLibrary(true);
+      await refreshLocalLibrary();
       toast(`${report.cancelled ? "Stopped after" : "Inspected"} ${report.inspected} shared files`);
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
-    } finally { dispose(); setInspectionProgress(null); }
+    } finally { setInspectionProgress(null); }
   }
 
   async function copySelectedShared() {
@@ -468,6 +496,10 @@ export function LibraryView() {
                 </button>
               </>
             )}
+            {localProvider === "shared" && <button type="button" className="btn btn-ghost"
+              disabled={!total || Boolean(inspectionProgress)} onClick={() => void inspectSelectedShared(true)}>
+              Inspect matching files
+            </button>}
             <button type="button" className="btn btn-ghost" onClick={() => void refreshLibrary(true)}>
               Rescan
             </button>
@@ -515,7 +547,7 @@ export function LibraryView() {
           {localProvider === "shared" && (organization.formats.length > 0 || sharedFormat) && (
             <Dropdown className="filter-select" value={sharedFormat} ariaLabel="Shared file format"
               onChange={value => useStore.getState().setSharedFormat(value)}
-              options={[{ value: "", label: "All formats" }, ...organization.formats.map(format => ({ value: format, label: format.toUpperCase() }))]} />
+              options={[{ value: "", label: "All formats" }, { value: "viewer", label: "3D viewer formats" }, ...organization.formats.map(format => ({ value: format, label: format.toUpperCase() }))]} />
           )}
           {localProvider === "shared" && (organization.tags.length > 0 || sharedTag) && (
             <Dropdown className="filter-select" value={sharedTag} ariaLabel="Shared tag"
@@ -611,7 +643,8 @@ export function LibraryView() {
         </div>}
         {inspectionFailures.length > 0 && <details className="error-box">
           <summary>{inspectionFailures.length} files could not be inspected</summary>
-          {inspectionFailures.map((item, index) => <p key={index}>{item.name}: {item.message}</p>)}
+          {inspectionFailures.slice(0, 100).map((item, index) => <p key={index}>{item.name}: {item.message}</p>)}
+          {inspectionFailures.length > 100 && <p>Showing the first 100 failures.</p>}
         </details>}
         {copyProgress && <div className="poliigon-indexing" role="status">
           <span>Copying shared assets · {copyProgress.completed} of {copyProgress.total} processed</span>
@@ -646,13 +679,13 @@ export function LibraryView() {
             </div>
             <div className="bulk-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>
-              <button type="button" className="text-btn" onClick={selectVisible}>
+              <button type="button" className="text-btn" disabled={selectionPending} onClick={selectVisible}>
                 Select loaded
               </button>
               <button
                 type="button"
                 className="text-btn"
-                disabled={selectingAll || total === 0}
+                disabled={selectionPending || selectingAll || total === 0}
                 onClick={() => void selectAllFiltered()}
               >
                 {selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()}`}
@@ -709,9 +742,11 @@ export function LibraryView() {
           onToggle={selectMode ? path => { const asset = assets.find(item => item.path === path); if (asset) toggleSelected(asset.id); } : undefined}
           items={assets.map(asset => ({
           key: asset.path, id: asset.id, name: asset.name, type: typeLabel(asset.type), dimensions: asset.technical?.dimensions,
+          previewFallback: asset.repo === "shared" ? <SharedAssetThumbnail asset={asset} /> : undefined,
           image: asset.preview ? window.openbridge.toFileUrl(asset.preview) : null, technical: asset.technical,
           category: asset.categories?.slice(0, 2).join(" / "), facts: readinessBadges(asset.technical),
-          resolution: asset.technical?.resolution ? `${asset.technical.resolution / 1024}K` : null,
+          resolution: asset.technical?.local?.image ? `${asset.technical.local.image.width} × ${asset.technical.local.image.height}`
+            : asset.technical?.resolution ? `${asset.technical.resolution / 1024}K` : null,
           status: asset.repo, onOpen: () => void openLocal(asset)
         }))} />}
         {assets.length > 0 && !listView && (
@@ -729,6 +764,7 @@ export function LibraryView() {
                   className={selected ? "asset-card selected" : "asset-card"}
                   key={`${asset.repo}:${asset.id}`}
                   data-asset-id={asset.id}
+                  aria-disabled={selectMode && selectionPending}
                   onClick={() => {
                     if (selectMode) toggleSelected(asset.id);
                     else void openLocal(asset);
@@ -754,11 +790,14 @@ export function LibraryView() {
                     {asset.preview ? (
                       <SmartThumbImage
                         source={window.openbridge.toFileUrl(asset.preview)}
+                        fallbackContent={asset.repo === "shared" ? <SharedAssetThumbnail asset={asset} className="asset-thumb-img hdri-panorama" /> : undefined}
                         direct={typeLabel(asset.type) === "HDRI" && asset.provider !== "openhdri"}
                         crop={asset.provider === "openhdri" ? "top-2-1" : undefined}
                         alt=""
                         className={`${typeLabel(asset.type) === "HDRI" ? "asset-thumb-img hdri-panorama" : "asset-thumb-img"}${asset.provider === "openhdri" ? " openhdri-thumb" : ""}`}
                       />
+                    ) : asset.repo === "shared" ? (
+                      <SharedAssetThumbnail asset={asset} className="asset-thumb-img hdri-panorama" />
                     ) : (
                       <span className="asset-placeholder">{typeLabel(asset.type)}</span>
                     )}

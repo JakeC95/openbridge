@@ -490,17 +490,24 @@ async function loadGeometryFile(
   format: ModelMeshVariant["format"],
   url: string,
   mtlUrl: string | undefined,
-  manager: THREE.LoadingManager
+  manager: THREE.LoadingManager,
+  thumbnailMode = false
 ): Promise<THREE.Object3D | null> {
   if (format === "gltf" || format === "glb") {
     const loader = new GLTFLoader(manager);
+    if (thumbnailMode) loader.register(parser => ({ name: "OpenBridgeGeometryOnly", beforeRoot() {
+      // Material dependencies are lazy: removing primitive bindings prevents image decoding,
+      // including embedded buffer-view and data-URI textures.
+      for (const mesh of parser.json.meshes ?? []) for (const primitive of mesh.primitives ?? []) delete primitive.material;
+      return Promise.resolve();
+    } }));
     const result = await loader.loadAsync(url);
     return result.scene;
   }
   if (format === "fbx") return new FBXLoader(manager).loadAsync(url);
   if (format === "obj") {
     const loader = new OBJLoader(manager);
-    if (mtlUrl) {
+    if (mtlUrl && !thumbnailMode) {
       const materials = await new MTLLoader(manager).loadAsync(mtlUrl);
       materials.preload();
       loader.setMaterials(materials);
@@ -535,7 +542,8 @@ function layoutPartsInRow(group: THREE.Group): void {
 async function loadGeometry(
   mesh: ModelMeshVariant,
   manager: THREE.LoadingManager,
-  signal: { cancelled: boolean }
+  signal: { cancelled: boolean },
+  thumbnailMode = false
 ): Promise<THREE.Object3D | null> {
   if (signal.cancelled) return null;
   if (mesh.parts?.length) {
@@ -543,7 +551,7 @@ async function loadGeometry(
     group.name = mesh.label;
     try {
       for (const part of mesh.parts) {
-        const object = await loadGeometryFile(part.format, part.url, part.mtlUrl, manager);
+        const object = await loadGeometryFile(part.format, part.url, part.mtlUrl, manager, thumbnailMode);
         if (object) {
           if (part.materialKey) object.userData.materialKey = part.materialKey;
           group.add(object);
@@ -557,7 +565,7 @@ async function loadGeometry(
       throw error;
     }
   }
-  return loadGeometryFile(mesh.format, mesh.url, mesh.mtlUrl, manager);
+  return loadGeometryFile(mesh.format, mesh.url, mesh.mtlUrl, manager, thumbnailMode);
 }
 
 interface WireframeEntry {
@@ -972,9 +980,13 @@ export interface ModelViewerProps {
   /** Delayed status shown while a texture/LOD request is still downloading. */
   pendingLabel?: string;
   footerControls?: React.ReactNode;
+  /** Dedicated isolated renderer: geometry only, with neutral materials and no controls. */
+  thumbnailMode?: boolean;
+  onReady?: () => void;
+  onError?: (message: string) => void;
 }
 
-export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClose, onExpand, pendingLabel = "", footerControls }: ModelViewerProps) {
+export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClose, onExpand, pendingLabel = "", footerControls, thumbnailMode = false, onReady, onError }: ModelViewerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1008,7 +1020,9 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     } catch {
-      setError("This desktop session could not start WebGL 2. You can still use the render and map previews.");
+      const message = "This desktop session could not start WebGL 2. You can still use the render and map previews.";
+      setError(message);
+      onError?.(message);
       setLoading(false);
       return;
     }
@@ -1197,7 +1211,12 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     setDecodedSizes("");
     surfaceGeometry.current.clear();
     const manager = new THREE.LoadingManager();
-    if (manifest.allowedFileUrls) {
+    if (thumbnailMode) manager.setURLModifier(value => {
+      if (value.startsWith("blob:") || value.startsWith("data:image/") || /\.(?:png|jpe?g|webp|gif|tga|bmp|tiff?|dds|ktx2?|exr|hdr)(?:[?#]|$)/i.test(value))
+        return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
+      return value;
+    });
+    if (manifest.allowedFileUrls && !thumbnailMode) {
       const allowed = new Set(manifest.allowedFileUrls);
       manager.setURLModifier(value => {
         if (value.startsWith("data:") || value.startsWith("blob:")) return value;
@@ -1219,10 +1238,40 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         const surface = Boolean(manifest.surface) || mesh.format === "sphere";
         await prepareEnvironment(state);
         if (token.cancelled) return;
-        const object = surface ? createSurfaceSphere() : await loadGeometry(mesh, manager, token);
+        const object = surface ? createSurfaceSphere() : await loadGeometry(mesh, manager, token, thumbnailMode);
         if (token.cancelled) { disposeObject(object, true); return; }
         if (!object) return;
         state.model = object;
+        if (thumbnailMode) {
+          const clay = new THREE.MeshStandardMaterial({ color: 0xb7bdc8, roughness: 0.72, metalness: 0, side: THREE.DoubleSide });
+          const originals = new Set<THREE.Material>();
+          let vertices = 0, triangles = 0;
+          object.traverse(child => {
+            if (!(child instanceof THREE.Mesh)) return;
+            const count = child.geometry.getAttribute("position")?.count ?? 0;
+            const instances = child instanceof THREE.InstancedMesh ? child.count : 1;
+            vertices += count * instances;
+            triangles += (child.geometry.index?.count ?? count) / 3 * instances;
+            if (vertices > 2_000_000 || triangles > 4_000_000) throw new Error("Geometry exceeds the thumbnail rendering budget.");
+            for (const material of materialList(child.material)) originals.add(material);
+            child.material = clay;
+          });
+          if (!vertices) throw new Error("This model contains no mesh geometry for a thumbnail.");
+          object.updateMatrixWorld(true);
+          const bounds = new THREE.Box3().setFromObject(object);
+          if (bounds.isEmpty() || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)
+            || bounds.getSize(new THREE.Vector3()).lengthSq() === 0) throw new Error("This model has no finite visible bounds for a thumbnail.");
+          for (const material of originals) {
+            for (const value of Object.values(material)) if (value instanceof THREE.Texture) value.dispose();
+            material.dispose();
+          }
+          state.scene.add(object);
+          frameModel(state);
+          state.render();
+          setLoading(false);
+          requestAnimationFrame(() => requestAnimationFrame(() => { if (!token.cancelled) onReady?.(); }));
+          return;
+        }
         if (surface) state.renderer.domElement.dataset.surfaceUv = "cube";
         state.textures.push(...objectTextures(object));
         // glTF/GLB and USD packages carry their own per-submesh materials and
@@ -1442,6 +1491,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       } catch (cause) {
         if (token.cancelled) return;
         setError(cause instanceof Error ? cause.message : String(cause));
+        onError?.(cause instanceof Error ? cause.message : String(cause));
         setLoading(false);
       }
     };
@@ -1464,7 +1514,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
       for (const texture of current.textures) texture.dispose();
       current.textures = [];
     };
-  }, [manifest, quality, lod, reloadKey]);
+  }, [manifest, quality, lod, reloadKey, thumbnailMode, onReady, onError]);
 
   const resetEnvironment = (): void => {
     const state = stateRef.current;
@@ -1617,6 +1667,8 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     }
     return modelLodLabel(mesh.lod);
   }, [manifest, lod]);
+
+  if (thumbnailMode) return <div ref={hostRef} style={{ width: "100%", height: "100%", background: "#252a33" }} />;
 
   return (
     <div className={`model-viewer ${fullscreen ? "fullscreen" : "inline"}`}>

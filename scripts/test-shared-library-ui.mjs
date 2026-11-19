@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { deflateSync } from "node:zlib";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,11 +12,22 @@ const fixtures = join(root, "Fixture # café");
 const models = join(fixtures, "models");
 const hdris = join(fixtures, "hdris");
 await Promise.all([mkdir(models, { recursive: true }), mkdir(hdris, { recursive: true }), mkdir(profile)]);
-await writeFile(join(models, "Pilot chair.obj"), "v -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n");
+await writeFile(join(models, "Pilot chair.obj"), "mtllib Chair.mtl\nusemtl Paint\nv -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n");
 await writeFile(join(hdris, "Pilot sky.hdr"), Buffer.concat([
   Buffer.from("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2 +X 4\n"),
   Buffer.from(Array.from({ length: 8 }, () => [151, 129, 102, 128]).flat())
 ]));
+function chunk(type, payload) {
+  const name = Buffer.from(type), len = Buffer.alloc(4), crc = Buffer.alloc(4);
+  len.writeUInt32BE(payload.length);
+  let value=0xffffffff;
+  for(const byte of Buffer.concat([name,payload])) { value ^= byte; for(let i=0;i<8;i++) value=(value>>>1)^((value&1)?0xedb88320:0); }
+  crc.writeUInt32BE((value^0xffffffff)>>>0);
+  return Buffer.concat([len,name,payload,crc]);
+}
+const pngHead=Buffer.alloc(13); pngHead.writeUInt32BE(1); pngHead.writeUInt32BE(1,4); pngHead[8]=8; pngHead[9]=6;
+await writeFile(join(models,"Paint color.png"),Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",pngHead),chunk("IDAT",deflateSync(Buffer.from([0,200,120,60,255]))),chunk("IEND",Buffer.alloc(0))]));
+await writeFile(join(models,"Chair.mtl"),"newmtl Paint\nmap_Kd Paint color.png\n");
 const sharedLibraryRoots = [
   { id: "fixture-models", name: "Fixture models", path: models, kind: "models" },
   { id: "fixture-hdris", name: "Fixture HDRIs", path: hdris, kind: "hdris" }
@@ -110,8 +122,22 @@ try {
   console.log("Actual metadata worker persisted model/HDR facts and resolution sorting");
   console.log("Shared OBJ manifest and linear HDR worker decoded fixture data");
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${fixture.chair}"]'))`),"Shared model fixture card was not rendered");
+  await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${fixture.chair}"] .shared-thumbnail img')?.naturalWidth)`),"Shared model card geometry thumbnail did not decode");
+  assert.equal(await evaluate(`document.querySelector('[data-asset-id="${fixture.chair}"] .shared-thumbnail img').naturalWidth`),512);
+  assert.equal(await evaluate(`document.querySelector('[data-asset-id="${fixture.chair}"]').textContent.includes('Geometry preview')`),true);
+  console.log("Visible shared model card rendered its cached geometry thumbnail");
   await evaluate(`document.querySelector('[data-asset-id="${fixture.chair}"]').click()`);
   await until(()=>evaluate(`Boolean(document.querySelector('.drawer .model-viewer-canvas')) && !document.querySelector('.drawer .model-viewer-status')`),"Shared 3D viewer did not finish loading");
+  await evaluate(`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent==='Resources').click()`);
+  await until(()=>evaluate(`document.querySelector('[aria-label="Local resources"]')?.textContent.includes('Paint color.png')`),"Material resources did not load");
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Local resources"]').textContent.includes('Paint')`),true);
+  await until(()=>evaluate(`Boolean(document.querySelector('.shared-map-image img')?.naturalWidth)`),"Material map image did not decode");
+  await evaluate(`document.querySelector('.shared-map-image').click()`);
+  await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer'))`),"Map fullscreen did not open");
+  await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);
+  await until(()=>evaluate(`!document.querySelector('.image-viewer')`),"Fullscreen preview did not close");
+  await evaluate(`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent==='3D').click()`);
+  console.log("Resources displayed actual MTL material/map references and decoded fullscreen map preview");
   await until(()=>evaluate(`Boolean(document.querySelector('.shared-organization input'))`),"Organization controls did not load");
   await evaluate(`(()=>{
     const group=document.querySelector('form.shared-organization');
@@ -131,7 +157,8 @@ try {
   await evaluate(`[...document.querySelectorAll('.drawer button')].find(b=>b.textContent==='Open HDRI viewer').click()`);
   await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer canvas'))`),"HDR exposure canvas did not appear");
   console.log("Actual Library UI rendered model and HDRI previews");
-  await evaluate(`document.querySelector('.image-viewer button[aria-label="Close preview"], .image-viewer button[title="Close preview"]')?.click()`);
+  await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);
+  await until(()=>evaluate(`!document.querySelector('.image-viewer')`),"Fullscreen preview did not close");
   await evaluate(`document.querySelector('.drawer button[title=Close]')?.click()`);
   async function choose(label, option) {
     await until(()=>evaluate(`Boolean(document.querySelector('button[aria-label="${label}"]'))`),`Missing dropdown: ${label}`,8000);
@@ -140,6 +167,20 @@ try {
     await evaluate(`[...document.querySelectorAll('[role=option]')].find(x=>x.textContent.trim()==="${option}").click()`);
   }
   await choose("Local asset source","Shared folders");
+  await choose("Shared library folder","Fixture HDRIs");
+  await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img')?.naturalWidth)`),"Shared HDRI card thumbnail did not decode");
+  const thumbnail=await evaluate(`(()=>{const image=document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img'); return [image.naturalWidth,image.naturalHeight];})()`);
+  assert.deepEqual(thumbnail,[4,2]);
+  const scopeReport=await evaluate(`window.openbridge.sharedLibrary.inspectScope({provider:'shared',sharedRoot:'fixture-hdris',sharedFormat:'hdr'})`);
+  assert.equal(scopeReport.inspected,1);
+  assert.equal(scopeReport.cancelled,false);
+  assert.equal(scopeReport.failures.length,0);
+  assert.equal(await evaluate(`window.openbridge.sharedLibrary.inspectionState().then(state=>state.progress)`),null);
+  await until(()=>evaluate(`[...document.querySelectorAll('.view.library button')].some(button=>button.textContent.trim()==='Inspect matching files'&&!button.disabled)`),"Scope inspection control did not become available");
+  await evaluate(`[...document.querySelectorAll('.view.library button')].find(button=>button.textContent.trim()==='Inspect matching files').click()`);
+  await until(()=>evaluate(`[...document.querySelectorAll('.toast')].some(toast=>toast.textContent.includes('Inspected 1 shared files'))`),"Scope inspection did not report the filtered HDR count");
+  console.log("Inspect matching files honors root/format scope and retains completed status");
+  console.log("Visible shared HDRI card generated its lazy local thumbnail");
   await choose("Shared library folder","Fixture models");
   await choose("Shared file format","OBJ");
   await evaluate(`[...document.querySelectorAll('summary')].find(x=>x.textContent==="Saved searches").click()`);
@@ -156,16 +197,19 @@ try {
   await until(()=>evaluate(`document.querySelector('button[aria-label="Shared library folder"] span')?.textContent==="Fixture models" &&
     document.querySelector('button[aria-label="Shared file format"] span')?.textContent==="OBJ"`),"Saved root and format restored incorrectly");
   console.log("Saved search restored the named root and OBJ format");
+  await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${fixture.chair}"]')) && !document.querySelector('[data-asset-id="${fixture.sky}"]')`),"Restored model grid did not finish updating");
   await evaluate(`[...document.querySelectorAll('.view.library button')].find(x=>x.textContent==="Select").click()`);
+  await until(()=>evaluate(`[...document.querySelectorAll('.view.library button')].some(x=>x.textContent==="Select loaded"&&!x.disabled)`),"Selection did not unlock after the filtered query");
   await evaluate(`[...document.querySelectorAll('.view.library button')].find(x=>x.textContent==="Select loaded").click()`);
   await until(()=>evaluate(`[...document.querySelectorAll('.view.library button')].some(x=>x.textContent==="Copy selected assets" && !x.disabled)`),"Bulk Copy did not become enabled");
+  await evaluate(`document.querySelectorAll('.toast button').forEach(button=>button.click())`);
   await evaluate(`[...document.querySelectorAll('.view.library button')].find(x=>x.textContent==="Inspect metadata").click()`);
   await until(()=>evaluate(`document.querySelector('.toast')?.textContent.includes('Inspected 1')`),"Batch inspection did not report success");
   await evaluate(`[...document.querySelectorAll('.view.library button')].find(x=>x.textContent==="Copy selected assets").click()`);
   await until(()=>evaluate(`document.querySelector('.view.library').textContent.includes("Copy finished · 1 copied")`),"Bulk copy did not report success");
   const batch=(await readdir(destination))[0];
   const assetFolder=(await readdir(join(destination,batch)))[0];
-  assert.match(await readFile(join(destination,batch,assetFolder,"Pilot chair.obj"),"utf8"),/^v -1/);
+  assert.match(await readFile(join(destination,batch,assetFolder,"Pilot chair.obj"),"utf8"),/v -1/);
   console.log("Bulk copy wrote the selected model into its project folder");
   ws.close();
   ok=true;

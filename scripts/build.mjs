@@ -88,8 +88,8 @@ await build({
 
 await build({
   ...shared,
-  entryPoints: ["src/preload/index.ts"],
-  outfile: "out/preload/index.js",
+  entryPoints: ["src/preload/index.ts", "src/preload/model-thumbnail.ts"],
+  outdir: "out/preload",
   platform: "node",
   format: "cjs",
   target: "node22",
@@ -111,6 +111,14 @@ await build({
 });
 
 await cp(join(root, "src/renderer/index.html"), join(out, "renderer/index.html"));
+await build({
+  ...shared,
+  entryPoints: ["src/renderer/thumbnail/main.tsx"],
+  outfile: "out/renderer/thumbnail/thumbnail.js",
+  platform: "browser", format: "iife", target: "chrome120", jsx: "automatic", minify: true,
+  loader: { ".css": "css", ".ttf": "file", ".svg": "dataurl", ".png": "dataurl", ".hdr": "file" }, define
+});
+await cp(join(root, "src/renderer/thumbnail/index.html"), join(out, "renderer/thumbnail/index.html"));
 await cp(join(root, "src/renderer/flags/LICENSE"), join(out, "renderer/flag-icons-LICENSE.txt"));
 console.log("build complete -> out/");
 

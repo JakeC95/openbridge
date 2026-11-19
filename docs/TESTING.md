@@ -232,3 +232,17 @@ uses a disposable profile and synthetic Unicode/space-containing model and HDR r
 It verifies metadata workers and persistence, resolution sorting, 3D/HDR rendering,
 inspector organization, saved root/format searches, batch inspection and project copying.
 It runs on both operating systems in Quality; Linux CI uses Xvfb and software GL.
+
+Shared asset parity coverage also includes binary FBX offset layouts, bounded decompression,
+declared-only large-array facts, unit evidence, source-record counts and malformed records.
+HDR thumbnail fixtures verify actual tone-mapped PNG pixels, content encoding detection,
+identity invalidation, cancellation isolation, output-axis limits and cache eviction.
+The real shared Library UI fixture exercises MTL resources/map fullscreen browsing, generated
+HDR card thumbnails and full-scope inspection filtered to one registered root and format.
+
+`npm run test:model-thumbnail:ui` runs after build in an isolated Electron process/profile.
+It verifies nonblank OBJ/FBX/glTF geometry images, neutral material mode with missing source
+images, renderer sandbox/session isolation, denied external file/network requests, source and
+buffer invalidation, source-byte/geometry/output budgets, cancellation and renderer-error recovery.
+It also simulates a stalled filesystem preflight and proves the queue recovers without creating
+a late renderer. Quality runs it on Windows and through Xvfb/software GL on Linux.

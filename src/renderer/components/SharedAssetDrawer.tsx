@@ -1,9 +1,26 @@
-import { useCallback, useEffect, useState } from "react";
-import type { AssetRecord, MapPreview, SharedHdrInfo, SharedFileFacts } from "../../shared/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AssetRecord, MapPreview, SharedHdrInfo, SharedFileFacts, SharedAssetDependencies } from "../../shared/types";
 import { CloseIcon } from "../icons";
 import { useStore } from "../store";
 import { ImageViewer } from "./ImageViewer";
 import { ModelPreviewPanel } from "./ModelViewer";
+
+const mapNames: Record<string, string> = {
+  basecolor: "Base color", albedo: "Base color", normal: "Normal", roughness: "Roughness",
+  metalness: "Metalness", opacity: "Opacity / alpha", emissive: "Emissive", ao: "Ambient occlusion",
+  orm: "Packed ORM", gloss: "Gloss", displacement: "Displacement", specular: "Specular", translucency: "Translucency"
+};
+function bytesLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes.toLocaleString()} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KiB`;
+  return `${(bytes / 1024 ** 2).toLocaleString(undefined, { maximumFractionDigits: 1 })} MiB`;
+}
+function variantLabel(variant: AssetRecord): string {
+  const lod = variant.technical?.local?.lod ?? /(?:^|[._ -])lod(\d+)(?:[._ -]|$)/i.exec(variant.name)?.[1];
+  const version = variant.technical?.local?.version;
+  return [variant.tags[0]?.toUpperCase(), lod !== undefined ? `LOD${lod}` : "", version ? `v${version}` : "",
+    variant.sizeBytes === undefined ? "" : bytesLabel(variant.sizeBytes)].filter(Boolean).join(" · ");
+}
 
 export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const close = useStore(state => state.closeSelection);
@@ -13,10 +30,24 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const [image, setImage] = useState<MapPreview | null>(null);
   const [facts, setFacts] = useState<SharedFileFacts | null>(asset.technical?.local ?? null);
   const [factsError, setFactsError] = useState("");
+  const [factsLoading, setFactsLoading] = useState(false);
+  const [inspectionRequest, setInspectionRequest] = useState(0);
   const [hdr, setHdr] = useState<SharedHdrInfo | null>(null);
   const [problem, setProblem] = useState("");
-  const [view, setView] = useState<"render" | "model">(asset.preview ? "render" : "model");
-  const [item, setItem] = useState<MapPreview | null>(null);
+  const [view, setView] = useState<"render" | "model" | "resources">(asset.preview ? "render" : "model");
+  const [viewerItems, setViewerItems] = useState<MapPreview[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [resources, setResources] = useState<SharedAssetDependencies | null>(null);
+  const [failedMapUrls, setFailedMapUrls] = useState<Set<string>>(() => new Set());
+  const [resourcesLoading, setResourcesLoading] = useState(false);
+  const [resourcesError, setResourcesError] = useState("");
+  const [resourcesRetry, setResourcesRetry] = useState(0);
+  const [resourceQuery, setResourceQuery] = useState("");
+  const [variantQuery, setVariantQuery] = useState("");
+  const [variantsError, setVariantsError] = useState("");
+  const currentAsset = useRef(asset.id);
+  currentAsset.current = asset.id;
+  const showImage = (preview: MapPreview) => { setViewerIndex(0); setViewerItems([preview]); };
   const [copying, setCopying] = useState(false);
   const [variants, setVariants] = useState<AssetRecord[]>([]);
   const [organization, setOrganization] = useState({ tags: "", collections: "", notes: "" });
@@ -26,22 +57,29 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
 
   useEffect(() => {
     let current = true;
-    setFacts(asset.technical?.local ?? null);
-    setFactsError("");
+    setOrganizationReady(false);
+    setOrganization({ tags: "", collections: "", notes: "" });
+    setOrganizationBusy(false);
+    setView(asset.preview ? "render" : "model");
+    setViewerItems([]);
+    setVariants([]);
+    setVariantsError("");
+    setVariantQuery("");
+    setResources(null);
+    setFailedMapUrls(new Set());
+    setResourceQuery("");
+    setResourcesError("");
     setProblem("");
     setImage(null);
     setHdr(null);
     void window.openbridge.localPreviews(asset.id, asset.path).then(result => {
-      if (current) setImage(result.renders[0] ?? null);
-    }).catch(() => {});
-    void window.openbridge.sharedLibrary.inspectFile(asset.id).then(result => {
       if (!current) return;
-      setFacts(result);
-      void useStore.getState().queryLocalLibrary(true);
-    }).catch(error => { if (current) setFactsError(error instanceof Error ? error.message : String(error)); });
+      setImage(result.renders[0] ?? null);
+      if (!result.renders.length) setView(previous => previous === "render" ? "model" : previous);
+    }).catch(() => {});
     void window.openbridge.sharedLibrary.variants(asset.id).then(result => {
       if (current) setVariants(result);
-    }).catch(() => {});
+    }).catch(error => { if (current) setVariantsError(error instanceof Error ? error.message : String(error)); });
     void window.openbridge.sharedLibrary.organization(asset.id).then(result => {
       if (!current) return;
       setOrganization({ tags: result.tags.join(", "), collections: result.collections.join(", "), notes: result.notes });
@@ -54,6 +92,56 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     }
     return () => { current = false; };
   }, [asset.id, asset.path, hdrAsset, toast]);
+
+  useEffect(() => {
+    let current = true;
+    setFacts(asset.technical?.local ?? null);
+    setFactsError("");
+    setFactsLoading(true);
+    void window.openbridge.sharedLibrary.inspectFile(asset.id).then(result => {
+      if (!current) return;
+      setFacts(result);
+      void useStore.getState().refreshLocalLibrary();
+    }).catch(error => { if (current) setFactsError(error instanceof Error ? error.message : String(error)); })
+      .finally(() => { if (current) setFactsLoading(false); });
+    return () => { current = false; };
+  }, [asset.id, asset.path, inspectionRequest]);
+
+  useEffect(() => {
+    if (hdrAsset || view !== "resources") return;
+    let current = true;
+    setResourcesLoading(true);
+    setResourcesError("");
+    setFailedMapUrls(new Set());
+    void window.openbridge.sharedLibrary.dependencies(asset.id).then(result => {
+      if (current) setResources(result);
+    }).catch(error => { if (current) setResourcesError(error instanceof Error ? error.message : String(error)); })
+      .finally(() => { if (current) setResourcesLoading(false); });
+    return () => { current = false; };
+  }, [asset.id, hdrAsset, view, resourcesRetry]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || viewerItems.length || document.querySelector(".model-viewer-overlay")) return;
+      if (event.key === "Escape") { event.preventDefault(); close(); return; }
+      if ((event.target as HTMLElement)?.closest("input,textarea,select,button,a,summary,[contenteditable=true]")) return;
+      if (event.altKey && event.key === "ArrowLeft") {
+        event.preventDefault(); useStore.getState().backSelection();
+      } else if (!event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+        event.preventDefault(); useStore.getState().stepSelection(event.key === "ArrowLeft" ? -1 : 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close, viewerItems.length]);
+
+  const previewMaps = useMemo<MapPreview[]>(() => (resources?.maps ?? []).filter(map => Boolean(map.url)).map(map => ({
+    type: map.type, label: [map.material, mapNames[map.type] ?? map.type, map.name].filter(Boolean).join(" · "), url: map.url!
+  })), [resources]);
+  const resourceNeedle = resourceQuery.trim().toLocaleLowerCase();
+  const resourceFiles = resources?.files.filter(file => file.name.toLocaleLowerCase().includes(resourceNeedle)) ?? [];
+  const resourceMaps = resources?.maps.filter(map => `${map.name} ${map.type} ${map.material ?? ""}`.toLocaleLowerCase().includes(resourceNeedle)) ?? [];
+  const visibleVariants = variants.filter(variant => `${variant.name} ${variantLabel(variant)}`.toLocaleLowerCase().includes(variantQuery.trim().toLocaleLowerCase()));
 
   const loadHdrSource = useCallback(async (_item: MapPreview, signal?: AbortSignal) => {
     const cancel = () => void window.openbridge.sharedLibrary.cancelHdr(asset.id).catch(() => {});
@@ -80,6 +168,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   }
 
   async function saveOrganization() {
+    const savingId = asset.id;
     setOrganizationBusy(true);
     try {
       const saved = await window.openbridge.sharedLibrary.saveOrganization(asset.id, {
@@ -87,12 +176,13 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         collections: organization.collections.split(","),
         notes: organization.notes
       });
+      if (currentAsset.current !== savingId) return;
       setOrganization({ tags: saved.tags.join(", "), collections: saved.collections.join(", "), notes: saved.notes });
-      await useStore.getState().queryLocalLibrary(true);
+      await useStore.getState().refreshLocalLibrary();
       toast("Saved local organization");
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
-    } finally { setOrganizationBusy(false); }
+    } finally { if (currentAsset.current === savingId) setOrganizationBusy(false); }
   }
 
   return <>
@@ -112,29 +202,71 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
       <div className="drawer-scroll">
         <h2 className="drawer-title">{asset.name}</h2>
         <p className="drawer-id">{asset.categories.join(" / ")}</p>
-        {!hdrAsset && image && <div className="button-row horizontal">
-          <button type="button" className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("render")}>Render</button>
-          <button type="button" className={view === "model" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("model")}>3D</button>
+        {!hdrAsset && <div className="button-row horizontal shared-preview-modes" role="group" aria-label="Local asset preview">
+          {image && <button type="button" aria-pressed={view === "render"} className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("render")}>Render</button>}
+          <button type="button" className={view === "model" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "model"} onClick={() => setView("model")}>3D</button>
+          <button type="button" aria-pressed={view === "resources"} className={view === "resources" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("resources")}>Resources</button>
         </div>}
-        {((!hdrAsset && view === "model") || image) && <div className="drawer-preview">
+        {((!hdrAsset && view === "model") || (image && (hdrAsset || view === "render"))) && <div className="drawer-preview">
           {!hdrAsset && view === "model" && <ModelPreviewPanel assetId={asset.id} provider="shared" name={asset.name} type={asset.type} />}
-          {image && (hdrAsset || view === "render") && <button type="button" className="expand-preview" onClick={() => setItem(image)}>
-            <img src={image.url} alt={asset.name} />
+          {image && (hdrAsset || view === "render") && <button type="button" className="expand-preview" onClick={() => showImage(image)}>
+            <img src={image.url} alt={asset.name} onError={() => {
+              setImage(null);
+              setView(previous => previous === "render" ? "model" : previous);
+            }} />
           </button>}
         </div>}
-        {hdrAsset && hdr?.previewAvailable && <button type="button" className="btn btn-primary" onClick={() => setItem({
+        {hdrAsset && hdr?.previewAvailable && <button type="button" className="btn btn-primary" onClick={() => showImage({
           type: "HDR", label: `${asset.name} · ${hdr.width} × ${hdr.height}`, url: image?.url ?? "",
           exposure: { assetId: asset.id, mapType: "HDR" }, panorama: hdr.panorama
         })}>{hdr.panorama ? "Open HDRI viewer" : "Open HDR image"}</button>}
         {hdrAsset && (problem || hdr?.reason) && <p className="hint" role="status">{problem || hdr?.reason}</p>}
+        {!hdrAsset && view === "resources" && <section className="shared-resource-section" aria-label="Local resources">
+          <div className="shared-section-heading"><h3>Local resources</h3>
+            <button type="button" className="text-btn" disabled={resourcesLoading} onClick={() => setResourcesRetry(value => value + 1)}>Refresh resources</button>
+          </div>
+          {resourcesLoading && <p className="hint" role="status">Reading material and dependency references…</p>}
+          {resourcesError && <div className="shared-inline-error" role="status"><p className="hint">{resourcesError}</p>
+            <button type="button" className="text-btn" onClick={() => setResourcesRetry(value => value + 1)}>Retry resources</button></div>}
+          {resources && <>
+            <p className="hint">{resources.files.length} available files · {resources.maps.length} map {resources.maps.length === 1 ? "reference" : "references"} · {resources.complete ? "Dependency inspection complete" : "Partial dependency inspection"}</p>
+            {resources.notes.map((note, index) => <p className="hint" key={index}>{note}</p>)}
+            <label className="shared-resource-filter">Filter resource files <input value={resourceQuery} onChange={event => setResourceQuery(event.target.value)} placeholder="Filename, material or map type" /></label>
+            {resourceMaps.length > 0 && <>
+              <h4>Material maps</h4>
+              <div className="shared-map-grid">
+                {resourceMaps.slice(0, 100).map((map, index) => <div className="shared-map-card" key={`${map.name}-${map.type}-${map.material}-${index}`}>
+                  {map.url && !failedMapUrls.has(map.url) ? <button type="button" className="shared-map-image" aria-label={`View ${map.name}`} onClick={() => {
+                    const selected = previewMaps.findIndex(preview => preview.url === map.url && preview.type === map.type);
+                    if (selected >= 0) { setViewerItems(previewMaps); setViewerIndex(selected); }
+                  }}><img loading="lazy" src={map.url} alt={map.name} onError={() => setFailedMapUrls(previous => new Set([...previous, map.url!]))} /></button> : <div className="shared-map-unavailable">Image preview unavailable</div>}
+                  <strong>{mapNames[map.type] ?? map.type}</strong>
+                  <span>{map.material || "Material not specified"}</span>
+                  {map.role && <span>Source slot: {map.role}</span>}
+                  <span title={map.name}>{map.name}</span>
+                </div>)}
+              </div>
+              {resourceMaps.length > 100 && <p className="hint">Showing 100 of {resourceMaps.length} map references. Narrow the filter to see other maps.</p>}
+            </>}
+            <details open><summary>Available source and dependency files ({resourceFiles.length})</summary>
+              <ul className="shared-resource-list">{resourceFiles.slice(0, 100).map(file => <li key={file.name}><span title={file.name}>{file.name}</span><span>{bytesLabel(file.bytes)}</span></li>)}</ul>
+              {resourceFiles.length > 100 && <p className="hint">Showing 100 of {resourceFiles.length} files. Narrow the filter to see other files.</p>}
+            </details>
+            {resourceNeedle && !resourceMaps.length && !resourceFiles.length && <p className="hint" role="status">No resources match this filter.</p>}
+          </>}
+        </section>}
         <div className="technical-grid">
-          <div><span>Format</span><strong>{asset.tags[0]?.toUpperCase()}</strong></div>
-          {asset.sizeBytes !== undefined && <div><span>Size</span><strong>{(asset.sizeBytes / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 })} MiB</strong></div>}
+          <div><span>Format</span><strong>{(facts?.format ?? asset.tags[0])?.toUpperCase() || "Unknown"}</strong></div>
+          {asset.sizeBytes !== undefined && <div><span>Size</span><strong>{bytesLabel(asset.sizeBytes)}</strong></div>}
           {hdr && <div><span>Dimensions</span><strong>{hdr.width} × {hdr.height}</strong></div>}
           <div><span>Modified</span><strong>{new Date(asset.mtime).toLocaleDateString()}</strong></div>
         </div>
         {facts && <section className="shared-organization">
-          <h3>Source facts</h3>
+          <div className="shared-section-heading"><h3>Source facts</h3>
+            <button type="button" className="text-btn" disabled={factsLoading} onClick={() => setInspectionRequest(value => value + 1)}>{factsLoading ? "Inspecting…" : "Refresh facts"}</button>
+          </div>
+          <p className="hint">Read from the source file · {new Date(facts.inspectedAt).toLocaleString()}
+            {facts.model?.status === "limited" ? " · Partial inspection" : facts.model?.status === "unsupported" ? " · Format inspection unavailable" : ""}</p>
           <div className="technical-grid">
             {facts.image && <>
               <div><span>Pixel dimensions</span><strong>{facts.image.width} × {facts.image.height}</strong></div>
@@ -144,10 +276,13 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
               {facts.image.views.length > 0 && <div><span>Views</span><strong>{facts.image.views.join(", ")}</strong></div>}
             </>}
             {facts.model && <>
+              {facts.model.geometryCount !== undefined && <div><span>Stored mesh geometries</span><strong>{facts.model.geometryCount.toLocaleString()}</strong></div>}
+              {facts.model.sourceUnits && <div><span>Metres per source unit</span><strong>{facts.model.sourceUnits.metresPerUnit.toLocaleString(undefined, { maximumSignificantDigits: 8 })}</strong></div>}
               {facts.model.vertices !== null && <div><span>Stored vertices</span><strong>{facts.model.vertices.toLocaleString()}</strong></div>}
               {facts.model.triangles !== null && <div><span>Stored triangles</span><strong>{facts.model.triangles.toLocaleString()}</strong></div>}
               {facts.model.materials !== null && <div><span>Materials</span><strong>{facts.model.materials.toLocaleString()}</strong></div>}
               {facts.model.textureImages !== null && <div><span>Image sources</span><strong>{facts.model.textureImages.toLocaleString()}</strong></div>}
+              {facts.model.normals !== null && <div><span>Stored normals</span><strong>{facts.model.normals.toLocaleString()}</strong></div>}
               {facts.model.uvCoordinates !== null && <div><span>UV coordinates</span><strong>{facts.model.uvCoordinates.toLocaleString()}</strong></div>}
               {facts.model.bounds && <div><span>Mesh-local size</span><strong>{facts.model.bounds.max.map((max, axis) =>
                 (max - facts.model!.bounds!.min[axis]).toLocaleString(undefined, { maximumFractionDigits: 3 })).join(" × ")}
@@ -156,22 +291,33 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
             {facts.lod !== undefined && <div><span>Filename LOD</span><strong>LOD{facts.lod}</strong></div>}
             {facts.version && <div><span>Filename version</span><strong>v{facts.version}</strong></div>}
           </div>
+          {facts.model?.mapTypes.length ? <div><span className="hint">Declared map channels</span><p>{facts.model.mapTypes.map(type => mapNames[type] ?? type).join(", ")}</p></div> : null}
+          {facts.model?.materialLibraries.length ? <details><summary>{facts.model.materialLibraries.length} referenced material libraries</summary>
+            <ul className="shared-resource-list">{facts.model.materialLibraries.map((name, index) => <li key={`${name}-${index}`}><span>{name}</span></li>)}</ul>
+          </details> : null}
           {facts.image?.channels.length ? <details><summary>{facts.image.channels.length} image channels</summary>
             <p className="hint">{facts.image.channels.map(channel => `${channel.name} (${channel.type})`).join(", ")}</p>
           </details> : null}
           {facts.notes.map((note, index) => <p className="hint" key={index}>{note}</p>)}
         </section>}
-        {factsError && <p className="hint" role="status">{factsError}</p>}
+        {!facts && factsLoading && <p className="hint" role="status">Inspecting source file…</p>}
+        {factsError && <div className="shared-inline-error" role="status"><p className="hint">{factsError}</p>
+          <button type="button" className="text-btn" disabled={factsLoading} onClick={() => setInspectionRequest(value => value + 1)}>Retry inspection</button></div>}
         <p className="hint shared-asset-path" title={asset.path}>{asset.path}</p>
-        {variants.length > 0 && <section className="shared-organization">
-          <h3>Possible variants in this folder</h3>
-          <div className="button-row horizontal">
-            {variants.map(variant => <button key={variant.id} type="button" className="btn btn-ghost"
+        {variants.length > 0 && <section className="shared-resource-section">
+          <h3>Possible variants in this folder <span className="hint">({variants.length})</span></h3>
+          <p className="hint">Related filenames; these may be alternate exports or separate assets. LOD and version labels come from filenames.</p>
+          {variants.length > 6 && <label className="shared-resource-filter">Find a variant <input value={variantQuery} onChange={event => setVariantQuery(event.target.value)} placeholder="Name, format or LOD" /></label>}
+          <div className="shared-variant-list">
+            {visibleVariants.slice(0, 100).map(variant => <button key={variant.id} type="button" className="shared-variant-button"
               onClick={() => void useStore.getState().openLocal(variant)}>
-              {variant.name} · {variant.tags[0]?.toUpperCase()}
+              <strong>{variant.name}</strong><span>{variantLabel(variant)}</span>
             </button>)}
           </div>
+          {!visibleVariants.length && <p className="hint" role="status">No variants match this search.</p>}
+          {visibleVariants.length > 100 && <p className="hint">Showing 100 of {visibleVariants.length}. Narrow the variant search to see other files.</p>}
         </section>}
+        {variantsError && <p className="hint" role="status">Could not load nearby variants: {variantsError}</p>}
         {organizationReady && <form className="shared-organization" onSubmit={event => { event.preventDefault(); void saveOrganization(); }}>
           <h3>Organize</h3>
           <label>Tags <input value={organization.tags} placeholder="Comma-separated tags" maxLength={2400}
@@ -192,6 +338,6 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         {copying && <span className="hint" role="status">Copying…</span>}
       </div>
     </aside>
-    {item && <ImageViewer items={[item]} index={0} onIndex={() => {}} onClose={() => setItem(null)} loadHdrSource={loadHdrSource} />}
+    {viewerItems.length > 0 && <ImageViewer items={viewerItems} index={viewerIndex} onIndex={setViewerIndex} onClose={() => setViewerItems([])} loadHdrSource={loadHdrSource} />}
   </>;
 }
