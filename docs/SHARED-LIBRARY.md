@@ -24,9 +24,9 @@ as single files.
 
 The scanner skips hidden folders, archives and cache folders. It scans registered roots in the
 background, publishes new results in batches and preserves the last good index when a share
-goes offline. Use **Stop shared indexing** to stop a long scan. **Rescan** starts another pass
-while keeping results already indexed. Partial scans keep cached results until a full scan
-completes. The pilot checks individual files for zero bytes in the health report.
+goes offline. Use **Stop shared indexing** to pause a long scan and **Rescan** to continue.
+OpenBridge saves a checkpoint in the local index, so a restart on the same mount can continue
+from the last completed batch. Partial scans keep cached results until a full scan completes. The pilot checks individual files for zero bytes in the health report.
 Model previews have a 96 MiB source limit and resolve eligible dependencies beside the model
 or in conventional resource subfolders. HDR previews use the existing 8K and 160 MiB limits.
 Large or native files can be opened in the associated application. Automatic grouping across

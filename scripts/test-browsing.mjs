@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rename, rm, stat, symlink, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rename, rm, stat, symlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
@@ -462,8 +462,9 @@ try {
     const gltf = join(nested, "Fixture.gltf");
     await writeFile(gltf, JSON.stringify({ buffers: [{ uri: "model.bin" }], images: [{ uri: "data:image/png;base64,eA==" }] }));
     const gltfFiles = await api.listSharedModelPackage(sharedRoot, gltf);
+    const gltfExpected = await Promise.all([gltf, join(nested, "model.bin")].map(file => realpath(file)));
     check("shared glTF package includes local buffers and rejects escaping references", () =>
-      assert.deepEqual(gltfFiles, [gltf, join(nested, "model.bin")]));
+      assert.deepEqual(gltfFiles, gltfExpected));
     const glb = join(nested, "Fixture.glb");
     const json = Buffer.from(JSON.stringify({ buffers: [{ uri: "model.bin" }] }));
     const header = Buffer.alloc(20);
@@ -473,7 +474,7 @@ try {
     header.writeUInt32LE(json.length, 12);
     header.writeUInt32LE(0x4e4f534a, 16);
     await writeFile(glb, Buffer.concat([header, json]));
-    assert.deepEqual(await api.listSharedModelPackage(sharedRoot, glb), [glb, join(nested, "model.bin")]);
+    assert.deepEqual(await api.listSharedModelPackage(sharedRoot, glb), [await realpath(glb), gltfExpected[1]]);
     if (process.platform !== "win32") {
       const external = join(directory, "outside.bin");
       const linked = join(nested, "linked.bin");
@@ -552,6 +553,40 @@ try {
       assert.equal(settled.counts.shared, 2);
     });
   } finally { background.close(); }
+  const resumable = { ...roots[0], id: "resumable" };
+  await mkdir(join(resumable.path, "Unfinished"));
+  const cursorPath = join(directory, "cursor-shared.sqlite");
+  const openResumable = () => new LibraryService(() => "", () => "", () => "", () => null, () => null,
+    cursorPath, logger, () => ({}), () => [resumable]);
+  const beforeStop = openResumable();
+  let processed;
+  try {
+    await beforeStop.snapshot(true);
+    processed = beforeStop.query({ provider: "shared" }).assets.map(asset => asset.path);
+  } finally { beforeStop.close(); }
+  const cursor = new LibraryIndex(cursorPath, logger);
+  try {
+    const canonicalRoot = await realpath(resumable.path);
+    const mount = await stat(canonicalRoot);
+    const key = JSON.stringify([resumable, canonicalRoot, mount.dev, mount.ino]);
+    cursor.saveSharedTraversal(resumable.id, key, { pending: ["Unfinished"], partial: false });
+    cursor.markSharedSeen(resumable.id, processed);
+  } finally { cursor.close(); }
+  await writeFile(join(resumable.path, "Deferred.hdr"), "#?RADIANCE\n");
+  await writeFile(join(resumable.path, "Unfinished", "Resumed.hdr"), "#?RADIANCE\n");
+  const afterRestart = openResumable();
+  try {
+    await afterRestart.snapshot(true);
+    check("shared scan resumes the durable frontier across restart and retains completed directories", () => {
+      assert.equal(afterRestart.query({ provider: "shared" }).total, 3);
+      assert.equal(afterRestart.query({ provider: "shared", query: "resumed" }).total, 1);
+      assert.equal(afterRestart.query({ provider: "shared", query: "deferred" }).total, 0);
+    });
+    await afterRestart.snapshot(true);
+    check("a later completed rescan discovers new files in earlier directories", () => {
+      assert.equal(afterRestart.query({ provider: "shared", query: "deferred" }).total, 1);
+    });
+  } finally { afterRestart.close(); }
   check("HDRI sky conditions ignore contradictory provider tags", () => {
     const condition = api.poliigonSkyCondition;
     assert.equal(condition({ name: "Clear Day HDRI", tags: ["clear sky"], categories: ["HDRIS / Sky / Clear"] }), "clear");

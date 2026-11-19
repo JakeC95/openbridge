@@ -1068,7 +1068,7 @@ export class LibraryService {
 
   private async scanSharedAssets(roots: SharedLibraryRoot[], signature: string, epoch: number): Promise<void> {
     const registered = new Set(roots.map(root => root.id));
-    this.index.reconcileSharedRoots(registered, new Map());
+    this.index.reconcileSharedRoots(registered);
     this.sharedStatus = roots.map(root => ({ id: root.id, state: "scanning", count: this.index.countSharedRoot(root.id) }));
     let lastProgress = 0;
     const progress = (): void => {
@@ -1087,30 +1087,36 @@ export class LibraryService {
     };
     // Mounts progress independently. Commits are synchronous and each batch is bounded.
     const outcomes = await Promise.allSettled(roots.map(async root => {
-      const seen = new Set<string>();
-      const status = await scanSharedRoot(root, cancelled, assets => {
-        const changed = assets.filter(asset => {
-          const previous = this.index.getCachedRow(asset.path);
-          if (previous && previous.repo !== "shared") return false;
-          seen.add(asset.path);
-          return !previous || previous.id !== asset.id || previous.mtime !== Math.trunc(asset.mtime) ||
-            previous.preview !== asset.preview || previous.bytes !== asset.sizeBytes || previous.categories !== JSON.stringify(asset.categories);
-        });
-        this.index.upsertMany(changed.map(asset => ({ asset, folderMtime: asset.mtime, jsonMtime: 0 })));
-        if (changed.length) this.index.setHealthMany(changed.map(asset => ({
-          path: asset.path,
-          stats: { files: 1, bytes: asset.sizeBytes ?? 0, zeroBytes: Number(asset.sizeBytes === 0), meshes: Number(asset.type === "3d"), textures: 0 },
-          issues: asset.sizeBytes === 0 ? [{ kind: "zero-byte", severity: "error", assetId: asset.id, name: asset.name, path: asset.path, message: "This shared file is empty." }] : []
-        })));
-        if (Date.now() - lastProgress > 2000) {
-          this.sharedStatus = this.sharedStatus.map(value => ({ ...value, count: this.index.countSharedRoot(value.id) }));
-          progress();
+      const status = await scanSharedRoot(root, {
+        cancelled,
+        loadCheckpoint: key => this.index.loadSharedTraversal(root.id, key),
+        checkpoint: (key, value) => this.index.saveSharedTraversal(root.id, key, value),
+        publish: assets => {
+          const paths: string[] = [];
+          const changed = assets.filter(asset => {
+            const previous = this.index.getCachedRow(asset.path);
+            if (previous && previous.repo !== "shared") return false;
+            paths.push(asset.path);
+            return !previous || previous.id !== asset.id || previous.mtime !== Math.trunc(asset.mtime) ||
+              previous.preview !== asset.preview || previous.bytes !== asset.sizeBytes || previous.categories !== JSON.stringify(asset.categories);
+          });
+          this.index.upsertMany(changed.map(asset => ({ asset, folderMtime: asset.mtime, jsonMtime: 0 })));
+          if (changed.length) this.index.setHealthMany(changed.map(asset => ({
+            path: asset.path,
+            stats: { files: 1, bytes: asset.sizeBytes ?? 0, zeroBytes: Number(asset.sizeBytes === 0), meshes: Number(asset.type === "3d"), textures: 0 },
+            issues: asset.sizeBytes === 0 ? [{ kind: "zero-byte", severity: "error", assetId: asset.id, name: asset.name, path: asset.path, message: "This shared file is empty." }] : []
+          })));
+          this.index.markSharedSeen(root.id, paths);
+          if (Date.now() - lastProgress > 2000) {
+            this.sharedStatus = this.sharedStatus.map(value => ({ ...value, count: this.index.countSharedRoot(value.id) }));
+            progress();
+          }
         }
       });
       if (cancelled()) return;
-      // An unmounted share can leave an accessible, empty mount point.
-      const emptyMount = seen.size === 0 && this.index.countSharedRoot(root.id) > 0;
-      if (status.state === "ready" && !emptyMount) this.index.reconcileSharedRoots(registered, new Map([[root.id, seen]]));
+      // Preserve an offline generation so the same mount can continue it.
+      const emptyMount = status.state !== "unavailable" &&
+        this.index.finishSharedTraversal(root.id, status.state === "ready");
       this.sharedStatus = this.sharedStatus.map(value => value.id === root.id ? {
         id: root.id, state: emptyMount && status.state === "ready" ? "partial" : status.state,
         count: this.index.countSharedRoot(root.id)

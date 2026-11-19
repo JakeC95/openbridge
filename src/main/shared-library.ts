@@ -55,35 +55,46 @@ function matchingAsset(kind: SharedLibraryRoot["kind"], name: string): boolean {
   return Boolean(modelFormatFromExtension(extension)) || extension === ".hip" || extension === ".hiplc" || extension === ".hipnc";
 }
 
-export async function scanSharedRoot(
-  root: SharedLibraryRoot,
-  cancelled: () => boolean,
-  publish: (assets: AssetRecord[]) => void
-): Promise<SharedLibraryStatus> {
-  const canonicalRoot = await realpath(root.path).catch(() => null);
-  if (!canonicalRoot) return { id: root.id, state: "unavailable", count: 0 };
-  const remaining = [root.path];
-  let batch: AssetRecord[] = [];
-  let count = 0;
-  let partial = false;
+export interface SharedTraversal {
+  pending: string[];
+  partial: boolean;
+}
 
-  while (remaining.length && !cancelled()) {
-    const folder = remaining.pop()!;
+interface ScanOptions {
+  cancelled(): boolean;
+  checkpoint(key: string, state: SharedTraversal): void;
+  loadCheckpoint(key: string): SharedTraversal | null;
+  publish(assets: AssetRecord[]): void;
+}
+
+export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptions): Promise<SharedLibraryStatus> {
+  const { cancelled, checkpoint, loadCheckpoint, publish } = options;
+  const canonicalRoot = await realpath(root.path).catch(() => "");
+  const mount = canonicalRoot ? await lstat(canonicalRoot).catch(() => null) : null;
+  if (!mount?.isDirectory()) return { id: root.id, state: "unavailable", count: 0 };
+  const key = JSON.stringify([root, canonicalRoot, mount.dev, mount.ino]);
+  if (cancelled()) return { id: root.id, state: "paused", count: 0 };
+  const state = loadCheckpoint(key) ?? { pending: [""], partial: false };
+  checkpoint(key, state);
+  let lastCheckpoint = Date.now();
+  let count = 0;
+
+  async function visit(locator: string) {
+    const folder = resolve(root.path, locator);
     const folders: string[] = [];
     const candidateNames: string[] = [];
     const renders = new Map<string, string>();
     try {
       const canonicalFolder = await realpath(folder);
-      if (relative(join(canonicalRoot, relative(root.path, folder)), canonicalFolder) !== "") {
-        partial = true;
-        continue;
+      if (!isInside(root.path, folder) || relative(join(canonicalRoot, locator), canonicalFolder) !== "") {
+        return { folders, assets: [] as AssetRecord[], partial: true, offline: !locator };
       }
       const entries = await opendir(folder);
       for await (const entry of entries) {
         if (cancelled()) break;
         if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
         if (entry.isDirectory() && !SKIP_FOLDERS.has(entry.name.toLowerCase())) {
-          folders.push(join(folder, entry.name));
+          folders.push(join(locator, entry.name));
         } else if (entry.isFile()) {
           const extension = extname(entry.name);
           if (matchingAsset(root.kind, entry.name)) candidateNames.push(entry.name);
@@ -93,15 +104,13 @@ export async function scanSharedRoot(
         }
       }
     } catch {
-      if (folder === root.path) return { id: root.id, state: "unavailable", count };
-      partial = true;
-      continue;
+      return { folders: [], assets: [] as AssetRecord[], partial: true, offline: !locator };
     }
-    for (const subfolder of folders) remaining.push(subfolder);
-    const categories = [root.name, ...relative(root.path, folder).split(sep).filter(Boolean)];
-    // Metadata reads are parallel in small groups to avoid serial round trips on a share.
-    for (let offset = 0; offset < candidateNames.length && !cancelled(); offset += 12) {
-      const files = await Promise.all(candidateNames.slice(offset, offset + 12).map(async file => {
+    const categories = [root.name, ...locator.split(sep).filter(Boolean)];
+    const assets: AssetRecord[] = [];
+    let partial = false;
+    for (let offset = 0; offset < candidateNames.length && !cancelled(); offset += 8) {
+      const files = await Promise.all(candidateNames.slice(offset, offset + 8).map(async file => {
         const path = join(folder, file);
         const info = await lstat(path).catch(() => null);
         if (!info?.isFile()) { partial = true; return null; }
@@ -116,20 +125,46 @@ export async function scanSharedRoot(
           sizeBytes: info.size, fileCount: 1
         } satisfies AssetRecord;
       }));
-      for (const file of files) if (file) batch.push(file);
-      if (batch.length >= BATCH_SIZE && !cancelled()) {
-        count += batch.length;
-        publish(batch);
-        batch = [];
-        await new Promise<void>(done => setImmediate(done));
+      for (const file of files) if (file) assets.push(file);
+    }
+    return { folders, assets, partial, offline: false };
+  }
+
+  let batch: AssetRecord[] = [];
+  while (state.pending.length && !cancelled()) {
+    // Leave the active wave on the checkpoint until all its files are written.
+    const wave = state.pending.slice(-4);
+    const results = await Promise.all(wave.map(visit));
+    if (cancelled()) break;
+    if (results.some(item => item.offline)) return { id: root.id, state: "unavailable", count };
+    state.pending.splice(-wave.length);
+    for (const result of results) {
+      for (const folder of result.folders) state.pending.push(folder);
+      for (const asset of result.assets) {
+        batch.push(asset);
+        if (batch.length === BATCH_SIZE) {
+          publish(batch);
+          count += batch.length;
+          batch = [];
+        }
       }
+      state.partial ||= result.partial;
+    }
+    if (Date.now() - lastCheckpoint >= 4000) {
+      if (batch.length) { publish(batch); count += batch.length; batch = []; }
+      checkpoint(key, state);
+      lastCheckpoint = Date.now();
+      await new Promise<void>(resolve => setImmediate(resolve));
     }
   }
-  if (batch.length && !cancelled()) {
-    count += batch.length;
-    publish(batch);
+  if (cancelled()) {
+    // The last durable checkpoint still contains anything not yet published.
+    return { id: root.id, state: "paused", count };
   }
-  return { id: root.id, state: partial ? "partial" : "ready", count };
+  if (batch.length) { publish(batch); count += batch.length; }
+  // Do not persist an empty frontier before reconciliation. A crash in that gap
+  // must repeat work, never treat an earlier incomplete walk as successful.
+  return { id: root.id, state: state.partial ? "partial" : "ready", count };
 }
 
 /** Resolve only an indexed file under its current registered root. */

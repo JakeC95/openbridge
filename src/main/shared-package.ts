@@ -72,6 +72,13 @@ function mtlTexture(value: string): string {
 
 export async function listSharedModelPackage(root: string, primary: string): Promise<string[]> {
   if (!isInside(root, primary)) throw new Error("The shared model is outside its registered root.");
+  const locator = relative(root, primary);
+  const [canonicalRoot, canonicalPrimary] = await Promise.all([realpath(root), realpath(primary)]);
+  if (relative(join(canonicalRoot, locator), canonicalPrimary) !== "") {
+    throw new Error("A linked model cannot be copied safely.");
+  }
+  root = canonicalRoot;
+  primary = canonicalPrimary;
   const files = new Set([primary]);
   async function add(author: string, reference: string, encoded = false): Promise<string | null> {
     const file = await dependency(root, author, reference, encoded);
@@ -121,6 +128,7 @@ export async function listSharedModelPackage(root: string, primary: string): Pro
 
 export async function copySharedModelPackage(root: string, primary: string, destination: string): Promise<{ folder: string; files: number }> {
   const files = await listSharedModelPackage(root, primary);
+  primary = files[0];
   let required = 0n;
   for (const path of files) required += (await lstat(path, { bigint: true })).size;
   const disk = await statfs(destination, { bigint: true }).catch(() => null);

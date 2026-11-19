@@ -16,6 +16,7 @@ import type {
   SharedOrganizationOptions
 } from "../shared/types";
 import type { Logger } from "./logger";
+import type { SharedTraversal } from "./shared-library";
 import { canonicalType, categoryTree, localCategoryPath } from "../shared/browsing";
 
 const SCHEMA_VERSION = 8;
@@ -139,6 +140,17 @@ export class LibraryIndex {
     this.migrate();
     this.db.prepare("ATTACH DATABASE ? AS organization").run(join(dirname(filePath), "shared-organization.sqlite"));
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS shared_traversal (
+        root_id TEXT PRIMARY KEY,
+        mount_key TEXT NOT NULL,
+        pending TEXT NOT NULL,
+        partial INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS shared_seen (
+        root_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        PRIMARY KEY (root_id, path)
+      ) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS organization.assets (
         id TEXT PRIMARY KEY,
         tags TEXT NOT NULL,
@@ -243,16 +255,59 @@ export class LibraryIndex {
     return remove.length;
   }
 
-  reconcileSharedRoots(registered: Set<string>, scanned: Map<string, Set<string>>): void {
+  reconcileSharedRoots(registered: Set<string>): void {
     const rows = this.db.prepare("SELECT id, path FROM assets WHERE repo = 'shared'").all() as Array<{ id: string; path: string }>;
+    const cursors = this.db.prepare("SELECT root_id AS id FROM shared_traversal").all() as Array<{ id: string }>;
     const remove = this.db.prepare("DELETE FROM assets WHERE repo = 'shared' AND path = ?");
     this.transaction(() => {
-      for (const row of rows) {
-        const rootId = row.id.split(":")[1];
-        const seen = scanned.get(rootId);
-        if (!registered.has(rootId) || (seen && !seen.has(row.path))) remove.run(row.path);
-      }
+      for (const row of rows) if (!registered.has(row.id.split(":")[1])) remove.run(row.path);
+      for (const cursor of cursors) if (!registered.has(cursor.id)) this.clearSharedTraversal(cursor.id);
     });
+  }
+
+  loadSharedTraversal(id: string, key: string): SharedTraversal | null {
+    const row = this.db.prepare("SELECT mount_key, pending, partial FROM shared_traversal WHERE root_id = ?")
+      .get(id) as { mount_key: string; pending: string; partial: number } | undefined;
+    if (!row || row.mount_key !== key) {
+      this.transaction(() => this.clearSharedTraversal(id));
+      return null;
+    }
+    const pending = parseList(row.pending);
+    if (pending.length) return { pending, partial: Boolean(row.partial) };
+    this.transaction(() => this.clearSharedTraversal(id));
+    return null;
+  }
+
+  saveSharedTraversal(id: string, key: string, value: SharedTraversal): void {
+    if (!value.pending.length) return;
+    this.db.prepare("INSERT OR REPLACE INTO shared_traversal (root_id, mount_key, pending, partial) VALUES (?, ?, ?, ?)")
+      .run(id, key, JSON.stringify(value.pending), Number(value.partial));
+  }
+
+  markSharedSeen(id: string, paths: string[]): void {
+    const insert = this.db.prepare("INSERT OR IGNORE INTO shared_seen (root_id, path) VALUES (?, ?)");
+    this.transaction(() => {
+      for (const path of paths) insert.run(id, path);
+    });
+  }
+
+  finishSharedTraversal(id: string, complete: boolean): boolean {
+    const seen = this.db.prepare("SELECT 1 FROM shared_seen WHERE root_id = ? LIMIT 1").get(id);
+    const emptyMount = !seen && this.countSharedRoot(id) > 0;
+    this.transaction(() => {
+      if (complete && !emptyMount) {
+        this.db.prepare(`DELETE FROM assets WHERE repo = 'shared' AND id GLOB ?
+          AND NOT EXISTS (SELECT 1 FROM shared_seen s WHERE s.root_id = ? AND s.path = assets.path)`)
+          .run(`shared:${id}:*`, id);
+      }
+      this.clearSharedTraversal(id);
+    });
+    return emptyMount;
+  }
+
+  private clearSharedTraversal(id: string): void {
+    this.db.prepare("DELETE FROM shared_traversal WHERE root_id = ?").run(id);
+    this.db.prepare("DELETE FROM shared_seen WHERE root_id = ?").run(id);
   }
 
   countSharedRoot(id: string): number {
