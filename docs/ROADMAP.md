@@ -96,7 +96,6 @@ Still open:
 Still open:
 
 - GitHub Support must purge old unreachable commit objects that remain accessible by SHA.
-- Publish the 1.6.2 maintenance and provider changes as the next patch release.
 
 ## Browsing productivity (shipped in 1.6.2)
 
@@ -301,6 +300,20 @@ See [POLYHAVEN.md](POLYHAVEN.md).
   hidden, sky-condition groups lead the filter rail, cards show resolved weather and time, and the
   type control stays at HDRIs while the category tree/chip carries the subcategory. The Poly Haven
   FTS refresh was also fixed to recreate its contentless table.
+
+## Windows and Linux portability (shipped in 1.6.3–1.6.4)
+
+- Build and publish portable Windows and Linux x64 packages with separate update manifests.
+- Verify Linux upgrades, rollback copies and system credential storage behavior.
+- Clear the ambientCG and OpenHDRI indexing status when the first index is ready. Report whether
+  Epic sign-in can be saved between launches.
+- Run browsing, networking, provider and Electron UI checks on both platforms in CI.
+
+## Existing shared model and HDRI libraries (planned)
+
+Register existing folders in Library, index them where they are, and reuse the browsing and preview
+tools for supported local files. The plan covers shared storage, model dependencies, HDRI preview
+limits, organization and explicit file operations. See [Shared asset library design](SHARED-LIBRARY.md).
 
 ## Non-goals
 

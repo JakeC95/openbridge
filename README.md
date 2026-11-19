@@ -13,9 +13,13 @@ binaries.
 
 ## Download
 
-Download the archive for your platform from **Releases**, extract it, and run
-`OpenBridge.exe` on Windows or `./OpenBridge` on Linux. If a release only has a Windows ZIP,
-you can build the Linux archive using the commands below.
+Version 1.6.4 is available in **Releases** as a Windows x64 ZIP and a Linux x64 tar.gz.
+Extract the archive and run `OpenBridge.exe` on Windows or `./OpenBridge` on Linux. From an
+existing portable installation, choose **Settings → Check and install** to update.
+
+Version 1.6.3 introduced the Linux package. Version 1.6.4 fixes an indexing banner that could
+linger after ambientCG or OpenHDRI was ready and makes session-only Epic sign-in visible when
+the desktop keyring cannot save the session.
 
 Settings, saved sessions and the local index live outside the portable folder. Windows uses
 `%APPDATA%\openbridge`. Linux uses `${XDG_CONFIG_HOME:-$HOME/.config}/OpenBridge`.
@@ -44,7 +48,7 @@ Settings, saved sessions and the local index live outside the portable folder. W
 - **Poliigon downloads (1.6.2)** with resolution/map/LOD/renderer options, resumable file
   transfers, pause/resume/cancel, generated MaterialX files and the exact folder layout the official
   Poliigon Blender addon reads. Free and owned assets require a Poliigon sign-in.
-- **Unified local library (1.6.2)** with All/Megascans/Poliigon/Poly Haven source filters,
+- **Unified local library** with source filters for provider-managed assets,
   local provider previews, downloaded-resolution/map/LOD facts, search, categories, health checks
   and automatic rescan after each download. Library means only files already on disk — available
   offline and independent of catalogue subscriptions. The topbar **Check library** action only
@@ -165,6 +169,8 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 - DCC export/plugin installation and Fab browsing are not implemented. Native `.blend`, `.max`,
   `.c4d`, `.ma`, `.mb` and `.skp` previews are download-only; the 3D viewer opens glTF/GLB, FBX,
   OBJ, USD, STL, PLY and DAE.
+- The Library indexes supported provider layouts and OpenBridge downloads. Browsing existing
+  shared model and HDRI folders in place is planned. See the [shared library design](docs/SHARED-LIBRARY.md).
 - Automatic updates require a published release manifest.
 - Some catalogue fields are sparse in the legacy API; the UI hides unavailable data rather than
   showing placeholders.
@@ -175,6 +181,7 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 - [Testing](docs/TESTING.md)
 - [Networking policy and verification](docs/NETWORKING.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Shared asset library design](docs/SHARED-LIBRARY.md)
 - [Local API and export protocol](docs/PROTOCOL.md)
 - [Reverse-engineering notes](docs/REVERSE-ENGINEERING.md)
 - [Poliigon research and integration plan](docs/POLIIGON.md)

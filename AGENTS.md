@@ -3,19 +3,23 @@
 ## Project
 
 OpenBridge is a public, open-source Windows and Linux x64 app for browsing, downloading and managing a local
-content library. Its first provider is Quixel Megascans; Poliigon catalogue browsing is implemented
-as a second provider (auth/downloads still in progress). It is an Electron 45 + React 19 + TypeScript
+content library. It supports Quixel Megascans, Poliigon, Poly Haven, ambientCG, BlenderKit and OpenHDRI.
+It is an Electron 45 + React 19 + TypeScript
 application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution model.
 
 - Branch: `main`, tracking `origin/main`
-- Last verified application commit: `6caa6b2` (tagged `v1.6.2`)
-- Current app version: `1.6.2`
-- Latest published release: `v1.6.2`
+- Last verified release commit: `d659f34` (tagged `v1.6.4`)
+- Current app version: `1.6.4`
+- Latest published release: `v1.6.4`
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
 - The repository owner/name is discovered at build time and must not be hard-coded
 
-Changes after `v1.4.2` shipped in `v1.6.2`. Choose the next version when new work is ready to publish.
+Version 1.6.3 introduced Linux portable builds and a separate Linux update manifest. Version 1.6.4
+clears stale ambientCG and OpenHDRI indexing status and shows when Epic sign-in lasts only for
+the current session. A cold start and the upgrade from 1.6.3 were verified on Linux. The subsequent
+test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
+for planned support for existing model and HDRI roots.
 
 ## 1.6.2 additional providers and browsing pass
 
@@ -538,8 +542,8 @@ npm run dist:portable
 GitHub Actions `Quality` checks Windows and Linux. The release workflow runs on `v*` tags and
 publishes the portable archives and platform update manifests.
 
-There is no unit-test suite. Verification is typecheck, build, public check, portable packaging and
-the manual checklist in `docs/TESTING.md`.
+Verification includes the browsing, networking, provider and Electron UI fixtures as well as
+the manual and portable package checks in `docs/TESTING.md`.
 
 ## Repository hygiene rules
 
@@ -563,7 +567,7 @@ The repository is public. Every commit is public.
 ## Architecture map
 
 - `src/main/index.ts` - Electron startup, settings defaults, IPC registration, lifecycle.
-- `src/main/auth.ts` - Epic OAuth, DPAPI-backed session storage, profile.
+- `src/main/auth.ts` - Epic OAuth, system credential storage, profile.
 - `src/main/legacy-api.ts` - legacy catalogue/download REST client.
 - `src/main/downloader.ts` - transfers, resume, size verification, persistence.
 - `src/main/library.ts` and `src/main/library-index.ts` - library scan, schema v4, FTS5, filters.
@@ -575,7 +579,7 @@ The repository is public. Every commit is public.
 - `src/main/settings.ts` - settings store, migrations and per-type download defaults.
 - `src/main/sync.ts` - acquired/favorite/library synchronization.
 - `src/main/poliigon/catalog.ts` - public Poliigon catalogue fetch, SQLite/FTS index, categories and queries.
-- `src/main/poliigon/auth.ts` - Poliigon browser sign-in, DPAPI token store, account/credits and owned-asset sync.
+- `src/main/poliigon/auth.ts` - Poliigon browser sign-in, system credential storage, account/credits and owned-asset sync.
 - `src/main/poliigon/download.ts` - Poliigon manifest downloads, progress, pause/resume/cancel and addon-compatible layout.
 - `src/main/poliigon/payload.ts` - pure Poliigon download payload builder for textures, models and HDRIs.
 - `src/main/library.ts` - scans Megascans and Poliigon libraries; Poliigon records are matched to the catalogue by AssetName.
