@@ -55,6 +55,14 @@ const api: OpenBridgeApi = {
     ipcRenderer.invoke("library:ids", query) as Promise<string[]>,
   localPreviews: (assetId, indexedPath) => ipcRenderer.invoke("library:previews", assetId, indexedPath),
   sharedLibrary: {
+    inspectSelection: (ids, scope) => ipcRenderer.invoke("shared:inspectSelection", ids, scope),
+    cancelInspection: () => ipcRenderer.invoke("shared:cancelInspection"),
+    onInspectionProgress: callback => {
+      const listener = (_event: unknown, progress: SharedCopyProgress) => callback(progress);
+      ipcRenderer.on("shared:inspectionProgress", listener);
+      return () => ipcRenderer.removeListener("shared:inspectionProgress", listener);
+    },
+    inspectFile: id => ipcRenderer.invoke("shared:inspectFile", id),
     stopScanning: () => ipcRenderer.invoke("shared:stopScanning"),
     variants: id => ipcRenderer.invoke("shared:variants", id),
     organization: id => ipcRenderer.invoke("shared:organization", id),

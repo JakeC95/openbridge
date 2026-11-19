@@ -1,3 +1,4 @@
+import { localStatePath } from "../local-state";
 import { app } from "electron";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
@@ -365,7 +366,7 @@ export class PoliigonDownloadManager {
     private readonly onLibraryChanged: (path: string) => void = () => undefined
   ) {
     try {
-      this.completions = new DownloadCompletions(join(app.getPath("userData"), "download-history.sqlite"));
+      this.completions = new DownloadCompletions(localStatePath(app.getPath("userData"), "download-history.sqlite"));
     } catch (error) {
       this.historyError = "Download history is unavailable.";
       this.logger.error("Could not open Poliigon download history", { error });

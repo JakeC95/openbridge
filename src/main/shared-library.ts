@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { lstat, open, opendir, realpath } from "node:fs/promises";
+import { lstat, opendir, realpath } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AssetRecord, SharedHdrInfo, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
 import { modelFormatFromExtension } from "../shared/model-preview";
-import { checkHdrDimensions, hdrLimitsFor, PUBLIC_PREVIEW_MAX_BYTES } from "./public/preview-data";
+import { type SharedHdrFacts, inspectSharedHdrFacts } from "./shared-hdr-facts";
+import { hdrLimitsFor, PUBLIC_PREVIEW_MAX_BYTES } from "./public/preview-data";
 
 const BATCH_SIZE = 128;
 const SKIP_FOLDERS = new Set(["archive", "archives", "cache", "caches", "temp", "tmp", "node_modules"]);
@@ -184,24 +185,20 @@ export async function resolveSharedFile(asset: AssetRecord, roots: SharedLibrary
 
 export async function inspectSharedHdr(path: string): Promise<SharedHdrInfo> {
   if (!HDR_EXTENSIONS.has(extname(path).toLowerCase())) throw new Error("This file is not an HDR or EXR source.");
-  const file = await open(path);
-  try {
-    const info = await file.stat();
-    if (!info.isFile()) throw new Error("This HDR source is no longer a regular file.");
-    const header = Buffer.alloc(Math.min(info.size, 1024 * 1024));
-    const { bytesRead } = await file.read(header, 0, header.length, 0);
-    const { width, height } = checkHdrDimensions(header.subarray(0, bytesRead), extname(path), {
-      maxWidth: 1_000_000, maxPixels: Number.MAX_SAFE_INTEGER
-    });
-    const limits = hdrLimitsFor("shared");
-    const reason = info.size > PUBLIC_PREVIEW_MAX_BYTES
+  const [info, image] = await Promise.all([lstat(path), inspectSharedHdrFacts(path)]);
+  return sharedHdrInfo(image, info.size);
+}
+
+export function sharedHdrInfo(image: SharedHdrFacts, bytes: number): SharedHdrInfo {
+  const { width, height } = image;
+  const limits = hdrLimitsFor("shared");
+  const reason = image.tiled || image.deep || image.multipart || image.views.length > 1
+    ? "This EXR uses a tiled, deep, multipart or multiview layout. Inspect its source facts here and open it in an external tool."
+    : bytes > PUBLIC_PREVIEW_MAX_BYTES
       ? "This source exceeds the 160 MiB live preview limit. Choose a smaller variant or open the original in its associated app."
       : width > limits.maxWidth || height > limits.maxWidth || width * height > limits.maxPixels
         ? "This source exceeds the 8K live preview limit. Choose a smaller variant or open the original in its associated app."
         : undefined;
-    return { width, height, panorama: width / height >= 1.95 && width / height <= 2.05,
-      previewAvailable: !reason, ...(reason ? { reason } : {}) };
-  } finally {
-    await file.close();
-  }
+  return { width, height, panorama: image.projectionHint === "equirectangular",
+    previewAvailable: !reason, ...(reason ? { reason } : {}) };
 }

@@ -8,8 +8,8 @@ It is an Electron 45 + React 19 + TypeScript
 application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution model.
 
 - Branch: `main`, tracking `origin/main`
-- Release tag: `v1.7.0`
-- Current app version: `1.7.0`
+- Release tag: `v1.7.1` (prepared; verify GitHub release status)
+- Current app version: `1.7.1`
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -20,6 +20,23 @@ clears stale ambientCG and OpenHDRI indexing status and shows when Epic sign-in 
 the current session. A cold start and the upgrade from 1.6.3 were verified on Linux. The subsequent
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
+
+## 1.7.1 shared source facts and Linux state
+
+- Shared source facts use an isolated worker with a 45-second deadline and a bounded heap.
+  Header-only HDR/EXR inspection includes oversized images; OBJ and glTF/GLB JSON inspection
+  report explicit stored geometry/bounds semantics. Native formats remain unknown.
+- Opening an inspector enriches one file; Library batch inspection handles up to 500 selected
+  files with progress/errors and cancellation after the current file. Facts feed common
+  triangle filters and metric sorts. Size/mtime changes invalidate cached facts.
+- HDR decode checks the opened file before allocating and bounds source reads to 160 MiB.
+- Linux network-mounted profiles route SQLite to owned persistent local state, with WAL-aware
+  online backup migration and explicit errors. Settings and account files stay in userData.
+  OPENBRIDGE_STATE_DIR can select a local base; do not delete it as a disposable cache.
+- Quality includes local-state, metadata worker/parser and real-backend shared UI fixtures on
+  Windows and Linux. Browsing regressions now include worker/cache/invalidation coverage
+  and missing-MTL-resource preview recovery.
+- Private studio inventory and sample results belong in local handoff notes only.
 
 ## 1.6.2 additional providers and browsing pass
 

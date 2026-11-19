@@ -77,7 +77,7 @@ const shared = {
 
 await build({
   ...shared,
-  entryPoints: ["src/main/index.ts", "src/main/hdr-decode-worker.ts"],
+  entryPoints: ["src/main/index.ts", "src/main/hdr-decode-worker.ts", "src/main/shared-facts-worker.ts"],
   outdir: "out/main",
   platform: "node",
   format: "cjs",

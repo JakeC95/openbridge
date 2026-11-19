@@ -1,5 +1,6 @@
-import { copySharedModelPackage, copySharedSelection, listSharedModelPackage } from "./shared-package";
-import { inspectSharedHdr, isInside, sharedRootId } from "./shared-library";
+import { prepareLocalState, finalizeLocalState } from "./local-state";
+import { copySharedModelPackage, copySharedSelection, inspectSharedModelDependencies } from "./shared-package";
+import { sharedHdrInfo, isInside, sharedRootId } from "./shared-library";
 import { decodeHdrFile } from "./hdr-decode";
 import { hdrLimitsFor } from "./public/preview-data";
 import { constants } from "node:fs";
@@ -618,8 +619,47 @@ function registerIpc(): void {
     if (!library) throw new Error("Library service is not ready");
     return library.saveSharedOrganization(id, value);
   });
+  ipcMain.handle("shared:inspectFile", (_event, id: string) => {
+    if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");
+    return library.inspectSharedMetadata(id);
+  });
+  const sharedInspectionJobs = new Map<number, AbortController>();
+  ipcMain.handle("shared:cancelInspection", event => sharedInspectionJobs.get(event.sender.id)?.abort());
+  ipcMain.handle("shared:inspectSelection", async (event, ids: string[], scope: LibraryQuery) => {
+    if (!library || !Array.isArray(ids) || !ids.length || ids.length > 500 ||
+        ids.some(id => typeof id !== "string" || !sharedRootId(id))) throw new Error("Select between 1 and 500 shared assets to inspect.");
+    const sender = event.sender;
+    if (sharedInspectionJobs.has(sender.id)) throw new Error("Metadata inspection is already running.");
+    const controller = new AbortController();
+    sharedInspectionJobs.set(sender.id, controller);
+    const close = () => controller.abort();
+    sender.once("destroyed", close);
+    const failures: Array<{ name: string; message: string }> = [];
+    let inspected = 0;
+    let completed = 0;
+    try {
+      const records = library.matchingAssets([...new Set(ids)], { ...scope, provider: "shared" });
+      for (const record of records) {
+        if (controller.signal.aborted) break;
+        try { await library.inspectSharedMetadata(record.id); inspected++; }
+        catch (error) { failures.push({ name: record.name, message: error instanceof Error ? error.message : String(error) }); }
+        completed++;
+        if (!sender.isDestroyed()) sender.send("shared:inspectionProgress", { completed, total: records.length });
+      }
+      return { inspected, cancelled: completed < records.length, failures };
+    } finally {
+      sender.off("destroyed", close);
+      sharedInspectionJobs.delete(sender.id);
+    }
+  });
   const sharedHdrJobs = new Map<string, AbortController>();
-  ipcMain.handle("shared:inspectHdr", async (_event, id: string) => inspectSharedHdr((await requireSharedFile(id)).path));
+  async function inspectIndexedSharedHdr(id: string) {
+    if (!library) throw new Error("Library service is not ready");
+    const facts = await library.inspectSharedMetadata(id);
+    if (!facts.image) throw new Error("This file is not an HDR or EXR source.");
+    return sharedHdrInfo(facts.image, facts.bytes);
+  }
+  ipcMain.handle("shared:inspectHdr", async (_event, id: string) => inspectIndexedSharedHdr(id));
   ipcMain.handle("shared:hdr", async (event, id: string) => {
     const key = `${event.sender.id}:${id}`;
     sharedHdrJobs.get(key)?.abort();
@@ -629,7 +669,7 @@ function registerIpc(): void {
     event.sender.once("destroyed", close);
     try {
       const { path } = await requireSharedFile(id);
-      const info = await inspectSharedHdr(path);
+      const info = await inspectIndexedSharedHdr(id);
       if (!info.previewAvailable) throw new Error(info.reason);
       const data = await decodeHdrFile(path, hdrLimitsFor("shared"), AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]));
       return { ...data, resolution: `${data.width} × ${data.height}` };
@@ -712,9 +752,11 @@ function registerIpc(): void {
       if (asset.type !== "3d") throw new Error("This shared asset is not a 3D model.");
       const configured = settings().sharedLibraryRoots?.find(root => root.id === sharedRootId(asset.id));
       const dependencies = configured && /\.(obj|gltf|glb)$/i.test(path)
-        ? await listSharedModelPackage(await realpath(configured.path), path).catch(() => undefined)
+        ? await inspectSharedModelDependencies(await realpath(configured.path), path)
         : undefined;
-      return scanLocalModel(dirname(path), asset.id, "shared", asset.type, path, dependencies);
+      const manifest = await scanLocalModel(dirname(path), asset.id, "shared", asset.type, path, dependencies?.files);
+      if (dependencies) manifest.notes.push(...dependencies.notes);
+      return manifest;
     }
     if (typeof request.path === "string" && request.path.trim()) {
       let local = await scanLocalModel(request.path, request.assetId, request.provider, request.type ?? "");
@@ -1225,6 +1267,8 @@ async function init(): Promise<void> {
   const userData = app.getPath("userData");
   await mkdir(join(userData, "logs"), { recursive: true });
   logger = new Logger(logFilePath());
+  const stateDirectory = await prepareLocalState(userData);
+  if (stateDirectory !== userData) logger.info("SQLite databases use local storage");
 
   const defaults: AppSettings = {
     libraryRoot: join(app.getPath("documents"), "OpenBridge"),
@@ -1249,7 +1293,7 @@ async function init(): Promise<void> {
     () => settings().polyhavenLibraryPath,
     assetName => poliigonCatalog?.findByAssetName(assetName) ?? null,
     id => polyhavenCatalog?.findById(id) ?? polyhavenCatalog?.findByName(id) ?? null,
-    join(userData, "library-index.sqlite"),
+    join(stateDirectory, "library-index.sqlite"),
     logger,
     () => ({ ambientcg: settings().ambientcgLibraryPath, blenderkit: settings().blenderkitLibraryPath, openhdri: settings().openhdriLibraryPath }),
     () => settings().sharedLibraryRoots ?? [],
@@ -1314,11 +1358,11 @@ async function init(): Promise<void> {
   );
   updateService = new UpdateService(logger);
   catalogMetadata = new CatalogMetadataProvider(
-    join(userData, "catalog-metadata.sqlite"),
+    join(stateDirectory, "catalog-metadata.sqlite"),
     logger
   );
   poliigonCatalog = new PoliigonCatalog(
-    join(userData, "poliigon-catalog.sqlite"),
+    join(stateDirectory, "poliigon-catalog.sqlite"),
     logger
   );
   poliigonCatalog.onStatus(status => {
@@ -1341,7 +1385,7 @@ async function init(): Promise<void> {
     mainWindow?.webContents.send("downloads:progress", progress);
   });
   polyhavenCatalog = new PolyHavenCatalog(
-    join(userData, "polyhaven-catalog.sqlite"),
+    join(stateDirectory, "polyhaven-catalog.sqlite"),
     logger
   );
   let lastPolyHavenLibraryCount = 0;
@@ -1376,8 +1420,8 @@ async function init(): Promise<void> {
   );
   blenderkitAuth = new BlenderKitAuthService(join(userData, "blenderkit-auth.bin"), logger);
   blenderkitAuth.onChanged(state => mainWindow?.webContents.send("blenderkit:auth:changed", state));
-  publicCatalogs.set("ambientcg", new PublicCatalog("ambientcg", join(userData, "ambientcg-catalog.sqlite"), new AmbientCgAdapter(), logger));
-  publicCatalogs.set("openhdri", new PublicCatalog("openhdri", join(userData, "openhdri-catalog.sqlite"), new OpenHdriAdapter(), logger));
+  publicCatalogs.set("ambientcg", new PublicCatalog("ambientcg", join(stateDirectory, "ambientcg-catalog.sqlite"), new AmbientCgAdapter(), logger));
+  publicCatalogs.set("openhdri", new PublicCatalog("openhdri", join(stateDirectory, "openhdri-catalog.sqlite"), new OpenHdriAdapter(), logger));
   publicCatalogs.set("blenderkit", new BlenderKitCatalog(blenderkitAuth, logger));
   for (const [provider, catalog] of publicCatalogs) {
     catalog.onStatus(status => mainWindow?.webContents.send(`public:${provider}:status`, status));
@@ -1405,7 +1449,7 @@ async function init(): Promise<void> {
     logger
   });
   publicDownloads = new PublicDownloadManager(
-    join(userData, "public-download-queue.json"), join(userData, "public-download-completions.sqlite"),
+    join(userData, "public-download-queue.json"), join(stateDirectory, "public-download-completions.sqlite"),
     async (provider, id) => { const catalog = requirePublic(provider); await catalog.ensureReady(); return catalog.extended(id); },
     provider => settings()[`${provider}LibraryPath`],
     async (provider, url) => {
@@ -1465,6 +1509,7 @@ async function init(): Promise<void> {
     loggedIn: authService.state().loggedIn
   });
 
+  await finalizeLocalState(userData);
   registerIpc();
   buildMenu();
   await startServices();

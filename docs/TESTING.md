@@ -9,6 +9,10 @@ local absolute paths or downloaded asset files.
 npm ci
 npm run typecheck
 npm run check:public
+npm run test:browsing
+npm run test:local-state
+npm run test:shared-facts
+npm run test:providers
 npm run build
 npm run dist:portable
 ```
@@ -18,6 +22,18 @@ names, machine-specific details or likely secrets.
 
 GitHub Actions `Quality` runs on Windows and Linux. The public-repository check reads tracked
 files, so stage new files before relying on it.
+
+`test:local-state` exercises Linux filesystem selection with injected local/network filesystem
+identifiers and real disposable SQLite databases. It verifies committed WAL migration, persistent
+annotations, preserved originals/settings, restart behavior, profile isolation, override validation,
+explicit migration errors, relocation through multiple destinations, preserved destination snapshots,
+missing active locations and different-computer records. It runs on both CI platforms without
+requiring a network mount.
+
+`test:shared-facts` inspects generated HDR/EXR and model fixtures, including malformed inputs and
+bounded reads. It checks HDR dimensions/channel precision and model topology/material/bounds
+facts without requiring artist libraries or accounts. Both commands run on Windows and Linux in
+`Quality`; they supplement the Electron and browsing checks.
 
 Run the Electron UI fixture with `npm run test:browsing:ui` on a desktop.
 For a Linux runner without a GPU, use a virtual display and software WebGL for the fixture.
@@ -39,6 +55,29 @@ OPENBRIDGE_UI_SOFTWARE_GL=1 xvfb-run -a -s '-screen 0 1920x1080x24' npm run test
 7. Rescan the library. Confirm indexed search, readiness filters, counts and health tools work.
 8. Import a small catalogue metadata pack in Settings and confirm status and remote badges.
 9. Check the update path against a local manifest or a published prerelease before publishing.
+
+## Linux database storage checks
+
+Use an isolated disposable profile and local database base. On a detected network-mounted
+settings directory, confirm that startup places SQLite files under the local per-profile directory
+while settings, credentials and queue JSON remain in the settings directory. The default base is
+`/var/tmp/openbridge-state-<uid>`; `OPENBRIDGE_STATE_DIR` can select another absolute local base.
+See [BUILD.md](BUILD.md#library-index) for persistence and backup requirements.
+
+Before relocation, create a disposable tags/collections/notes and a completed download record.
+Restart after relocation and verify both remain available. Update the note, restart again and
+confirm the newer local value survives. Confirm a second profile uses a different database
+subdirectory. Verify a relative override, a detected remote override and a corrupt source database
+produce a startup error while preserving original files. Never remove the active state directory
+as part of cache cleanup: annotations and history are persistent data.
+
+Using only disposable data, change the state base, update an annotation and then return to the
+local settings directory. Confirm the latest annotation survives and replaced destination copies
+remain under `.sqlite-before-relocation-*`. Remove one expected database while leaving its directory in place, and confirm startup fails.
+Remove the recorded active directory and confirm
+startup fails instead of reverting to the old originals. A location record from another computer
+must also produce an explicit error. Preserve `sqlite-state.json` with database backups; never
+remove it as an error-recovery shortcut.
 
 ## Browsing regression checks
 
@@ -187,3 +226,9 @@ Verify:
 
 Library deletion, queue cleanup, update replacement and forced shutdown should be tested only with
 disposable data. Never run destructive tests against a real asset library.
+
+The real-backend shared Library fixture (`npm run test:shared-library:ui`, after build)
+uses a disposable profile and synthetic Unicode/space-containing model and HDR roots.
+It verifies metadata workers and persistence, resolution sorting, 3D/HDR rendering,
+inspector organization, saved root/format searches, batch inspection and project copying.
+It runs on both operating systems in Quality; Linux CI uses Xvfb and software GL.

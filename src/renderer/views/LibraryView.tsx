@@ -39,9 +39,13 @@ function localFacts(asset: AssetRecord): string {
   if (technical?.dimensions) facts.push(formatMeasurementText(technical.dimensions));
   else if (technical?.scanArea) facts.push(formatMeasurementText(technical.scanArea));
   if (technical?.maxTris) facts.push(`${technical.maxTris.toLocaleString()} tris`);
-  if (asset.issueCount != null) {
+  if (technical?.local?.image) facts.push(`${technical.local.image.width} × ${technical.local.image.height}`);
+  else if (technical?.resolution) facts.push(`${technical.resolution / 1024}K`);
+  if (asset.repo === "shared") {
+    if ((asset.issueCount ?? 0) > 0) facts.push(`${asset.issueCount} issues`);
+  } else if (asset.issueCount != null) {
     facts.push(asset.issueCount === 0 ? "Healthy" : `${asset.issueCount} issue${asset.issueCount === 1 ? "" : "s"}`);
-  } else if (technical?.resolution) {
+  } else if (technical?.resolution && !facts.includes(`${technical.resolution / 1024}K`)) {
     facts.push(`${technical.resolution / 1024}K`);
   }
   if (technical?.lodCount) facts.push(`${technical.lodCount} LOD${technical.lodCount === 1 ? "" : "s"}`);
@@ -109,6 +113,8 @@ export function LibraryView() {
   const cancellingHealth = useRef(false);
   const [healthProgress, setHealthProgress] = useState<{ checked: number; total: number; percent: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [inspectionProgress, setInspectionProgress] = useState<SharedCopyProgress | null>(null);
+  const [inspectionFailures, setInspectionFailures] = useState<Array<{ name: string; message: string }>>([]);
   const [copyProgress, setCopyProgress] = useState<SharedCopyProgress | null>(null);
   const [copyReport, setCopyReport] = useState<SharedCopyReport | null>(null);
   const [copyStopping, setCopyStopping] = useState(false);
@@ -200,6 +206,21 @@ export function LibraryView() {
 
   const includesShared = [...selectedIds].some(id => id.startsWith("shared:"));
   const onlyShared = includesShared && [...selectedIds].every(id => id.startsWith("shared:"));
+
+  async function inspectSelectedShared() {
+    if (!onlyShared || selectedIds.size > 500 || inspectionProgress) return;
+    setInspectionFailures([]);
+    setInspectionProgress({ completed: 0, total: selectedIds.size });
+    const dispose = window.openbridge.sharedLibrary.onInspectionProgress(setInspectionProgress);
+    try {
+      const report = await window.openbridge.sharedLibrary.inspectSelection([...selectedIds], libraryFilterQuery(useStore.getState()));
+      setInspectionFailures(report.failures);
+      await queryLocalLibrary(true);
+      toast(`${report.cancelled ? "Stopped after" : "Inspected"} ${report.inspected} shared files`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally { dispose(); setInspectionProgress(null); }
+  }
 
   async function copySelectedShared() {
     if (!onlyShared || selectedIds.size > 100 || copyProgress) return;
@@ -356,7 +377,7 @@ export function LibraryView() {
       { value: "size", label: "Library size · largest first" },
       { value: "issues", label: "Health issues · most first" }
     ];
-    if (localType !== "hdri") {
+    if (localType !== "hdri" || localProvider === "shared") {
       options.splice(4, 0,
         { value: "resolution", label: "Resolution · highest first" },
         ...(showMaps ? [{ value: "maps" as LibrarySort, label: "Texture maps · most first" }] : [])
@@ -584,6 +605,14 @@ export function LibraryView() {
           </section>
         )}
 
+        {inspectionProgress && <div className="poliigon-indexing" role="status">
+          <span>Inspecting metadata · {inspectionProgress.completed} of {inspectionProgress.total} processed</span>
+          <button type="button" className="text-btn" onClick={() => void window.openbridge.sharedLibrary.cancelInspection()}>Stop after current file</button>
+        </div>}
+        {inspectionFailures.length > 0 && <details className="error-box">
+          <summary>{inspectionFailures.length} files could not be inspected</summary>
+          {inspectionFailures.map((item, index) => <p key={index}>{item.name}: {item.message}</p>)}
+        </details>}
         {copyProgress && <div className="poliigon-indexing" role="status">
           <span>Copying shared assets · {copyProgress.completed} of {copyProgress.total} processed</span>
           <button type="button" className="text-btn" disabled={copyStopping} onClick={() => {
@@ -628,6 +657,8 @@ export function LibraryView() {
               >
                 {selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()}`}
               </button>
+              {onlyShared && <button type="button" className="btn btn-ghost" disabled={Boolean(inspectionProgress) || selectedIds.size > 500}
+                onClick={() => void inspectSelectedShared()}>Inspect metadata</button>}
               {onlyShared && <button type="button" className="btn btn-primary" disabled={Boolean(copyProgress) || selectedIds.size > 100}
                 onClick={() => void copySelectedShared()}>Copy selected assets</button>}
               <button

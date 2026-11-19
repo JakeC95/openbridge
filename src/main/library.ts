@@ -1,3 +1,5 @@
+import { inspectSharedFileFacts, SHARED_FACTS_REVISION } from "./shared-file-facts";
+import type { SharedFileFacts } from "../shared/types";
 import { isInside, resolveSharedFile, scanSharedRoot, sharedRootId, variantFamily } from "./shared-library";
 import type { SharedAssetOrganization, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
 import { realpath, readdir, readFile, rm, stat } from "node:fs/promises";
@@ -845,6 +847,9 @@ export class LibraryService {
   private sharedStatus: SharedLibraryStatus[] = [];
   private sharedSignature = "";
   private sharedEpoch = 0;
+  private fileInspections = new Map<string, Promise<SharedFileFacts>>();
+  private fileInspectionQueue: Promise<unknown> = Promise.resolve();
+  private fileInspectionAbort = new AbortController();
   private sharedScan: { signature: string; epoch: number; result: Promise<void> } | null = null;
 
   constructor(
@@ -1149,6 +1154,40 @@ export class LibraryService {
     });
   }
 
+  inspectSharedMetadata(id: string): Promise<SharedFileFacts> {
+    const pending = this.fileInspections.get(id);
+    if (pending) return pending;
+    const result = this.fileInspectionQueue.catch(() => {}).then(async () => {
+      if (this.closed) throw new Error("The Library is closed.");
+      const { asset, path } = await this.sharedFile(id);
+      const current = await stat(path);
+      const cached = asset.technical?.local;
+      if (cached?.revision === SHARED_FACTS_REVISION && cached.bytes === current.size && cached.mtimeMs === current.mtimeMs) return cached;
+      const facts = await inspectSharedFileFacts(path, this.fileInspectionAbort.signal);
+      const technical = assetTechnicalFacts({ id: asset.id, name: asset.name });
+      technical.local = facts;
+      if (facts.image) technical.resolution = Math.max(facts.image.width, facts.image.height);
+      if (facts.model) {
+        technical.maxTris = facts.model.triangles ?? 0;
+        technical.mapTypes = facts.model.mapTypes.map(type => type === "basecolor" ? "albedo" : type);
+        technical.mapCount = technical.mapTypes.length;
+      }
+      if (facts.lod !== undefined && facts.model?.triangles !== null && facts.model?.triangles !== undefined) {
+        technical.lodTriangles = [{ label: `LOD${facts.lod}`, tris: facts.model.triangles }];
+        technical.lodCount = 1;
+      }
+      if (this.closed) throw new Error("The Library is closed.");
+      const live = this.index.getById(id);
+      if (!live || live.path !== asset.path) throw new Error("The asset moved during inspection. Reopen it in Library.");
+      this.index.saveSharedTechnical(id, asset.path, technical);
+      this.snapshotCache = null;
+      return facts;
+    }).finally(() => { this.fileInspections.delete(id); });
+    this.fileInspections.set(id, result);
+    this.fileInspectionQueue = result;
+    return result;
+  }
+
   sharedVariants(id: string): AssetRecord[] {
     const asset = typeof id === "string" ? this.index.getById(id) : null;
     if (asset?.repo !== "shared") return [];
@@ -1365,6 +1404,7 @@ export class LibraryService {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.fileInspectionAbort.abort();
     this.index.close();
   }
 }

@@ -39,12 +39,46 @@ requires an unlocked keyring. See [Electron credential storage](https://www.elec
 
 ## Library index
 
-Local library metadata is stored in `library-index.sqlite` in the settings directory in WAL mode.
+Local library metadata is stored in `library-index.sqlite` in WAL mode. SQLite files normally live
+in the settings directory. On Linux, a settings directory on a detected network filesystem
+(including NFS/SMB and FUSE mounts) instead uses a private local directory under
+`/var/tmp/openbridge-state-<uid>/<profile-hash>`. Settings, credentials, download queues and
+preview caches keep their existing locations. Each settings profile has its own database directory.
+
+Set `OPENBRIDGE_STATE_DIR` to an absolute directory on a local disk to choose another database
+base. Profiles remain isolated in hashed subdirectories. OpenBridge rejects detected remote
+filesystems and directories not owned by the current user. The first relocation snapshots existing
+SQLite databases through SQLite online backup, including committed WAL records, and preserves
+the originals. A failed migration stops startup with an error instead of discarding annotations
+or download history.
+
+The local database directory is persistent app data: keep it across launches and do not include
+it in temporary-file cleanup. `shared-organization.sqlite` holds local tags, collections and notes;
+completion-history databases also contain persistent records. Back up this directory along with
+the settings directory. Original databases in the settings directory remain a pre-migration
+snapshot after relocation. `sqlite-state.json` in the settings directory records the active
+database location, computer and expected database filenames. Keep it with your backups. Changing the override or moving back
+to a local settings directory relocates the current databases; overwritten destination copies are
+preserved under `.sqlite-before-relocation-*` in the destination. The original active copy also
+remains intact. An unrecorded existing destination or additional destination databases requires
+manual reconciliation instead of guessing which copy is current.
+
+If the recorded directory disappears (for example, because system cleanup removed inactive data
+under `/var/tmp`) or belongs to another computer sharing the same home directory, startup stops
+rather than reverting to outdated originals. Restore the recorded databases and location record
+from backup, or transfer them together to an owned local location before restarting. This mechanism
+does not synchronize databases between computers. Do not delete the location record to bypass an
+error: doing so can make older databases appear current.
+
+Library index details:
+
 The schema uses an `assets` table, an FTS5 index for local search, cached health statistics and an
 `issues` table. Asset filenames and previews stay in the normal Megascans folder layout; the
 database is an index, not a replacement for the library.
 
-- Delete `library-index.sqlite*` and run Rescan to rebuild it.
+- Run Rescan to rebuild the library index. Do not delete expected database files: the state record
+  detects missing databases and stops startup to prevent silent loss. Preserve
+  `shared-organization.sqlite` and completion-history databases when restoring backups.
 - The schema version is tracked with `PRAGMA user_version`.
 - Unchanged folders skip JSON re-reading unless Rescan forces a full refresh.
 

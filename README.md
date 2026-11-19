@@ -13,17 +13,20 @@ binaries.
 
 ## Download
 
-Version 1.7.0 is available in **Releases** as a Windows x64 ZIP and a Linux x64 tar.gz.
+Version 1.7.1 is available in **Releases** as a Windows x64 ZIP and a Linux x64 tar.gz.
 Extract the archive and run `OpenBridge.exe` on Windows or `./OpenBridge` on Linux. From an
 existing portable installation, choose **Settings → Check and install** to update.
 
 Version 1.6.3 introduced the Linux package. Version 1.6.4 fixes an indexing banner that could
 linger after ambientCG or OpenHDRI was ready and makes session-only Epic sign-in visible when
 the desktop keyring cannot save the session. Version 1.7.0 adds read-only shared folders
-to Library with resumable indexing, previews, local organization and batch copy.
+to Library with resumable indexing, previews, local organization and batch copy. Version 1.7.1
+adds bounded source metadata inspection and keeps Linux SQLite state on local storage when
+the profile is on a network mount.
 
-Settings, saved sessions and the local index live outside the portable folder. Windows uses
-`%APPDATA%\openbridge`. Linux uses `${XDG_CONFIG_HOME:-$HOME/.config}/OpenBridge`.
+Settings, saved sessions and local state live outside the portable folder. Windows uses
+`%APPDATA%\openbridge`. Linux uses `${XDG_CONFIG_HOME:-$HOME/.config}/OpenBridge`; SQLite databases move to persistent
+local storage when that profile is on a network mount. See [storage configuration](docs/BUILD.md).
 
 ## Highlights
 

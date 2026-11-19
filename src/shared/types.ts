@@ -1,3 +1,5 @@
+import type { SharedModelFacts } from "../main/shared-model-facts";
+import type { SharedHdrFacts } from "../main/shared-hdr-facts";
 import type {
   BlenderKitAuthState,
   BlenderKitKeyTest,
@@ -38,6 +40,19 @@ export interface SharedOrganizationOptions {
   formats: string[];
   tags: string[];
   collections: string[];
+}
+
+export interface SharedFileFacts {
+  revision: number;
+  inspectedAt: number;
+  bytes: number;
+  mtimeMs: number;
+  format: string;
+  image?: SharedHdrFacts;
+  model?: SharedModelFacts;
+  lod?: number;
+  version?: string;
+  notes: string[];
 }
 
 export interface SharedHdrInfo {
@@ -106,6 +121,7 @@ export interface DownloadMapOption {
 }
 
 export interface AssetTechnicalSummary {
+  local?: SharedFileFacts;
   resolution: number | null;
   mapTypes: string[];
   mapCount: number;
@@ -1056,6 +1072,10 @@ export interface OpenBridgeApi {
   queryLibraryIds(query: LibraryQuery): Promise<string[]>;
   localPreviews(assetId: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }>;
   sharedLibrary: {
+    inspectSelection(ids: string[], scope: LibraryQuery): Promise<{ inspected: number; cancelled: boolean; failures: Array<{ name: string; message: string }> }>;
+    cancelInspection(): Promise<void>;
+    onInspectionProgress(callback: (progress: SharedCopyProgress) => void): () => void;
+    inspectFile(id: string): Promise<SharedFileFacts>;
     stopScanning(): Promise<void>;
     variants(id: string): Promise<AssetRecord[]>;
     organization(id: string): Promise<SharedAssetOrganization>;

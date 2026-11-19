@@ -1,6 +1,6 @@
 {
   "name": "openbridge",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "private": true,
   "description": "Open-source, portable multi-provider asset and HDRI browser for Windows and Linux",
   "productName": "OpenBridge",
@@ -17,6 +17,8 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "test:browsing": "node scripts/test-browsing.mjs",
+    "test:local-state": "node scripts/test-local-state.mjs",
+    "test:shared-facts": "node scripts/test-shared-hdr-facts.mjs && node scripts/test-shared-model-facts.mjs && node scripts/test-shared-file-facts.mjs",
     "test:network": "node scripts/test-network.mjs",
     "test:providers": "node scripts/test-public-providers.mjs",
     "test:providers:live": "node scripts/test-public-providers.mjs --live",
@@ -26,7 +28,8 @@
     "dist:portable": "npm run build && node scripts/package-portable.mjs",
     "catalog:pack": "npm run build && electron . --build-catalog-pack=dist/catalog-metadata.json.gz",
     "catalog:pack:sample": "npm run build && electron . --build-catalog-pack=dist/catalog-metadata-sample.json.gz --catalog-limit=50",
-    "catalog:import": "electron . --import-catalog-pack=dist/catalog-metadata-sample.json.gz"
+    "catalog:import": "electron . --import-catalog-pack=dist/catalog-metadata-sample.json.gz",
+    "test:shared-library:ui": "node scripts/test-shared-library-ui.mjs"
   },
   "dependencies": {
     "@bb-studio/exr": "^0.2.0",

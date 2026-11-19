@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AssetRecord, MapPreview, SharedHdrInfo } from "../../shared/types";
+import type { AssetRecord, MapPreview, SharedHdrInfo, SharedFileFacts } from "../../shared/types";
 import { CloseIcon } from "../icons";
 import { useStore } from "../store";
 import { ImageViewer } from "./ImageViewer";
@@ -11,6 +11,8 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const favorite = useStore(state => state.sharedFavorites.includes(asset.id));
   const toast = useStore(state => state.toast);
   const [image, setImage] = useState<MapPreview | null>(null);
+  const [facts, setFacts] = useState<SharedFileFacts | null>(asset.technical?.local ?? null);
+  const [factsError, setFactsError] = useState("");
   const [hdr, setHdr] = useState<SharedHdrInfo | null>(null);
   const [problem, setProblem] = useState("");
   const [view, setView] = useState<"render" | "model">(asset.preview ? "render" : "model");
@@ -24,9 +26,19 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
 
   useEffect(() => {
     let current = true;
+    setFacts(asset.technical?.local ?? null);
+    setFactsError("");
+    setProblem("");
+    setImage(null);
+    setHdr(null);
     void window.openbridge.localPreviews(asset.id, asset.path).then(result => {
       if (current) setImage(result.renders[0] ?? null);
     }).catch(() => {});
+    void window.openbridge.sharedLibrary.inspectFile(asset.id).then(result => {
+      if (!current) return;
+      setFacts(result);
+      void useStore.getState().queryLocalLibrary(true);
+    }).catch(error => { if (current) setFactsError(error instanceof Error ? error.message : String(error)); });
     void window.openbridge.sharedLibrary.variants(asset.id).then(result => {
       if (current) setVariants(result);
     }).catch(() => {});
@@ -121,6 +133,35 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
           {hdr && <div><span>Dimensions</span><strong>{hdr.width} × {hdr.height}</strong></div>}
           <div><span>Modified</span><strong>{new Date(asset.mtime).toLocaleDateString()}</strong></div>
         </div>
+        {facts && <section className="shared-organization">
+          <h3>Source facts</h3>
+          <div className="technical-grid">
+            {facts.image && <>
+              <div><span>Pixel dimensions</span><strong>{facts.image.width} × {facts.image.height}</strong></div>
+              <div><span>Projection hint</span><strong>{facts.image.projectionHint === "equirectangular" ? "2:1 panorama candidate" : "Flat / other aspect"}</strong></div>
+              <div><span>Pixel type</span><strong>{facts.image.format === "hdr" ? "RGBE shared exponent" : [...new Set(facts.image.channels.map(channel => channel.type.toUpperCase()))].join(", ") || "Unknown"}</strong></div>
+              {facts.image.compression && <div><span>Compression</span><strong>{facts.image.compression}</strong></div>}
+              {facts.image.views.length > 0 && <div><span>Views</span><strong>{facts.image.views.join(", ")}</strong></div>}
+            </>}
+            {facts.model && <>
+              {facts.model.vertices !== null && <div><span>Stored vertices</span><strong>{facts.model.vertices.toLocaleString()}</strong></div>}
+              {facts.model.triangles !== null && <div><span>Stored triangles</span><strong>{facts.model.triangles.toLocaleString()}</strong></div>}
+              {facts.model.materials !== null && <div><span>Materials</span><strong>{facts.model.materials.toLocaleString()}</strong></div>}
+              {facts.model.textureImages !== null && <div><span>Image sources</span><strong>{facts.model.textureImages.toLocaleString()}</strong></div>}
+              {facts.model.uvCoordinates !== null && <div><span>UV coordinates</span><strong>{facts.model.uvCoordinates.toLocaleString()}</strong></div>}
+              {facts.model.bounds && <div><span>Mesh-local size</span><strong>{facts.model.bounds.max.map((max, axis) =>
+                (max - facts.model!.bounds!.min[axis]).toLocaleString(undefined, { maximumFractionDigits: 3 })).join(" × ")}
+                {facts.model.bounds.unit === "metres" ? " m" : " source units"}</strong></div>}
+            </>}
+            {facts.lod !== undefined && <div><span>Filename LOD</span><strong>LOD{facts.lod}</strong></div>}
+            {facts.version && <div><span>Filename version</span><strong>v{facts.version}</strong></div>}
+          </div>
+          {facts.image?.channels.length ? <details><summary>{facts.image.channels.length} image channels</summary>
+            <p className="hint">{facts.image.channels.map(channel => `${channel.name} (${channel.type})`).join(", ")}</p>
+          </details> : null}
+          {facts.notes.map((note, index) => <p className="hint" key={index}>{note}</p>)}
+        </section>}
+        {factsError && <p className="hint" role="status">{factsError}</p>}
         <p className="hint shared-asset-path" title={asset.path}>{asset.path}</p>
         {variants.length > 0 && <section className="shared-organization">
           <h3>Possible variants in this folder</h3>

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, realpath, rename, rm, stat, symlink, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, realpath, rename, rm, stat, symlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
@@ -12,13 +12,17 @@ const storage = new Map();
 globalThis.localStorage = { getItem: key => storage.get(key) ?? null,
   setItem: (key, value) => storage.set(key, value) };
 globalThis.window = { openbridge: {} };
+const directory = await mkdtemp(join(tmpdir(), "openbridge-browsing-"));
+// Exercise the real metadata worker, including service caching and persistence, without a prior app build.
+await build({ entryPoints: ["src/main/shared-facts-worker.ts"], bundle: true, platform: "node",
+  format: "cjs", outfile: join(directory, "shared-facts-worker.js") });
 const result = await build({
   stdin: { contents: `
     export { LibraryIndex } from './src/main/library-index';
     export { LibraryService } from './src/main/library';
     export { inspectSharedHdr } from './src/main/shared-library';
     export { scanLocalModel } from './src/main/model-preview';
-    export { listSharedModelPackage, copySharedModelPackage, copySharedSelection } from './src/main/shared-package';
+    export { listSharedModelPackage, inspectSharedModelDependencies, copySharedModelPackage, copySharedSelection } from './src/main/shared-package';
     export { CatalogMetadataProvider } from './src/main/catalog-metadata';
     export { assetTechnicalFacts } from './src/shared/asset-metadata';
     export { localCategoryPath } from './src/shared/browsing';
@@ -39,7 +43,7 @@ const result = await build({
   `, resolveDir: process.cwd(), loader: "ts" },
   bundle: true, platform: "node", format: "esm", write: false,
   banner: { js: 'import { createRequire as fixtureRequire } from "node:module"; const require = fixtureRequire(process.cwd() + "/package.json");' },
-  define: { __OPENBRIDGE_REPOSITORY__: '""', __OPENBRIDGE_CONFIG__: JSON.stringify({
+  define: { __dirname: JSON.stringify(directory), __OPENBRIDGE_REPOSITORY__: '""', __OPENBRIDGE_CONFIG__: JSON.stringify({
     algoliaAppId: "fixture", algoliaApiKey: "fixture", algoliaIndex: "assets"
   }) },
   plugins: [{ name: "electron-fixture", setup(bundler) {
@@ -54,7 +58,6 @@ const api = await import(`data:text/javascript;base64,${Buffer.from(result.outpu
 const { LibraryIndex, LibraryService, CatalogMetadataProvider, assetTechnicalFacts, localCategoryPath,
   libraryFilterQuery, catalogFilterQuery, renderPreviews, useStore, searchCatalog, searchCatalogIds,
   highResolutionPreviewPayload, highResolutionPreview, buildMapPreviews, buildBillboardPreviews } = api;
-const directory = await mkdtemp(join(tmpdir(), "openbridge-browsing-"));
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
 const index = new LibraryIndex(join(directory, "index.sqlite"), logger);
 const metadata = new CatalogMetadataProvider(join(directory, "metadata.sqlite"), logger);
@@ -452,6 +455,26 @@ try {
     });
     const copyRoot = join(directory, "Project copies");
     await mkdir(copyRoot);
+    const materialFile = join(nested, "Chair.mtl");
+    const completeMaterial = await readFile(materialFile, "utf8");
+    await writeFile(materialFile, "newmtl Wood\nmap_Bump ../Textures/Missing.png\nmap_Kd -s 1 1 1 ../Textures/Wood # colour.png\n");
+    const availableDependencies = await api.inspectSharedModelDependencies(sharedRoot, model);
+    const incompleteManifest = await api.scanLocalModel(nested, chair.id, "shared", "3d", model, availableDependencies.files);
+    check("a missing MTL map preserves valid referenced textures outside the model directory for preview", () => {
+      assert.equal(availableDependencies.files.length, 3);
+      assert.ok(availableDependencies.files.includes(texture));
+      assert.equal(availableDependencies.notes.length, 1);
+      assert.match(availableDependencies.notes[0], /Missing\.png/);
+      const validTextureUrl = new URL("../Textures/Wood%20%23%20colour.png", incompleteManifest.meshes[0].mtlUrl).href;
+      assert.ok(incompleteManifest.allowedFileUrls.includes(validTextureUrl));
+      assert.ok(!incompleteManifest.allowedFileUrls.some(url => url.endsWith("Missing.png")));
+    });
+    await assert.rejects(() => api.copySharedModelPackage(sharedRoot, model, copyRoot), /Missing model dependency: Missing\.png/);
+    const incompleteCopies = await readdir(copyRoot);
+    check("copying an incomplete model package still reports its missing resource", () => {
+      assert.deepEqual(incompleteCopies, []);
+    });
+    await writeFile(materialFile, completeMaterial);
     const copied = await api.copySharedModelPackage(sharedRoot, model, copyRoot);
     check("shared OBJ package preserves relative MTL and texture paths", () => assert.equal(copied.files, 3));
     assert.equal(await readFile(join(copied.folder, "Textures", "Wood # colour.png"), "utf8"), "fixture texture");
@@ -459,6 +482,7 @@ try {
     const unsafe = join(nested, "Unsafe.gltf");
     await writeFile(unsafe, JSON.stringify({ buffers: [{ uri: "../../outside.bin" }] }));
     await assert.rejects(() => api.listSharedModelPackage(sharedRoot, unsafe), /outside its shared root/);
+    await assert.rejects(() => api.inspectSharedModelDependencies(sharedRoot, unsafe), /outside its shared root/);
     await rm(unsafe);
     await writeFile(join(nested, "model.bin"), "mesh data");
     const gltf = join(nested, "Fixture.gltf");
@@ -484,6 +508,7 @@ try {
       await symlink(external, linked);
       await writeFile(gltf, JSON.stringify({ buffers: [{ uri: "linked.bin" }] }));
       await assert.rejects(() => api.listSharedModelPackage(sharedRoot, gltf), /linked model dependency/);
+      await assert.rejects(() => api.inspectSharedModelDependencies(sharedRoot, gltf), /linked model dependency/);
     }
     await rm(gltf);
     await rm(glb);
@@ -563,6 +588,93 @@ try {
   } finally {
     shared.close();
   }
+
+  const factsRoot = join(directory, "Metadata source");
+  await mkdir(factsRoot);
+  const factsImageRoot = join(directory, "Metadata images");
+  await mkdir(factsImageRoot);
+  const factsModel = join(factsRoot, "Fixture_LOD2_v003.obj");
+  const factsHdr = join(factsImageRoot, "Panorama.hdr");
+  const factsNative = join(factsRoot, "Native.fbx");
+  const factsSource = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nusemtl Paint\nf 1 2 3 4\n";
+  await writeFile(factsModel, factsSource);
+  await writeFile(factsHdr, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 32 +X 64\n");
+  await writeFile(factsNative, "unsupported native model fixture");
+  const factsTime = new Date(Date.now() - 10000);
+  await utimes(factsModel, factsTime, factsTime);
+  const factsDatabase = join(directory, "facts-shared.sqlite");
+  const openFactsLibrary = () => new LibraryService(() => "", () => "", () => "", () => null, () => null,
+    factsDatabase, logger, () => ({}), () => [
+      { id: "facts", name: "Metadata source", path: factsRoot, kind: "models" },
+      { id: "facts-images", name: "Metadata images", path: factsImageRoot, kind: "hdris" }
+    ]);
+  let factsLibrary = openFactsLibrary();
+  try {
+    await factsLibrary.snapshot(true);
+    const sourceAsset = factsLibrary.query({ provider: "shared", sharedFormat: "obj" }).assets[0];
+    const imageAsset = factsLibrary.query({ provider: "shared", sharedFormat: "hdr" }).assets[0];
+    const nativeAsset = factsLibrary.query({ provider: "shared", sharedFormat: "fbx" }).assets[0];
+    const pendingFacts = factsLibrary.inspectSharedMetadata(sourceAsset.id);
+    assert.equal(factsLibrary.inspectSharedMetadata(sourceAsset.id), pendingFacts);
+    const modelFacts = await pendingFacts;
+    const imageFacts = await factsLibrary.inspectSharedMetadata(imageAsset.id);
+    const nativeFacts = await factsLibrary.inspectSharedMetadata(nativeAsset.id);
+    check("shared metadata worker deduplicates requests and persists evidenced facts with filename labels", () => {
+      assert.equal(modelFacts.model.triangles, 2);
+      assert.equal(modelFacts.model.vertices, 4);
+      assert.equal(modelFacts.model.bounds.unit, "unknown");
+      assert.equal(modelFacts.lod, 2);
+      assert.equal(modelFacts.version, "003");
+      assert.equal(imageFacts.image.width, 64);
+      assert.equal(nativeFacts.model.status, "unsupported");
+      assert.deepEqual(factsLibrary.getAsset(sourceAsset.id).technical.local, modelFacts);
+      assert.deepEqual(factsLibrary.getAsset(sourceAsset.id).technical.lodTriangles, [{ label: "LOD2", tris: 2 }]);
+    });
+    check("shared source facts participate in common triangle filtering and metric sorting without invented readiness", () => {
+      assert.equal(factsLibrary.query({ provider: "shared", maxTris: 1 }).total, 0);
+      assert.deepEqual(factsLibrary.query({ provider: "shared", maxTris: 2 }).assets.map(asset => asset.id), [sourceAsset.id]);
+      assert.equal(factsLibrary.query({ provider: "shared", sort: "triangles" }).assets[0].id, sourceAsset.id);
+      assert.equal(factsLibrary.query({ provider: "shared", sort: "resolution" }).assets[0].id, imageAsset.id);
+      assert.equal(factsLibrary.getAsset(imageAsset.id).technical.resolution, 64);
+      for (const ready of ["closed", "scale-fixed", "tileable", "modular"])
+        assert.equal(factsLibrary.query({ provider: "shared", ready: [ready] }).total, 0);
+    });
+    factsLibrary.close();
+    factsLibrary = openFactsLibrary();
+    await factsLibrary.snapshot(true);
+    const cachedFacts = await factsLibrary.inspectSharedMetadata(sourceAsset.id);
+    check("shared facts survive restart and unchanged full reindex and reuse their inspection timestamp", () => {
+      assert.deepEqual(cachedFacts, modelFacts);
+      assert.deepEqual(factsLibrary.getAsset(imageAsset.id).technical.local, imageFacts);
+    });
+    // Change geometry without changing byte length: mtime alone must invalidate persisted facts.
+    await writeFile(factsModel, factsSource.replaceAll("v 1", "v 2"));
+    const nextTime = new Date(factsTime.getTime() + 5000);
+    await utimes(factsModel, nextTime, nextTime);
+    await factsLibrary.snapshot(true);
+    check("same-size model edits invalidate common metrics and file facts during reindex", () => {
+      assert.equal(factsLibrary.getAsset(sourceAsset.id).technical, undefined);
+      assert.equal(factsLibrary.query({ provider: "shared", maxTris: 2 }).total, 0);
+      assert.deepEqual(factsLibrary.getAsset(imageAsset.id).technical.local, imageFacts);
+    });
+    const changedFacts = await factsLibrary.inspectSharedMetadata(sourceAsset.id);
+    assert.equal(changedFacts.model.bounds.max[0], 2);
+    assert.notEqual(changedFacts.mtimeMs, modelFacts.mtimeMs);
+    // Preserve timestamp while adding another face: byte length must independently invalidate facts.
+    await writeFile(factsModel, factsSource + "f 1 2 3\n");
+    await utimes(factsModel, nextTime, nextTime);
+    await factsLibrary.snapshot(true);
+    check("size changes invalidate shared facts even when the source timestamp is preserved", () => {
+      assert.equal(factsLibrary.getAsset(sourceAsset.id).technical, undefined);
+    });
+    const resizedFacts = await factsLibrary.inspectSharedMetadata(sourceAsset.id);
+    check("reinspection replaces stale geometry and restores common triangle queries", () => {
+      assert.equal(resizedFacts.model.triangles, 3);
+      assert.equal(factsLibrary.query({ provider: "shared", maxTris: 2 }).total, 0);
+      assert.equal(factsLibrary.query({ provider: "shared", maxTris: 3 }).total, 1);
+    });
+    await assert.rejects(() => factsLibrary.inspectSharedMetadata("shared:facts:missing"), /no longer indexed|not found|unavailable/i);
+  } finally { factsLibrary.close(); }
 
   const transitions = [];
   let doneScanning;

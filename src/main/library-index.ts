@@ -218,7 +218,11 @@ export class LibraryIndex {
         search_str = excluded.search_str,
         folder_mtime = excluded.folder_mtime,
         json_mtime = excluded.json_mtime,
-        technical_json = excluded.technical_json,
+        technical_json = CASE WHEN assets.repo = 'shared' AND excluded.repo = 'shared'
+          AND assets.id = excluded.id AND assets.mtime = excluded.mtime
+          AND json_extract(assets.technical_json, '$.local.bytes') = ?
+          AND json_extract(assets.technical_json, '$.local.mtimeMs') = ?
+          THEN COALESCE(excluded.technical_json, assets.technical_json) ELSE excluded.technical_json END,
         health_mtime = 0`
     );
     this.transaction(() => {
@@ -240,7 +244,9 @@ export class LibraryIndex {
           asset.searchStr,
           Math.trunc(folderMtime),
           Math.trunc(jsonMtime),
-          asset.technical ? JSON.stringify(asset.technical) : null
+          asset.technical ? JSON.stringify(asset.technical) : null,
+          asset.sizeBytes ?? -1,
+          asset.mtime
         );
       }
     });
@@ -316,6 +322,11 @@ export class LibraryIndex {
     const row = this.db.prepare("SELECT COUNT(*) AS total FROM assets WHERE repo = 'shared' AND id GLOB ?")
       .get(`shared:${id}:*`) as { total: number };
     return row.total;
+  }
+
+  saveSharedTechnical(id: string, path: string, technical: AssetRecord["technical"]): void {
+    this.db.prepare("UPDATE assets SET technical_json = ? WHERE id = ? AND path = ? AND repo = 'shared'")
+      .run(JSON.stringify(technical), id, path);
   }
 
   sharedSiblings(path: string, rootId: string): AssetRecord[] {

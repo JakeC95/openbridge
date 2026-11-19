@@ -1,3 +1,4 @@
+import { localStatePath } from "./local-state";
 import { app } from "electron";
 import { cp, mkdir, readFile, readdir, rm, stat, statfs, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -427,7 +428,7 @@ export class DownloadManager {
     private readonly notify: (message: string, error?: boolean) => void
   ) {
     this.queueFile = join(app.getPath("userData"), "download-queue.json");
-    try { this.completions = new DownloadCompletions(join(app.getPath("userData"), "download-history.sqlite")); }
+    try { this.completions = new DownloadCompletions(localStatePath(app.getPath("userData"), "download-history.sqlite")); }
     catch (error) { this.historyError = "Download history is unavailable."; this.logger.error("Could not open download history", { error }); }
     this.restoreQueue();
   }

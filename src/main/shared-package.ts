@@ -8,6 +8,13 @@ import { isInside } from "./shared-library";
 const MAX_MANIFEST = 24 * 1024 * 1024;
 const MAX_DEPENDENCIES = 2048;
 
+class MissingDependencyError extends Error {}
+
+export interface SharedModelDependencies {
+  files: string[];
+  notes: string[];
+}
+
 async function readManifest(path: string, binary = false): Promise<string> {
   const file = await open(path);
   try {
@@ -50,7 +57,7 @@ async function dependency(root: string, author: string, reference: string, encod
   if (!isInside(root, expected)) throw new Error("A model dependency is outside its shared root.");
   const actual = await realpath(expected).catch(() => null);
   const info = actual ? await lstat(actual).catch(() => null) : null;
-  if (!actual || !info?.isFile()) throw new Error(`Missing model dependency: ${basename(expected)}`);
+  if (!actual || !info?.isFile()) throw new MissingDependencyError(`Missing model dependency: ${basename(expected)}`);
   if (relative(expected, actual) !== "") throw new Error("A linked model dependency cannot be copied safely.");
   return actual;
 }
@@ -71,7 +78,7 @@ function mtlTexture(value: string): string {
   return words.join(" ");
 }
 
-export async function listSharedModelPackage(root: string, primary: string): Promise<string[]> {
+async function listSharedDependencies(root: string, primary: string, tolerateMissing: boolean): Promise<SharedModelDependencies> {
   if (!isInside(root, primary)) throw new Error("The shared model is outside its registered root.");
   const locator = relative(root, primary);
   const [canonicalRoot, canonicalPrimary] = await Promise.all([realpath(root), realpath(primary)]);
@@ -81,11 +88,23 @@ export async function listSharedModelPackage(root: string, primary: string): Pro
   root = canonicalRoot;
   primary = canonicalPrimary;
   const files = new Set([primary]);
+  const notes = new Set<string>();
+  let references = 0;
   async function add(author: string, reference: string, encoded = false): Promise<string | null> {
+    if (++references > MAX_DEPENDENCIES) throw new Error("The model has too many dependencies for one package.");
     const file = await dependency(root, author, reference, encoded);
     if (file) files.add(file);
     if (files.size > MAX_DEPENDENCIES) throw new Error("The model has too many dependencies for one package.");
     return file;
+  }
+  function missing(error: unknown): boolean {
+    if (!tolerateMissing || !(error instanceof MissingDependencyError)) return false;
+    notes.add(`${error.message}. The available model resources remain usable in preview.`);
+    return true;
+  }
+  async function addAvailable(author: string, reference: string, encoded = false): Promise<string | null> {
+    try { return await add(author, reference, encoded); }
+    catch (error) { if (missing(error)) return null; throw error; }
   }
   const extension = extname(primary).toLowerCase();
   if (extension === ".gltf" || extension === ".glb") {
@@ -95,7 +114,7 @@ export async function listSharedModelPackage(root: string, primary: string): Pro
     };
     for (const list of [manifest.buffers, manifest.images]) {
       if (!Array.isArray(list)) continue;
-      for (const entry of list) if (typeof entry?.uri === "string") await add(primary, entry.uri, true);
+      for (const entry of list) if (typeof entry?.uri === "string") await addAvailable(primary, entry.uri, true);
     }
   } else if (extension === ".obj") {
     const source = await readManifest(primary);
@@ -108,9 +127,13 @@ export async function listSharedModelPackage(root: string, primary: string): Pro
       } catch (error) {
         // Some exporters list several space-delimited libraries on one line.
         const names = reference.match(/"[^"]*"|[^\s]+/g) ?? [];
-        if (names.length < 2 || !(error instanceof Error && error.message.startsWith("Missing model dependency:"))) throw error;
+        if (!(error instanceof MissingDependencyError)) throw error;
+        if (names.length < 2) {
+          if (missing(error)) continue;
+          throw error;
+        }
         for (const name of names) {
-          const file = await add(primary, name);
+          const file = await addAvailable(primary, name);
           if (file) materials.add(file);
         }
       }
@@ -118,13 +141,23 @@ export async function listSharedModelPackage(root: string, primary: string): Pro
     for (const material of materials) {
       const contents = await readManifest(material);
       for (const match of contents.matchAll(/^[ \t]*(?:map_\w+|bump|disp|decal|refl|norm)[ \t]+([^\r\n]+)$/gim)) {
-        await add(material, mtlTexture(match[1]));
+        await addAvailable(material, mtlTexture(match[1]));
       }
     }
   } else {
     throw new Error("Dependency packaging supports glTF, GLB and OBJ.");
   }
-  return [...files];
+  return { files: [...files], notes: [...notes] };
+}
+
+/** Preview can retain available resources; unsafe references still reject the whole request. */
+export function inspectSharedModelDependencies(root: string, primary: string): Promise<SharedModelDependencies> {
+  return listSharedDependencies(root, primary, true);
+}
+
+/** Copying requires a complete, self-contained dependency set. */
+export async function listSharedModelPackage(root: string, primary: string): Promise<string[]> {
+  return (await listSharedDependencies(root, primary, false)).files;
 }
 
 export async function copySharedModelPackage(root: string, primary: string, destination: string): Promise<{ folder: string; files: number }> {

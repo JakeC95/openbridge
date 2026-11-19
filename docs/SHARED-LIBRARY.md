@@ -37,6 +37,40 @@ dimensions from oversized HDR headers, so source facts remain available when dec
 Large or native files can be opened in the associated application. Automatic grouping across
 folders, dependency packaging for more formats, and explicit shared file edits remain planned.
 
+## Source metadata inspection
+
+Opening a shared asset inspects its source in a separate bounded worker and caches the
+result in the local index. Select up to 500 shared files and choose **Inspect metadata**
+to enrich a batch, with progress, per-file errors and **Stop after current file**.
+Unchanged files reuse cached facts; source size/timestamp changes invalidate them.
+The shared roots remain read-only.
+
+- HDR/EXR: pixel dimensions, aspect-ratio projection hint, channel names and precision,
+  compression and EXR layout/view information. Inspection reads at most 1 MiB of headers,
+  including for files too large for live preview. A 2:1 aspect is a panorama candidate;
+  it does not establish the camera projection. RGBE uses a shared exponent.
+- OBJ: stored vertices, polygon triangle counts, UVs/normals, assigned material names,
+  referenced material libraries and bounds in source units. OBJ does not declare metres.
+  The metadata parser reads at most 24 MiB and does not load material textures.
+- glTF 2.0/GLB: declared accessor geometry, material/image counts, PBR map types and bounds
+  in mesh-local metres. Only JSON is inspected (at most 8 MiB), without reading external
+  buffers or images. Scene transforms, instances, morphs and skinning are excluded from
+  these geometry bounds/counts. The inspector explains those limits.
+- Filename LOD/version tokens are labelled as filename information. Other native model
+  formats retain their file facts and show that geometry inspection is unavailable.
+
+Inspected HDR resolution and known model triangles feed Library sorting, comparison and
+triangle filters. Unknown facts remain unset. File inspection does not infer provider
+ownership, licensing, semantic categories, weather or physically measured scale.
+
+Model previews retain valid OBJ/glTF dependencies when another referenced file is missing and
+show a missing-resource note. Copying a model package still rejects incomplete dependencies.
+
+The next priorities are local preview/proxy generation for HDR files without thumbnails,
+additional geometry formats, dependency health, and explicit asset-family grouping.
+Keep geometry metadata separate from runtime preview measurements so scene instances and
+transforms cannot silently change the meaning of a stored metric.
+
 ## Design and next stages
 
 The design below describes the full shared library work, including behavior beyond this pilot.
