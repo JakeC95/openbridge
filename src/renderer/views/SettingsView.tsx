@@ -3,7 +3,8 @@ import { useStore } from "../store";
 import type {
   AppSettings,
   AssetDefaultsKind,
-  DownloadPreset
+  DownloadPreset,
+  SharedLibraryRoot
 } from "../../shared/types";
 import {
   commonMapTypesForKind,
@@ -148,15 +149,39 @@ export function SettingsView() {
     const folder = await window.openbridge.chooseDirectory();
     if (!folder) return;
     const base = folder.replace(/[\\/]+$/, "");
+    const separator = folder.includes("\\") ? "\\" : "/";
     patch({
       libraryRoot: folder,
-      libraryPath: `${base}\\Megascans`,
-      poliigonLibraryPath: `${base}\\Poliigon`,
-      polyhavenLibraryPath: `${base}\\PolyHaven`,
-      ambientcgLibraryPath: `${base}\\ambientCG`,
-      blenderkitLibraryPath: `${base}\\BlenderKit`,
-      openhdriLibraryPath: `${base}\\OpenHDRI`
+      libraryPath: `${base}${separator}Megascans`,
+      poliigonLibraryPath: `${base}${separator}Poliigon`,
+      polyhavenLibraryPath: `${base}${separator}PolyHaven`,
+      ambientcgLibraryPath: `${base}${separator}ambientCG`,
+      blenderkitLibraryPath: `${base}${separator}BlenderKit`,
+      openhdriLibraryPath: `${base}${separator}OpenHDRI`
     });
+  }
+
+  async function addSharedRoot(kind: SharedLibraryRoot["kind"]) {
+    const folder = await window.openbridge.chooseDirectory();
+    if (!folder) return;
+    const name = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? (kind === "models" ? "Shared models" : "Shared HDRIs");
+    setDraft(current => current ? {
+      ...current,
+      sharedLibraryRoots: [...(current.sharedLibraryRoots ?? []), { id: crypto.randomUUID(), name, path: folder, kind }]
+    } : current);
+  }
+
+  function editSharedRoot(id: string, updates?: Partial<SharedLibraryRoot>) {
+    setDraft(current => current ? {
+      ...current,
+      sharedLibraryRoots: (current.sharedLibraryRoots ?? []).flatMap(root =>
+        root.id !== id ? [root] : updates ? [{ ...root, ...updates }] : [])
+    } : current);
+  }
+
+  async function remapSharedRoot(id: string) {
+    const path = await window.openbridge.chooseDirectory();
+    if (path) editSharedRoot(id, { path });
   }
 
   async function choosePoliigonLibrary() {
@@ -211,6 +236,24 @@ export function SettingsView() {
           </div>
           <p className="hint">Applies immediately. Thumbnail size is controlled separately in Discover and Library.</p>
           <button type="button" className="btn btn-ghost" onClick={() => { setUiScale(100); localStorage.setItem("openbridge.uiScale", "100"); window.dispatchEvent(new Event("openbridge-display-change")); }}>Reset display settings</button>
+        </section>
+        <section className="settings-section">
+          <h2>Shared library folders</h2>
+          <p className="hint">Add existing model or HDRI folders. OpenBridge indexes them in place. Save changes, then choose Shared folders in Library.</p>
+          {(draft.sharedLibraryRoots ?? []).map(root => <div className="shared-root-setting" key={root.id}>
+            <div className="form-row"><label htmlFor={`shared-${root.id}`}>{root.kind === "models" ? "Model source name" : "HDRI source name"}</label>
+              <input id={`shared-${root.id}`} value={root.name} onChange={event => editSharedRoot(root.id, { name: event.target.value })} maxLength={80} />
+            </div>
+            <p className="hint" title={root.path}>{root.path}</p>
+            <div className="button-row horizontal">
+              <button type="button" className="btn btn-ghost" onClick={() => void remapSharedRoot(root.id)}>Change folder…</button>
+              <button type="button" className="text-btn" onClick={() => editSharedRoot(root.id)}>Remove from Library</button>
+            </div>
+          </div>)}
+          <div className="button-row horizontal">
+            <button type="button" className="btn btn-ghost" onClick={() => void addSharedRoot("models")}><FolderIcon /> Add model folder…</button>
+            <button type="button" className="btn btn-ghost" onClick={() => void addSharedRoot("hdris")}><FolderIcon /> Add HDRI folder…</button>
+          </div>
         </section>
         <section className="settings-section">
           <h2>Library</h2>

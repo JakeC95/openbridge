@@ -4,6 +4,8 @@ import { sizeBounds, type SizeFilter } from "./size-filter";
 import type {
   AppSettings,
   AssetProvider,
+  LibrarySource,
+  SharedLibraryStatus,
   AssetRecord,
   AuthState,
   BatchStartResult,
@@ -106,12 +108,15 @@ interface State {
   localPacks: PackSummary[];
   localCategories: CategoryNode[];
   localType: string;
-  localProvider: AssetProvider | "all";
+  localProvider: LibrarySource;
   localCategoryPath: string[];
   localSort: LibrarySort;
   localFavoritesOnly: boolean;
+  sharedFavorites: string[];
+  sharedLibraries: SharedLibraryStatus[];
+  toggleSharedFavorite(id: string): void;
   setLocalType(value: string): void;
-  setLocalProvider(value: AssetProvider | "all"): void;
+  setLocalProvider(value: LibrarySource): void;
   setLocalCategoryPath(value: string[]): void;
   setLocalSort(value: LibrarySort): void;
   setLocalFavoritesOnly(value: boolean): void;
@@ -273,8 +278,8 @@ function readBrowsingRestore(authenticated: boolean): Partial<State> {
     for (const [key, value] of Object.entries(data.facetFilters)) if (["biome", "region", "resolution", "color", "environment", "theme"].includes(key) && Array.isArray(value))
       facets[key] = value.filter((v): v is string => typeof v === "string").slice(0, 30);
   }
-  const localProvider = ["megascans", "poliigon", "polyhaven", "ambientcg", "blenderkit", "openhdri"].includes(text("localProvider"))
-    ? text("localProvider") as AssetProvider
+  const localProvider = ["megascans", "poliigon", "polyhaven", "ambientcg", "blenderkit", "openhdri", "shared"].includes(text("localProvider"))
+    ? text("localProvider") as LibrarySource
     : "all";
   let localType = text("localType");
   const megascansTypes = ["3d", "3dplant", "surface", "atlas", "brush", "decal", "imperfection", "displacement"];
@@ -290,7 +295,7 @@ function readBrowsingRestore(authenticated: boolean): Partial<State> {
     localQuery: text("localQuery"), localType, localCategoryPath: list("localCategoryPath"),
     localProvider,
     localRepo: ["downloaded", "custom", "dhi"].includes(text("localRepo")) ? text("localRepo") as LocalRepo : "all",
-    localFavoritesOnly: authenticated && data.localFavoritesOnly === true,
+    localFavoritesOnly: (authenticated || localProvider === "shared") && data.localFavoritesOnly === true,
     localReady: list("localReady"), localMaxTris: typeof data.localMaxTris === "number" && data.localMaxTris > 0 ? data.localMaxTris : null,
     localColor: text("localColor"), localState: text("localState"), localInterior: text("localInterior")
   };
@@ -584,6 +589,18 @@ export const useStore = create<State>((set, get) => ({
   localCategories: [],
   localType: "",
   localProvider: "all",
+  sharedFavorites: (() => {
+    const value = readPreference<unknown>("sharedFavorites", []);
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.startsWith("shared:")) : [];
+  })(),
+  sharedLibraries: [],
+  toggleSharedFavorite(id) {
+    const current = get().sharedFavorites;
+    const sharedFavorites = current.includes(id) ? current.filter(value => value !== id) : [...current, id];
+    writePreference("sharedFavorites", sharedFavorites);
+    set({ sharedFavorites });
+    if (get().localFavoritesOnly) void get().queryLocalLibrary(true);
+  },
   localCategoryPath: [],
   localSort: (() => {
     const sort = readPreference<string>("localSort", "recent");
@@ -750,6 +767,7 @@ export const useStore = create<State>((set, get) => ({
         settings,
         auth,
         localRefs: library.refs,
+        sharedLibraries: library.sharedLibraries ?? [],
         libraryAssets: firstPage.assets,
         libraryCounts: firstPage.counts,
         libraryTotal: firstPage.counts.all,
@@ -787,6 +805,7 @@ export const useStore = create<State>((set, get) => ({
         window.openbridge.onLibraryUpdated(result => {
           set({
             localRefs: result.refs,
+            sharedLibraries: result.sharedLibraries ?? [],
             libraryCounts: result.counts,
             libraryTotal: result.total,
             libraryFilteredTotal: 0,
@@ -1007,6 +1026,7 @@ export const useStore = create<State>((set, get) => ({
       const result = await window.openbridge.librarySnapshot(force);
       set({
         localRefs: result.refs,
+        sharedLibraries: result.sharedLibraries ?? [],
         libraryCounts: result.counts,
         libraryTotal: result.counts.all,
         libraryScannedAt: result.scannedAt
@@ -1150,6 +1170,7 @@ export const useStore = create<State>((set, get) => ({
     }
     usePoliigonStore.getState().closeAsset();
     usePolyHavenStore.getState().closeAsset();
+    usePublicStore.getState().close();
     void window.openbridge.catalog.cancel("drawer").catch(() => undefined);
     void window.openbridge.catalog.cancel("related").catch(() => undefined);
     const recent: RecentAsset = { id: asset.id, name: asset.name, type: asset.type, source: "local" };
@@ -1275,7 +1296,7 @@ export const useStore = create<State>((set, get) => ({
       const settings = await window.openbridge.updateSettings(patch);
       set({ settings });
       get().toast("Settings saved");
-      if (patch.libraryPath !== undefined || patch.libraryRoot !== undefined || patch.poliigonLibraryPath !== undefined || patch.polyhavenLibraryPath !== undefined || patch.ambientcgLibraryPath !== undefined || patch.blenderkitLibraryPath !== undefined || patch.openhdriLibraryPath !== undefined) {
+      if (patch.libraryPath !== undefined || patch.libraryRoot !== undefined || patch.poliigonLibraryPath !== undefined || patch.polyhavenLibraryPath !== undefined || patch.ambientcgLibraryPath !== undefined || patch.blenderkitLibraryPath !== undefined || patch.openhdriLibraryPath !== undefined || patch.sharedLibraryRoots !== undefined) {
         await get().refreshLibrary(true);
       }
     } catch (error) {

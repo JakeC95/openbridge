@@ -6033,3 +6033,18 @@ body {
   text-transform: uppercase;
   color: var(--muted-2);
 }
+
+
+.shared-root-setting {
+  padding-block: 10px;
+  border-bottom: 1px solid var(--panel-3);
+}
+
+.shared-root-setting .hint,
+.shared-asset-path {
+  overflow-wrap: anywhere;
+}
+
+.shared-root-setting + .button-row {
+  margin-top: 12px;
+}

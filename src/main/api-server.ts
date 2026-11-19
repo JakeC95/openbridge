@@ -85,11 +85,12 @@ export class LocalApiServer {
       ) {
         const query = this.lastSegment(url);
         const result = await this.options.library.scan();
+        const managed = result.assets.filter(asset => asset.repo !== "shared");
         const records = query
-          ? result.assets
+          ? managed
               .filter(asset => asset.searchStr.includes(query.toLowerCase()))
               .slice(0, 10)
-          : result.assets;
+          : managed;
         return this.json(response, await this.toExports(records));
       }
 
@@ -97,7 +98,7 @@ export class LocalApiServer {
         const result = await this.options.library.scan();
         return this.json(
           response,
-          await this.toExports(result.assets.filter(asset => this.selection.has(asset.id)))
+          await this.toExports(result.assets.filter(asset => asset.repo !== "shared" && this.selection.has(asset.id)))
         );
       }
 

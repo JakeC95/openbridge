@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   canonicalMapType,
   commonMapTypesForKind,
@@ -8,6 +8,7 @@ import {
   recommendedDownloadDefaults
 } from "../shared/download-defaults";
 import type { AppSettings, AssetDefaultsKind } from "../shared/types";
+import { isInside, normalizeSharedRoots } from "./shared-library";
 
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -36,8 +37,13 @@ export class SettingsStore {
   }
 
   update(patch: Partial<AppSettings>): AppSettings {
+    const previous = this.data;
     this.data = { ...this.data, ...patch };
     this.normalise();
+    if (this.overlappingSharedRoot()) {
+      this.data = previous;
+      throw new Error("Shared library folders must be separate from provider download folders.");
+    }
     this.save();
     return this.get();
   }
@@ -85,7 +91,15 @@ export class SettingsStore {
     delete old.defaultMeshFormat;
   }
 
+  private overlappingSharedRoot(): boolean {
+    const managed = [this.data.libraryPath, this.data.poliigonLibraryPath, this.data.polyhavenLibraryPath,
+      this.data.ambientcgLibraryPath, this.data.blenderkitLibraryPath, this.data.openhdriLibraryPath].filter(Boolean);
+    return this.data.sharedLibraryRoots?.some(root =>
+      managed.some(path => isInside(resolve(path), root.path) || isInside(root.path, resolve(path)))) ?? false;
+  }
+
   private normalise(): void {
+    this.data.sharedLibraryRoots = normalizeSharedRoots(this.data.sharedLibraryRoots);
     this.data.libraryPath = String(this.data.libraryPath ?? "").trim();
     this.data.libraryRoot = String(this.data.libraryRoot ?? "").trim();
     if (!this.data.libraryRoot && this.data.libraryPath) {

@@ -1,8 +1,29 @@
 # Shared asset library design
 
-Status: proposed. The current Library supports provider-specific layouts and managed downloads.
-This design adds existing model and HDRI folders as named Library sources. Users register each
-root in Settings and browse files in place alongside their downloaded assets.
+## Read-only pilot
+
+In a build from the current source, open **Settings → Shared library folders**, add a model
+folder and an HDRI folder, name each source, and save. In **Library**, select **Shared folders**.
+The category tree includes the root labels and nested folders. Search by file or folder name,
+or file extension. Use **Rescan** after changing files or reconnecting a share.
+
+The pilot supports the Library grid, list, selection and comparison, account-free favorites,
+compatible 3D previews, flat HDR and 360° HDRI previews, and same-name render images. Each model
+or HDR file is initially a separate Library item. The inspector can reveal, open or copy the
+selected original. Copy prompts for a destination and refuses to overwrite an existing file.
+Copying a source file does not gather its dependencies.
+
+The scanner skips hidden folders, archives and cache folders. It indexes up to 30,000 entries
+and 12 levels below each registered root per scan. Partial scans and unavailable mounts
+retain cached results. The pilot checks individual files for zero bytes in the health report.
+Model previews have a 96 MiB source limit and resolve eligible dependencies beside the model
+or in conventional resource subfolders. HDR previews use the existing 8K and 160 MiB limits.
+Large or native files can be opened in the associated application. Dependency packaging,
+grouping variants, local tags and notes, and explicit shared file edits remain planned.
+
+## Design and next stages
+
+The design below describes the full shared library work, including behavior beyond this pilot.
 
 ## 1. Index existing folders
 

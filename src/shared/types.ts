@@ -19,6 +19,20 @@ export type AssetProvider =
   | "polyhaven"
   | PublicProviderId;
 export type ProviderScope = AssetProvider | "all";
+export type LibrarySource = ProviderScope | "shared";
+
+export interface SharedLibraryRoot {
+  id: string;
+  name: string;
+  path: string;
+  kind: "models" | "hdris";
+}
+
+export interface SharedLibraryStatus {
+  id: string;
+  state: "ready" | "partial" | "unavailable";
+  count: number;
+}
 
 export interface DownloadPreset {
   resolution: number;
@@ -36,6 +50,7 @@ export interface DownloadPreset {
 
 export interface AppSettings {
   libraryRoot: string;
+  sharedLibraryRoots?: SharedLibraryRoot[];
   libraryPath: string;
   poliigonLibraryPath: string;
   polyhavenLibraryPath: string;
@@ -50,7 +65,7 @@ export interface AppSettings {
   downloadDefaults: Record<AssetDefaultsKind, DownloadPreset>;
 }
 
-export type RepoKind = "downloaded" | "custom" | "dhi";
+export type RepoKind = "downloaded" | "custom" | "dhi" | "shared";
 
 export interface DownloadMapOption {
   type: string;
@@ -574,6 +589,7 @@ export interface ScanResult {
   ambientcgLibraryPath?: string;
   blenderkitLibraryPath?: string;
   openhdriLibraryPath?: string;
+  sharedLibraries?: SharedLibraryStatus[];
 }
 
 export interface LibraryRef {
@@ -584,6 +600,7 @@ export interface LibraryRef {
 export interface LibraryCounts {
   all: number;
   megascans: number;
+  shared?: number;
   poliigon: number;
   polyhaven: number;
   ambientcg: number;
@@ -608,7 +625,7 @@ export interface PackSummary extends PackRef {
 export interface LibraryQuery {
   includeFacets?: boolean;
   query?: string;
-  provider?: AssetProvider | "all";
+  provider?: LibrarySource;
   repo?: RepoKind | "all";
   sort?: LibrarySort;
   type?: string;
@@ -648,6 +665,7 @@ export interface LibrarySnapshot {
   ambientcgLibraryPath?: string;
   blenderkitLibraryPath?: string;
   openhdriLibraryPath?: string;
+  sharedLibraries?: SharedLibraryStatus[];
 }
 
 export type LibraryIssueKind =
@@ -999,6 +1017,14 @@ export interface OpenBridgeApi {
   queryLibrary(query: LibraryQuery): Promise<LibraryQueryResult>;
   queryLibraryIds(query: LibraryQuery): Promise<string[]>;
   localPreviews(assetId: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }>;
+  sharedLibrary: {
+    inspectHdr(id: string): Promise<{ width: number; height: number; panorama: boolean }>;
+    hdr(id: string): Promise<PoliigonHdrData>;
+    cancelHdr(id: string): Promise<void>;
+    reveal(id: string): Promise<void>;
+    open(id: string): Promise<void>;
+    copy(id: string): Promise<string | null>;
+  };
   libraryHealth(force?: boolean): Promise<LibraryHealthReport>;
   cancelLibraryHealth(): Promise<void>;
   onLibraryHealthProgress(callback: (progress: LibraryHealthProgress) => void): () => void;

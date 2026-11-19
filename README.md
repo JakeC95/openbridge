@@ -169,8 +169,9 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 - DCC export/plugin installation and Fab browsing are not implemented. Native `.blend`, `.max`,
   `.c4d`, `.ma`, `.mb` and `.skp` previews are download-only; the 3D viewer opens glTF/GLB, FBX,
   OBJ, USD, STL, PLY and DAE.
-- The Library indexes supported provider layouts and OpenBridge downloads. Browsing existing
-  shared model and HDRI folders in place is planned. See the [shared library design](docs/SHARED-LIBRARY.md).
+- The Library indexes supported provider layouts and OpenBridge downloads. The source tree
+  also includes a read-only pilot for existing shared model and HDRI folders. See the
+  [shared library guide](docs/SHARED-LIBRARY.md).
 - Automatic updates require a published release manifest.
 - Some catalogue fields are sparse in the legacy API; the UI hides unavailable data rather than
   showing placeholders.

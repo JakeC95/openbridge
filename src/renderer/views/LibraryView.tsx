@@ -3,7 +3,7 @@ import { useStore } from "../store";
 import { assetCountLabel, readinessBadges, typeLabel } from "../catalog-utils";
 import { assetTypeClass } from "../asset-visuals";
 import { CheckIcon, CloseIcon, FolderIcon, UploadIcon } from "../icons";
-import type { AssetProvider, AssetRecord, LibraryHealthReport, LibrarySort, RepoKind } from "../../shared/types";
+import type { LibrarySource, AssetRecord, LibraryHealthReport, LibrarySort, RepoKind } from "../../shared/types";
 import { VirtualGrid } from "../components/VirtualGrid";
 import { Dropdown } from "../components/Dropdown";
 import { formatMeasurementText } from "../../shared/measurements";
@@ -53,6 +53,8 @@ export function LibraryView() {
   const density = useStore(state => state.density);
   const localType = useStore(state => state.localType);
   const localProvider = useStore(state => state.localProvider);
+  const sharedLibraries = useStore(state => state.sharedLibraries);
+  const sharedFavorites = useStore(state => state.sharedFavorites);
   const setLocalProvider = useStore(state => state.setLocalProvider);
   const localCategoryPath = useStore(state => state.localCategoryPath);
   const localSort = useStore(state => state.localSort);
@@ -181,8 +183,10 @@ export function LibraryView() {
     }
   }
 
+  const includesShared = [...selectedIds].some(id => id.startsWith("shared:"));
+
   async function exportSelected(): Promise<void> {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || includesShared) return;
     const folder = await window.openbridge.chooseDirectory();
     if (!folder) return;
     setBusy(true);
@@ -197,7 +201,7 @@ export function LibraryView() {
   }
 
   async function deleteSelected(): Promise<void> {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || includesShared) return;
     if (
       !window.confirm(
         `Delete ${selectedIds.size} local asset folder(s)? This removes files from disk and cannot be undone.`
@@ -371,7 +375,7 @@ export function LibraryView() {
       ? ["3d", "surface", "hdri", "brush"]
       : ["hdri"];
   const providerTotal = localProvider === "all" ? allTotal : counts[localProvider] ?? 0;
-  const typeOptions = isPublicProviderId(localProvider) ? publicTypeOptions : localProvider === "poliigon" || localProvider === "polyhaven"
+  const typeOptions = localProvider === "shared" ? ["3d", "hdri"] : isPublicProviderId(localProvider) ? publicTypeOptions : localProvider === "poliigon" || localProvider === "polyhaven"
     ? poliigonTypes
     : localProvider === "megascans"
       ? megascansTypes
@@ -416,13 +420,19 @@ export function LibraryView() {
           </div>
         </div>
         <p className="hint library-scope-note">
-          Local files only. Everything here is already on this computer, available offline, and
-          independent of catalogue subscriptions.
+          Browse files on disk and on registered shared folders. Shared files require access to their mount.
         </p>
+
+        {(localProvider === "all" || localProvider === "shared") && sharedLibraries.filter(root => root.state !== "ready").map(root =>
+          <p className="hint" role="status" key={root.id}>
+            {settings?.sharedLibraryRoots?.find(entry => entry.id === root.id)?.name ?? "Shared folder"}:
+            {root.state === "unavailable" ? " mount unavailable. Showing cached results." : " scan incomplete. Showing indexed results."}
+          </p>
+        )}
 
         <div className="filter-row">
           <Dropdown className="filter-select" value={localProvider} ariaLabel="Local asset source"
-            onChange={value => setLocalProvider(value as AssetProvider | "all")}
+            onChange={value => setLocalProvider(value as LibrarySource)}
             options={[
               { value: "all", label: "All sources" },
               { value: "megascans", label: "Megascans" },
@@ -430,7 +440,8 @@ export function LibraryView() {
               { value: "polyhaven", label: "Poly Haven" },
               { value: "ambientcg", label: "ambientCG" },
               { value: "blenderkit", label: "BlenderKit" },
-              { value: "openhdri", label: "OpenHDRI" }
+              { value: "openhdri", label: "OpenHDRI" },
+              { value: "shared", label: "Shared folders" }
             ]} />
           <Dropdown className="filter-select" value={localType || "all"} ariaLabel="Local asset type"
             onChange={value => useStore.getState().setLocalType(value === "all" ? "" : value)}
@@ -450,8 +461,8 @@ export function LibraryView() {
               {refineFilterCount > 0 && <span className="filter-count">{refineFilterCount}</span>}
             </button>
           )}
-          {(localProvider === "all" || localProvider === "megascans") && <button type="button" className={localFavoritesOnly ? "chip active" : "chip"}
-            disabled={!auth.loggedIn} aria-pressed={localFavoritesOnly}
+          {(localProvider === "all" || localProvider === "megascans" || localProvider === "shared") && <button type="button" className={localFavoritesOnly ? "chip active" : "chip"}
+            disabled={!auth.loggedIn && localProvider !== "shared" && !(localProvider === "all" && sharedLibraries.length)} aria-pressed={localFavoritesOnly}
             onClick={() => useStore.getState().setLocalFavoritesOnly(!localFavoritesOnly)}>Favorites</button>}
           <DensityControl />
           {assets.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
@@ -514,7 +525,7 @@ export function LibraryView() {
             <div className="bulk-scope">
               <span className="bulk-count" aria-live="polite">{selectedIds.size} selected</span>
               <span className="bulk-scope-detail">{selectionScope}</span>
-              <span className="bulk-scope-hint">Export writes JSON records. Delete removes local asset folders from disk.</span>
+              <span className="bulk-scope-hint">{includesShared ? "Shared files can be copied from the inspector." : "Export writes JSON records. Delete removes local asset folders from disk."}</span>
             </div>
             <div className="bulk-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>
@@ -532,7 +543,7 @@ export function LibraryView() {
               <button
                 type="button"
                 className="btn btn-ghost"
-                disabled={busy || selectedIds.size === 0}
+                disabled={busy || selectedIds.size === 0 || includesShared}
                 onClick={() => void exportSelected()}
               >
                 Export JSON
@@ -540,7 +551,7 @@ export function LibraryView() {
               <button
                 type="button"
                 className="btn btn-ghost bulk-delete"
-                disabled={busy || selectedIds.size === 0}
+                disabled={busy || selectedIds.size === 0 || includesShared}
                 onClick={() => void deleteSelected()}
               >
                 Delete from disk…
@@ -610,7 +621,7 @@ export function LibraryView() {
                   }}
                   onContextMenu={event => {
                     event.preventDefault();
-                    if (asset.provider && asset.provider !== "megascans") return;
+                    if (asset.repo === "shared" || (asset.provider && asset.provider !== "megascans")) return;
                     void window.openbridge.contextMenu.asset({
                       assetId: asset.id,
                       localPath: asset.path
@@ -631,14 +642,19 @@ export function LibraryView() {
                       <span className="asset-placeholder">{typeLabel(asset.type)}</span>
                     )}
                     <span className={`asset-type ${assetTypeClass(typeLabel(asset.type))}`}>{typeLabel(asset.type)}</span>
-                    {!selectMode && (
+                    {!selectMode && asset.repo !== "shared" && (
                       <ProviderLogo
                         provider={asset.provider ?? "megascans"}
                         className="asset-provider-mark"
                       />
                     )}
-                    <span className="asset-flag owned">LOCAL</span>
-                    {!selectMode && auth.loggedIn && (!asset.provider || asset.provider === "megascans") && <button type="button" className={favorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
+                    <span className="asset-flag owned">{asset.repo === "shared" ? "SHARED" : "LOCAL"}</span>
+                    {!selectMode && asset.repo === "shared" && <button type="button" className={sharedFavorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
+                      aria-label={sharedFavorites.includes(asset.id) ? "Remove favorite" : "Add favorite"}
+                      onClick={event => { event.stopPropagation(); useStore.getState().toggleSharedFavorite(asset.id); }}>
+                      {sharedFavorites.includes(asset.id) ? "♥" : "♡"}
+                    </button>}
+                    {!selectMode && asset.repo !== "shared" && auth.loggedIn && (!asset.provider || asset.provider === "megascans") && <button type="button" className={favorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
                       aria-label={favorites.includes(asset.id) ? "Remove favorite" : "Add favorite"}
                       onClick={event => { event.stopPropagation(); void useStore.getState().toggleFavorite(asset.id); }}>
                       {favorites.includes(asset.id) ? "♥" : "♡"}
@@ -681,7 +697,9 @@ export function LibraryView() {
             <h2>{providerTotal === 0 ? "No local assets" : "No matching assets"}</h2>
             <p>
               {providerTotal === 0
-                ? localProvider === "poliigon"
+                ? localProvider === "shared"
+                  ? "Add existing model and HDRI folders in Settings, then rescan the Library."
+                  : localProvider === "poliigon"
                   ? "No Poliigon assets are indexed yet. Download an asset or check the Poliigon library path in Settings."
                   : localProvider === "polyhaven"
                     ? "No Poly Haven assets are indexed yet. Download an asset or check the Poly Haven library path in Settings."

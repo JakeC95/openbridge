@@ -1,6 +1,10 @@
+import { inspectSharedHdr, isInside, sharedRootId } from "./shared-library";
+import { decodeHdrFile } from "./hdr-decode";
+import { hdrLimitsFor } from "./public/preview-data";
+import { constants } from "node:fs";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
-import { cp, mkdir, readFile, statfs } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { copyFile, cp, mkdir, readFile, realpath, statfs } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { AuthService } from "./auth";
 import { LocalApiServer } from "./api-server";
 import { BridgeLink } from "./bridge-link";
@@ -541,6 +545,7 @@ function registerIpc(): void {
     async (_event, assetIds: string[], folder: string, scope?: LibraryQuery) => {
       if (!library) throw new Error("Library service is not ready");
       const records = library.matchingAssets(assetIds, scope);
+      if (records.some(asset => asset.repo === "shared")) throw new Error("Use Copy source file for shared assets.");
       const payload = await Promise.all(
         records.map(asset => buildExportAsset(asset, exportPath()))
       );
@@ -597,9 +602,58 @@ function registerIpc(): void {
     return smartThumbnail(source, crop === "top-2-1" ? crop : undefined);
   });
 
+  async function requireSharedFile(id: string) {
+    if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");
+    return library.sharedFile(id);
+  }
+
+  const sharedHdrJobs = new Map<string, AbortController>();
+  ipcMain.handle("shared:inspectHdr", async (_event, id: string) => inspectSharedHdr((await requireSharedFile(id)).path));
+  ipcMain.handle("shared:hdr", async (event, id: string) => {
+    const key = `${event.sender.id}:${id}`;
+    sharedHdrJobs.get(key)?.abort();
+    const controller = new AbortController();
+    sharedHdrJobs.set(key, controller);
+    const close = () => controller.abort();
+    event.sender.once("destroyed", close);
+    try {
+      const { path } = await requireSharedFile(id);
+      await inspectSharedHdr(path);
+      const data = await decodeHdrFile(path, hdrLimitsFor("shared"), AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]));
+      return { ...data, resolution: `${data.width} × ${data.height}` };
+    } finally {
+      event.sender.off("destroyed", close);
+      if (sharedHdrJobs.get(key) === controller) sharedHdrJobs.delete(key);
+    }
+  });
+  ipcMain.handle("shared:cancelHdr", (event, id: string) => sharedHdrJobs.get(`${event.sender.id}:${id}`)?.abort());
+  ipcMain.handle("shared:reveal", async (_event, id: string) => shell.showItemInFolder((await requireSharedFile(id)).path));
+  ipcMain.handle("shared:open", async (_event, id: string) => {
+    const error = await shell.openPath((await requireSharedFile(id)).path);
+    if (error) throw new Error(error);
+  });
+  ipcMain.handle("shared:copy", async (_event, id: string) => {
+    const result = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const { path } = await requireSharedFile(id);
+    const directory = await realpath(result.filePaths[0]);
+    for (const root of settings().sharedLibraryRoots ?? []) {
+      const canonical = await realpath(root.path).catch(() => root.path);
+      if (isInside(canonical, directory)) throw new Error("Choose a destination outside the shared library.");
+    }
+    const target = join(directory, basename(path));
+    await copyFile(path, target, constants.COPYFILE_EXCL);
+    return target;
+  });
+
   ipcMain.handle("model:manifest", async (_event, request: import("../shared/model-preview").ModelManifestRequest) => {
     if (!request || typeof request.assetId !== "string" || typeof request.provider !== "string") {
       throw new Error("Invalid 3D model request");
+    }
+    if (request.provider === "shared" || sharedRootId(request.assetId)) {
+      const { asset, path } = await requireSharedFile(request.assetId);
+      if (asset.type !== "3d") throw new Error("This shared asset is not a 3D model.");
+      return scanLocalModel(dirname(path), asset.id, "shared", asset.type, path);
     }
     if (typeof request.path === "string" && request.path.trim()) {
       let local = await scanLocalModel(request.path, request.assetId, request.provider, request.type ?? "");
@@ -636,14 +690,14 @@ function registerIpc(): void {
 
   ipcMain.handle("export:assetToFolder", async (_event, assetId: string, folder: string) => {
     const record = library?.getAsset(assetId);
-    if (!record) throw new Error(`Asset ${assetId} is not in the library`);
+    if (!record || record.repo === "shared") throw new Error("This asset is unavailable for legacy Bridge export.");
     const payload = await buildExportAsset(record, exportPath());
     return writeMegascansJson(folder, [payload]);
   });
 
   ipcMain.handle("export:assetToPort", async (_event, assetId: string, port: number) => {
     const record = library?.getAsset(assetId);
-    if (!record) throw new Error(`Asset ${assetId} is not in the library`);
+    if (!record || record.repo === "shared") throw new Error("This asset is unavailable for legacy Bridge export.");
     const payload = await buildExportAsset(record, exportPath());
     await sendToSocket(port, [payload]);
   });
@@ -1136,7 +1190,8 @@ async function init(): Promise<void> {
     id => polyhavenCatalog?.findById(id) ?? polyhavenCatalog?.findByName(id) ?? null,
     join(userData, "library-index.sqlite"),
     logger,
-    () => ({ ambientcg: settings().ambientcgLibraryPath, blenderkit: settings().blenderkitLibraryPath, openhdri: settings().openhdriLibraryPath })
+    () => ({ ambientcg: settings().ambientcgLibraryPath, blenderkit: settings().blenderkitLibraryPath, openhdri: settings().openhdriLibraryPath }),
+    () => settings().sharedLibraryRoots ?? []
   );
 
   authService = new AuthService(logger, notify);

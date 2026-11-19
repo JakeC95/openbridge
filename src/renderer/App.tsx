@@ -6,6 +6,7 @@ import { CatalogSearch } from "./components/CatalogSearch";
 import { PoliigonSearch } from "./components/PoliigonSearch";
 import { PolyHavenSearch } from "./components/PolyHavenSearch";
 import { CommandPalette } from "./components/CommandPalette";
+import { SharedAssetDrawer } from "./components/SharedAssetDrawer";
 import { AssetDrawer } from "./components/AssetDrawer";
 import { DiscoverView } from "./views/DiscoverView";
 import { AllView } from "./views/AllView";
@@ -285,6 +286,8 @@ export function App() {
         <PolyHavenDrawer />
       ) : poliigonSelection ? (
         <PoliigonDrawer />
+      ) : selection?.local?.repo === "shared" ? (
+        <SharedAssetDrawer key={selection.local.id} asset={selection.local} />
       ) : (
         <AssetDrawer />
       )}

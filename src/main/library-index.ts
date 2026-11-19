@@ -82,7 +82,7 @@ function parseList(value: string): string[] {
 function rowToAsset(row: AssetRow): AssetRecord {
   return {
     id: row.id,
-    provider: (row.provider as AssetProvider) || "megascans",
+    provider: row.repo === "shared" ? undefined : (row.provider as AssetProvider) || "megascans",
     name: row.name,
     type: row.type,
     categories: parseList(row.categories),
@@ -147,7 +147,7 @@ export class LibraryIndex {
     const currentPoly = this.getMeta("polyhaven_library_path");
     if (currentMega === megascansPath && currentPoli === poliigonPath && currentPoly === polyhavenPath) return;
     this.transaction(() => {
-      this.db.exec("DELETE FROM assets;");
+      this.db.exec("DELETE FROM assets WHERE repo != 'shared';");
       this.setMeta("library_path", megascansPath);
       this.setMeta("poliigon_library_path", poliigonPath);
       this.setMeta("polyhaven_library_path", polyhavenPath);
@@ -220,7 +220,7 @@ export class LibraryIndex {
   }
 
   deleteMissing(paths: Set<string>): number {
-    const rows = this.db.prepare("SELECT path FROM assets").all() as Array<{ path: string }>;
+    const rows = this.db.prepare("SELECT path FROM assets WHERE repo != 'shared'").all() as Array<{ path: string }>;
     const remove = rows.filter(row => !paths.has(row.path));
     if (remove.length === 0) return 0;
     const statement = this.db.prepare("DELETE FROM assets WHERE path = ?");
@@ -228,6 +228,24 @@ export class LibraryIndex {
       for (const row of remove) statement.run(row.path);
     });
     return remove.length;
+  }
+
+  reconcileSharedRoots(registered: Set<string>, scanned: Map<string, Set<string>>): void {
+    const rows = this.db.prepare("SELECT id, path FROM assets WHERE repo = 'shared'").all() as Array<{ id: string; path: string }>;
+    const remove = this.db.prepare("DELETE FROM assets WHERE repo = 'shared' AND path = ?");
+    this.transaction(() => {
+      for (const row of rows) {
+        const rootId = row.id.split(":")[1];
+        const seen = scanned.get(rootId);
+        if (!registered.has(rootId) || (seen && !seen.has(row.path))) remove.run(row.path);
+      }
+    });
+  }
+
+  countSharedRoot(id: string): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS total FROM assets WHERE repo = 'shared' AND id GLOB ?")
+      .get(`shared:${id}:*`) as { total: number };
+    return row.total;
   }
 
   setScannedAt(value: number): void {
@@ -258,7 +276,7 @@ export class LibraryIndex {
   }
 
   counts(): LibraryCounts {
-    const counts: LibraryCounts = { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, ambientcg: 0, blenderkit: 0, openhdri: 0, downloaded: 0, custom: 0, dhi: 0 };
+    const counts: LibraryCounts = { all: 0, megascans: 0, poliigon: 0, polyhaven: 0, ambientcg: 0, blenderkit: 0, openhdri: 0, shared: 0, downloaded: 0, custom: 0, dhi: 0 };
     const rows = this.db
       .prepare("SELECT provider, repo, COUNT(*) AS total FROM assets GROUP BY provider, repo")
       .all() as Array<{ provider: string; repo: string; total: number }>;
@@ -266,7 +284,8 @@ export class LibraryIndex {
       if (row.repo === "downloaded" || row.repo === "custom" || row.repo === "dhi") {
         counts[row.repo] += Number(row.total);
       }
-      if (row.provider === "poliigon") counts.poliigon += Number(row.total);
+      if (row.repo === "shared") counts.shared = (counts.shared ?? 0) + Number(row.total);
+      else if (row.provider === "poliigon") counts.poliigon += Number(row.total);
       else if (row.provider === "polyhaven") counts.polyhaven += Number(row.total);
       else if (row.provider === "ambientcg" || row.provider === "blenderkit" || row.provider === "openhdri") counts[row.provider] += Number(row.total);
       else counts.megascans += Number(row.total);
@@ -394,8 +413,9 @@ export class LibraryIndex {
       clauses.push("a.id IN (SELECT value FROM json_each(?))");
       params.push(JSON.stringify(options.ids));
     }
-    if (options.provider && options.provider !== "all") {
-      clauses.push("a.provider = ?");
+    if (options.provider === "shared") clauses.push("a.repo = 'shared'");
+    else if (options.provider && options.provider !== "all") {
+      clauses.push("a.provider = ?", "a.repo != 'shared'");
       params.push(options.provider);
     }
     if (options.repo && options.repo !== "all") {
@@ -473,7 +493,7 @@ export class LibraryIndex {
       .prepare(
         `SELECT path, id, name, type, preview, folder_mtime
          FROM assets
-         WHERE ? = 1 OR health_at = 0 OR health_mtime != folder_mtime
+         WHERE repo != 'shared' AND (? = 1 OR health_at = 0 OR health_mtime != folder_mtime)
          ORDER BY mtime DESC`
       )
       .all(force ? 1 : 0) as unknown as HealthRow[];

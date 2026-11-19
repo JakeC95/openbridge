@@ -1,4 +1,4 @@
-import type { AssetProvider, CatalogQuery, LibraryQuery, LibraryRef, LibrarySort, PackRef, RepoKind } from "../shared/types";
+import type { LibrarySource, CatalogQuery, LibraryQuery, LibraryRef, LibrarySort, PackRef, RepoKind } from "../shared/types";
 
 export function readPreference<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(`openbridge.${key}`) ?? "null") ?? fallback; }
@@ -10,7 +10,7 @@ export function writePreference(key: string, value: unknown): void {
 }
 
 export interface LocalFilters {
-  localProvider: AssetProvider | "all";
+  localProvider: LibrarySource;
   localQuery: string;
   localRepo: "all" | RepoKind;
   localType: string;
@@ -18,6 +18,7 @@ export interface LocalFilters {
   localSort: LibrarySort;
   localFavoritesOnly: boolean;
   favorites: string[];
+  sharedFavorites?: string[];
   localPack: PackRef | null;
   localReady: string[];
   localMaxTris: number | null;
@@ -31,7 +32,10 @@ export function libraryFilterQuery(state: LocalFilters): LibraryQuery {
     provider: state.localProvider === "all" ? undefined : state.localProvider,
     query: state.localQuery, repo: state.localRepo, type: state.localType || undefined,
     categoryPath: state.localCategoryPath, sort: state.localSort,
-    ids: state.localFavoritesOnly ? state.favorites : undefined,
+    ids: state.localFavoritesOnly
+      ? state.localProvider === "shared" ? state.sharedFavorites ?? []
+        : state.localProvider === "all" ? [...state.favorites, ...(state.sharedFavorites ?? [])] : state.favorites
+      : undefined,
     packId: state.localPack?.id, pack: state.localPack?.name,
     ready: state.localReady, maxTris: state.localMaxTris ?? undefined,
     color: state.localColor || undefined, state: state.localState || undefined,
@@ -61,7 +65,7 @@ export function catalogFilterQuery(state: CatalogFilters): CatalogQuery {
   let ids: string[] | undefined = state.favoritesOnly ? state.favorites : undefined;
   if (state.downloadedOnly) {
     const downloaded = state.downloadedIds
-      ?? state.localRefs?.filter(ref => !ref.id.startsWith("poliigon:") && !ref.id.startsWith("polyhaven:")).map(ref => ref.id)
+      ?? state.localRefs?.filter(ref => !ref.id.startsWith("poliigon:") && !ref.id.startsWith("polyhaven:") && !ref.id.startsWith("shared:")).map(ref => ref.id)
       ?? [];
     ids = ids
       ? ids.filter(id => downloaded.includes(id))

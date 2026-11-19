@@ -1197,6 +1197,19 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     setDecodedSizes("");
     surfaceGeometry.current.clear();
     const manager = new THREE.LoadingManager();
+    if (manifest.allowedFileUrls) {
+      const allowed = new Set(manifest.allowedFileUrls);
+      manager.setURLModifier(value => {
+        if (value.startsWith("data:") || value.startsWith("blob:")) return value;
+        try {
+          const url = new URL(value);
+          if (allowed.has(url.href)) return url.href;
+        } catch {
+          // The loader did not resolve this reference to an indexed file.
+        }
+        return "data:,";
+      });
+    }
     const textureByUrl = new Map<string, Promise<THREE.Texture>>();
     const sidecars = new Set<THREE.Texture>();
     const load = async () => {

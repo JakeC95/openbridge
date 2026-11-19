@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm, stat, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rename, rm, stat, symlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
@@ -16,6 +16,8 @@ const result = await build({
   stdin: { contents: `
     export { LibraryIndex } from './src/main/library-index';
     export { LibraryService } from './src/main/library';
+    export { inspectSharedHdr } from './src/main/shared-library';
+    export { scanLocalModel } from './src/main/model-preview';
     export { CatalogMetadataProvider } from './src/main/catalog-metadata';
     export { assetTechnicalFacts } from './src/shared/asset-metadata';
     export { localCategoryPath } from './src/shared/browsing';
@@ -381,6 +383,88 @@ try {
     assert.equal(switched[1].libraryPath, configuredLibrary);
     assert.equal(library.query({}).total, 0);
   });
+  const sharedRoot = join(directory, "Studio models");
+  const sharedImages = join(directory, "Studio HDRIs");
+  const nested = join(sharedRoot, "Versions # café");
+  await mkdir(nested, { recursive: true });
+  await mkdir(sharedImages);
+  const model = join(nested, "Chair.obj");
+  const beside = join(nested, "Table.obj");
+  const hdr = join(sharedImages, "Day.hdr");
+  const flat = join(sharedImages, "Flat.hdr");
+  await writeFile(model, "v 0 0 0\n");
+  await writeFile(beside, "v 1 0 0\n");
+  await writeFile(join(nested, "Chair.mtl"), "newmtl Wood\n");
+  await writeFile(join(nested, "Chair_preview.jpg"), "fixture");
+  await writeFile(hdr, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 32 +X 64\n");
+  await writeFile(flat, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 32 +X 32\n");
+  if (process.platform !== "win32") await symlink(beside, join(sharedRoot, "Linked.obj"));
+  let roots = [
+    { id: "models", name: "Studio models", path: sharedRoot, kind: "models" },
+    { id: "hdris", name: "Studio HDRIs", path: sharedImages, kind: "hdris" }
+  ];
+  const shared = new LibraryService(
+    () => configuredLibrary, () => "", () => "", () => null, () => null,
+    join(directory, "shared.sqlite"), logger, () => ({}), () => roots
+  );
+  try {
+    const snapshot = await shared.snapshot(true);
+    const assets = shared.query({ provider: "shared" }).assets;
+    const chair = assets.find(asset => asset.path === model);
+    assert.ok(chair);
+    check("shared models and HDRIs index independently from provider assets", () => {
+      assert.equal(assets.length, 4);
+      assert.equal(snapshot.counts.shared, 4);
+      assert.equal(snapshot.counts.megascans, 0);
+      assert.equal(shared.query({ provider: "megascans" }).total, 0);
+      assert.equal(shared.query({ provider: "shared", query: "chair" }).total, 1);
+      assert.equal(shared.query({ provider: "shared", type: "hdri" }).total, 2);
+      assert.equal(chair.repo, "shared");
+    });
+    const preview = await shared.previews(chair.id);
+    const source = await shared.sharedFile(chair.id);
+    const manifest = await api.scanLocalModel(nested, chair.id, "shared", "3d", source.path);
+    check("shared preview resolves exactly one indexed model and same-directory sidecars", () => {
+      assert.equal(preview.renders.length, 1);
+      assert.match(preview.renders[0].url, /%23/);
+      assert.equal(manifest.meshes.length, 1);
+      assert.equal(manifest.meshes[0].label, "Chair.obj");
+      assert.match(manifest.meshes[0].mtlUrl, /Chair\.mtl$/);
+      assert.ok(!manifest.allowedFileUrls.some(url => url.endsWith("Table.obj")));
+    });
+    const panorama = await api.inspectSharedHdr(hdr);
+    const still = await api.inspectSharedHdr(flat);
+    const removal = await shared.removeAssets([chair.id]);
+    check("shared HDR inspection distinguishes flat images and deletion leaves files untouched", () => {
+      assert.deepEqual(panorama, { width: 64, height: 32, panorama: true });
+      assert.equal(still.panorama, false);
+      assert.equal(removal.removed, 0);
+    });
+    await stat(model);
+    const remapped = join(directory, "Remapped share");
+    await rename(sharedRoot, remapped);
+    configuredLibrary = join(directory, "separate-managed-root");
+    const offline = await shared.snapshot(true);
+    await assert.rejects(() => shared.sharedFile(chair.id), /unavailable/);
+    roots = roots.map(root => root.id === "models" ? { ...root, path: remapped } : root);
+    const remap = await shared.snapshot(true);
+    check("shared index survives unmount and managed-root changes and preserves IDs on remap", () => {
+      assert.equal(offline.sharedLibraries[0].state, "unavailable");
+      assert.equal(offline.counts.shared, 4);
+      assert.equal(remap.sharedLibraries[0].state, "ready");
+      assert.equal(remap.counts.shared, 4);
+      assert.equal(shared.getAsset(chair.id).path, join(remapped, "Versions # café", "Chair.obj"));
+    });
+    roots = roots.filter(root => root.id === "hdris");
+    await shared.snapshot(true);
+    check("unregistering a shared source removes only its index rows", () => {
+      assert.equal(shared.query({ provider: "shared" }).total, 2);
+    });
+    await stat(join(remapped, "Versions # café", "Chair.obj"));
+  } finally {
+    shared.close();
+  }
+
   check("HDRI sky conditions ignore contradictory provider tags", () => {
     const condition = api.poliigonSkyCondition;
     assert.equal(condition({ name: "Clear Day HDRI", tags: ["clear sky"], categories: ["HDRIS / Sky / Clear"] }), "clear");

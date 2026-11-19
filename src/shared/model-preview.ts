@@ -96,6 +96,7 @@ export interface ModelManifest {
   /** True when the viewer wraps a 2D surface map set around a sphere. */
   surface?: boolean;
   notes: string[];
+  allowedFileUrls?: string[];
   /** Runtime formats that were published but cannot be displayed without conversion/download. */
   unsupported: Array<{ format: ModelFormat; url?: string; reason: string }>;
 }

@@ -1,4 +1,6 @@
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { isInside, resolveSharedFile, scanSharedRoot } from "./shared-library";
+import type { SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
+import { realpath, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -840,6 +842,9 @@ export class LibraryService {
   private readonly dirtyFolders = new Set<string>();
   private activeScan: { revision: number; force: boolean; result: Promise<LibraryScan | null> } | null = null;
   private closed = false;
+  private sharedStatus: SharedLibraryStatus[] = [];
+  private sharedSignature = "";
+  private sharedScannedAt = 0;
 
   constructor(
     private readonly getLibraryPath: () => string,
@@ -849,7 +854,8 @@ export class LibraryService {
     private readonly lookupPolyHavenAsset: (id: string) => PolyHavenAssetSummary | null,
     indexPath: string,
     private readonly logger: Logger,
-    private readonly getPublicLibraryPaths: () => Partial<Record<PublicProviderId, string>> = () => ({})
+    private readonly getPublicLibraryPaths: () => Partial<Record<PublicProviderId, string>> = () => ({}),
+    private readonly getSharedRoots: () => SharedLibraryRoot[] = () => []
   ) {
     this.index = new LibraryIndex(indexPath, logger);
   }
@@ -995,6 +1001,8 @@ export class LibraryService {
     }
 
     if (this.closed || revision !== this.scanRevision) return null;
+    await this.scanSharedAssets(force, revision, new Set(folders.map(item => item.folder)));
+    if (this.closed || revision !== this.scanRevision) return null;
     this.index.upsertMany(changes);
     if (healthChanges.length > 0) this.index.setHealthMany(healthChanges);
     const deleted = this.index.deleteMissing(seen);
@@ -1018,8 +1026,48 @@ export class LibraryService {
       scannedAt, libraryPath, poliigonLibraryPath, polyhavenLibraryPath,
       ambientcgLibraryPath: publicPaths.ambientcg,
       blenderkitLibraryPath: publicPaths.blenderkit,
-      openhdriLibraryPath: publicPaths.openhdri
+      openhdriLibraryPath: publicPaths.openhdri,
+      sharedLibraries: this.sharedStatus
     };
+  }
+
+  private async scanSharedAssets(force: boolean, revision: number, managed: Set<string>): Promise<void> {
+    const roots = this.getSharedRoots();
+    const signature = JSON.stringify(roots);
+    if (!force && signature === this.sharedSignature && Date.now() - this.sharedScannedAt < 60_000) return;
+    const statuses: SharedLibraryStatus[] = [];
+    const scanned = new Map<string, Set<string>>();
+    const cancelled = () => this.closed || revision !== this.scanRevision;
+    for (const root of roots) {
+      const { assets, status } = await scanSharedRoot(root, cancelled);
+      if (cancelled()) return;
+      const available = assets.filter(asset => !managed.has(asset.path));
+      const changed = available.filter(asset => {
+        const previous = this.index.getCachedRow(asset.path);
+        return !previous || previous.id !== asset.id || previous.mtime !== Math.trunc(asset.mtime) ||
+          previous.preview !== asset.preview || previous.bytes !== asset.sizeBytes || previous.categories !== JSON.stringify(asset.categories);
+      });
+      this.index.upsertMany(changed.map(asset => ({ asset, folderMtime: asset.mtime, jsonMtime: 0 })));
+      if (changed.length) this.index.setHealthMany(changed.map(asset => ({
+        path: asset.path,
+        stats: { files: 1, bytes: asset.sizeBytes ?? 0, zeroBytes: Number(asset.sizeBytes === 0), meshes: Number(asset.type === "3d"), textures: 0 },
+        issues: asset.sizeBytes === 0 ? [{ kind: "zero-byte", severity: "error", assetId: asset.id, name: asset.name, path: asset.path, message: "This shared file is empty." }] : []
+      })));
+      // An unmounted share may leave an accessible but empty mount point.
+      const emptyPreviousRoot = available.length === 0 && this.index.countSharedRoot(root.id) > 0;
+      if (status.state === "ready" && !emptyPreviousRoot) scanned.set(root.id, new Set(available.map(asset => asset.path)));
+      statuses.push(emptyPreviousRoot && status.state === "ready" ? { ...status, state: "partial" } : status);
+    }
+    this.index.reconcileSharedRoots(new Set(roots.map(root => root.id)), scanned);
+    this.sharedStatus = statuses.map(status => ({ ...status, count: this.index.countSharedRoot(status.id) }));
+    this.sharedSignature = signature;
+    this.sharedScannedAt = Date.now();
+  }
+
+  async sharedFile(id: string): Promise<{ asset: AssetRecord; path: string }> {
+    const asset = this.index.getById(id);
+    if (!asset || asset.repo !== "shared") throw new Error("This shared asset is no longer indexed.");
+    return { asset, path: await resolveSharedFile(asset, this.getSharedRoots()) };
   }
 
   async snapshot(force = false): Promise<LibrarySnapshot> {
@@ -1031,7 +1079,7 @@ export class LibraryService {
     const { libraryPath, poliigonLibraryPath, polyhavenLibraryPath, ambientcgLibraryPath, blenderkitLibraryPath, openhdriLibraryPath } = scan;
     return this.snapshotCache ??= {
       ...this.index.getSnapshot(libraryPath, poliigonLibraryPath, polyhavenLibraryPath),
-      ambientcgLibraryPath, blenderkitLibraryPath, openhdriLibraryPath
+      ambientcgLibraryPath, blenderkitLibraryPath, openhdriLibraryPath, sharedLibraries: scan.sharedLibraries
     };
   }
 
@@ -1054,6 +1102,13 @@ export class LibraryService {
     if (!asset) throw new Error("Local asset is no longer indexed. Rescan the library.");
     const renders: MapPreview[] = [];
     const maps: MapPreview[] = [];
+    if (asset.repo === "shared") {
+      if (asset.preview) {
+        const path = await resolveSharedFile(asset, this.getSharedRoots(), asset.preview).catch(() => "");
+        if (path) renders.push({ type: "render", label: basename(path), url: pathToFileURL(path).href, panorama: false });
+      }
+      return { renders, maps };
+    }
     // Only enumerate indexed asset folders, never renderer-supplied paths or symlinks.
     let inspected = 0;
     const visit = async (directory: string, depth: number): Promise<void> => {
@@ -1162,7 +1217,13 @@ export class LibraryService {
       .map(path => resolve(path));
     let removed = 0;
     for (const asset of records) {
+      if (asset.repo === "shared") continue;
       const target = resolve(asset.path);
+      if (this.getSharedRoots().length) {
+        const canonical = await realpath(target).catch(() => target);
+        const shared = await Promise.all(this.getSharedRoots().map(root => realpath(root.path).catch(() => root.path)));
+        if (shared.some(root => isInside(root, canonical) || isInside(canonical, root))) continue;
+      }
       if (!roots.some(root => target === root || target.startsWith(root + sep))) continue;
       await rm(target, { recursive: true, force: true });
       removed += 1;

@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
-import { extname, join, relative } from "node:path";
+import { lstat, opendir, readdir, realpath, stat } from "node:fs/promises";
+import { basename, dirname, extname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   MODEL_IMAGE_EXTENSIONS,
@@ -89,6 +89,42 @@ async function listFiles(root: string): Promise<{ files: FileInfo[]; truncated: 
   return { files, truncated };
 }
 
+const SHARED_MODEL_MAX_BYTES = 96 * 1024 * 1024;
+const SHARED_DEPENDENCY_MAX_BYTES = 32 * 1024 * 1024;
+const SHARED_MAX_FILES = 1200;
+const SHARED_RESOURCE_FOLDERS = new Set(["textures", "texture", "maps", "materials", "resources"]);
+
+async function listSharedModelFiles(primary: string): Promise<{ files: FileInfo[]; truncated: boolean }> {
+  const root = dirname(primary);
+  const files: FileInfo[] = [];
+  let inspected = 0;
+  async function visit(folder: string, depth: number): Promise<void> {
+    if (inspected >= SHARED_MAX_FILES) return;
+    const entries = await opendir(folder);
+    for await (const entry of entries) {
+      if (++inspected >= SHARED_MAX_FILES) break;
+      if (entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
+      const path = join(folder, entry.name);
+      if (entry.isDirectory() && depth === 0 && SHARED_RESOURCE_FOLDERS.has(entry.name.toLowerCase())) {
+        await visit(path, depth + 1);
+      } else if (entry.isFile() && path !== primary) {
+        const ext = extname(path).toLowerCase();
+        if (!MODEL_IMAGE_EXTENSIONS.has(ext) && ext !== ".mtl" && ext !== ".bin") continue;
+        const info = await lstat(path).catch(() => null);
+        if (info?.isFile() && info.size <= SHARED_DEPENDENCY_MAX_BYTES && await realpath(path).catch(() => null) === path) {
+          files.push({ path, name: entry.name, relative: relative(root, path), bytes: info.size });
+        }
+      }
+    }
+  }
+  const info = await lstat(primary);
+  if (!info.isFile()) throw new Error("The shared model is no longer a regular file.");
+  if (info.size > SHARED_MODEL_MAX_BYTES) throw new Error("This file exceeds the 96 MiB model preview limit. Open it in its associated app.");
+  files.push({ path: primary, name: basename(primary), relative: basename(primary), bytes: info.size });
+  await visit(root, 0);
+  return { files, truncated: inspected >= SHARED_MAX_FILES };
+}
+
 function textureVariant(file: FileInfo): ModelTextureVariant | null {
   const extension = extname(file.name).toLowerCase();
   if (!MODEL_IMAGE_EXTENSIONS.has(extension)) return null;
@@ -160,11 +196,12 @@ export async function scanLocalModel(
   root: string,
   assetId: string,
   provider: string,
-  type: string
+  type: string,
+  sharedFile?: string
 ): Promise<ModelManifest> {
   const info = await stat(root).catch(() => null);
   if (!info?.isDirectory()) throw new Error("The local asset folder is not available.");
-  const { files, truncated } = await listFiles(root);
+  const { files, truncated } = await (sharedFile ? listSharedModelFiles(sharedFile) : listFiles(root));
   const candidates: CandidateMesh[] = [];
   const unsupported: ModelManifest["unsupported"] = [];
   const textureVariants: ModelTextureVariant[] = [];
@@ -193,7 +230,9 @@ export async function scanLocalModel(
       continue;
     }
     const texture = textureVariant(file);
-    if (texture) textureVariants.push(texture);
+    if (texture && (!sharedFile || file.name.toLowerCase().startsWith(basename(sharedFile, extname(sharedFile)).toLowerCase()))) {
+      textureVariants.push(texture);
+    }
   }
 
   const bestFormat = [...candidates].sort((a, b) =>
@@ -204,12 +243,12 @@ export async function scanLocalModel(
   // OBJ materials live beside the mesh. Include the first matching sidecar.
   const mtlByBase = new Map(files
     .filter(file => extname(file.name).toLowerCase() === ".mtl")
-    .map(file => [file.name.replace(/\.mtl$/i, "").toLowerCase(), pathToFileURL(file.path).href]));
+    .map(file => [join(dirname(file.path), file.name.replace(/\.mtl$/i, "")).toLowerCase(), pathToFileURL(file.path).href]));
 
   const meshes: ModelMeshVariant[] = candidates
     .filter(candidate => candidate.format === bestFormat)
     .map(candidate => {
-      const base = candidate.file.name.replace(/\.[^.]+$/, "").toLowerCase();
+      const base = candidate.file.path.replace(/\.[^.]+$/, "").toLowerCase();
       return {
         url: pathToFileURL(candidate.file.path).href,
         format: candidate.format,
@@ -252,7 +291,9 @@ export async function scanLocalModel(
     || files.some(file => /alpha|opacity|mask|billboard/i.test(file.name));
   const notes: string[] = [];
   if (truncated) notes.push("The folder scan was truncated; only the first files were indexed.");
-  if (groupedMeshes.length === 0) {
+  if (groupedMeshes.length === 0 && sharedFile) {
+    notes.push("In-app preview is unavailable for this format. Open the file in its associated app.");
+  } else if (groupedMeshes.length === 0) {
     notes.push(unsupported.some(item => item.format === "abc")
       ? "This asset contains an Alembic mesh but no runtime FBX/glTF/OBJ/USD mesh. Download a runtime format to preview."
       : "No runtime 3D mesh was found. Download a glTF/FBX/OBJ/USD version to preview.");
@@ -271,6 +312,7 @@ export async function scanLocalModel(
     availableLods,
     alpha,
     notes,
+    ...(sharedFile ? { allowedFileUrls: files.map(file => pathToFileURL(file.path).href) } : {}),
     unsupported
   };
 }
