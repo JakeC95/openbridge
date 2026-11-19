@@ -16,6 +16,10 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const [view, setView] = useState<"render" | "model">(asset.preview ? "render" : "model");
   const [item, setItem] = useState<MapPreview | null>(null);
   const [copying, setCopying] = useState(false);
+  const [variants, setVariants] = useState<AssetRecord[]>([]);
+  const [organization, setOrganization] = useState({ tags: "", collections: "", notes: "" });
+  const [organizationReady, setOrganizationReady] = useState(false);
+  const [organizationBusy, setOrganizationBusy] = useState(false);
   const hdrAsset = asset.type === "hdri";
 
   useEffect(() => {
@@ -23,13 +27,21 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     void window.openbridge.localPreviews(asset.id, asset.path).then(result => {
       if (current) setImage(result.renders[0] ?? null);
     }).catch(() => {});
+    void window.openbridge.sharedLibrary.variants(asset.id).then(result => {
+      if (current) setVariants(result);
+    }).catch(() => {});
+    void window.openbridge.sharedLibrary.organization(asset.id).then(result => {
+      if (!current) return;
+      setOrganization({ tags: result.tags.join(", "), collections: result.collections.join(", "), notes: result.notes });
+      setOrganizationReady(true);
+    }).catch(error => { if (current) toast(String(error), true); });
     if (hdrAsset) {
       void window.openbridge.sharedLibrary.inspectHdr(asset.id).then(result => {
         if (current) setHdr(result);
       }).catch(error => { if (current) setProblem(error instanceof Error ? error.message : String(error)); });
     }
     return () => { current = false; };
-  }, [asset.id, asset.path, hdrAsset]);
+  }, [asset.id, asset.path, hdrAsset, toast]);
 
   const loadHdrSource = useCallback(async (_item: MapPreview, signal?: AbortSignal) => {
     const cancel = () => void window.openbridge.sharedLibrary.cancelHdr(asset.id).catch(() => {});
@@ -38,17 +50,37 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     finally { signal?.removeEventListener("abort", cancel); }
   }, [asset.id]);
 
-  async function run(action: "open" | "reveal" | "copy") {
+  async function run(action: "open" | "reveal" | "copy" | "copyPackage") {
     try {
       if (action === "copy") {
         setCopying(true);
         if (await window.openbridge.sharedLibrary.copy(asset.id)) toast("Source file copied");
+      } else if (action === "copyPackage") {
+        setCopying(true);
+        const result = await window.openbridge.sharedLibrary.copyPackage(asset.id);
+        if (result) toast(`Copied ${result.files} files to ${result.folder}`);
       } else await window.openbridge.sharedLibrary[action](asset.id);
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), true);
     } finally {
-      if (action === "copy") setCopying(false);
+      if (action === "copy" || action === "copyPackage") setCopying(false);
     }
+  }
+
+  async function saveOrganization() {
+    setOrganizationBusy(true);
+    try {
+      const saved = await window.openbridge.sharedLibrary.saveOrganization(asset.id, {
+        tags: organization.tags.split(","),
+        collections: organization.collections.split(","),
+        notes: organization.notes
+      });
+      setOrganization({ tags: saved.tags.join(", "), collections: saved.collections.join(", "), notes: saved.notes });
+      await useStore.getState().queryLocalLibrary(true);
+      toast("Saved local organization");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally { setOrganizationBusy(false); }
   }
 
   return <>
@@ -90,11 +122,33 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
           <div><span>Modified</span><strong>{new Date(asset.mtime).toLocaleDateString()}</strong></div>
         </div>
         <p className="hint shared-asset-path" title={asset.path}>{asset.path}</p>
+        {variants.length > 0 && <section className="shared-organization">
+          <h3>Possible variants in this folder</h3>
+          <div className="button-row horizontal">
+            {variants.map(variant => <button key={variant.id} type="button" className="btn btn-ghost"
+              onClick={() => void useStore.getState().openLocal(variant)}>
+              {variant.name} · {variant.tags[0]?.toUpperCase()}
+            </button>)}
+          </div>
+        </section>}
+        {organizationReady && <form className="shared-organization" onSubmit={event => { event.preventDefault(); void saveOrganization(); }}>
+          <h3>Organize</h3>
+          <label>Tags <input value={organization.tags} placeholder="Comma-separated tags" maxLength={2400}
+            onChange={event => setOrganization({ ...organization, tags: event.target.value })} /></label>
+          <label>Collections <input value={organization.collections} placeholder="Comma-separated collections" maxLength={2400}
+            onChange={event => setOrganization({ ...organization, collections: event.target.value })} /></label>
+          <label>Notes <textarea value={organization.notes} maxLength={4000} rows={4}
+            onChange={event => setOrganization({ ...organization, notes: event.target.value })} /></label>
+          <button type="submit" className="btn btn-ghost" disabled={organizationBusy}>{organizationBusy ? "Saving…" : "Save organization"}</button>
+        </form>}
       </div>
       <div className="drawer-footer">
         <button type="button" className="btn btn-ghost" onClick={() => void run("reveal")}>Reveal file</button>
         <button type="button" className="btn btn-ghost" onClick={() => void run("open")}>Open in associated app</button>
-        <button type="button" className="btn btn-ghost" disabled={copying} onClick={() => void run("copy")}>{copying ? "Copying…" : "Copy source file"}</button>
+        <button type="button" className="btn btn-ghost" disabled={copying} onClick={() => void run("copy")}>Copy source file</button>
+        {["obj", "gltf", "glb"].includes(asset.tags[0]) && <button type="button" className="btn btn-primary" disabled={copying}
+          onClick={() => void run("copyPackage")}>Copy with dependencies</button>}
+        {copying && <span className="hint" role="status">Copying…</span>}
       </div>
     </aside>
     {item && <ImageViewer items={[item]} index={0} onIndex={() => {}} onClose={() => setItem(null)} loadHdrSource={loadHdrSource} />}

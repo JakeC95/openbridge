@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
   AssetProvider,
@@ -11,7 +11,9 @@ import type {
   LibraryQueryResult,
   LibraryRef,
   LibrarySnapshot,
-  RepoKind
+  RepoKind,
+  SharedAssetOrganization,
+  SharedOrganizationOptions
 } from "../shared/types";
 import type { Logger } from "./logger";
 import { canonicalType, categoryTree, localCategoryPath } from "../shared/browsing";
@@ -135,6 +137,17 @@ export class LibraryIndex {
       PRAGMA temp_store = MEMORY;
     `);
     this.migrate();
+    this.db.prepare("ATTACH DATABASE ? AS organization").run(join(dirname(filePath), "shared-organization.sqlite"));
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS organization.assets (
+        id TEXT PRIMARY KEY,
+        tags TEXT NOT NULL,
+        collections TEXT NOT NULL,
+        notes TEXT NOT NULL
+      );
+      CREATE VIRTUAL TABLE IF NOT EXISTS organization.asset_search
+        USING fts5(id UNINDEXED, terms);
+    `);
   }
 
   close(): void {
@@ -248,6 +261,48 @@ export class LibraryIndex {
     return row.total;
   }
 
+  sharedSiblings(path: string, rootId: string): AssetRecord[] {
+    const folder = dirname(path);
+    const prefix = folder.endsWith(sep) ? folder : folder + sep;
+    const upper = prefix.slice(0, -1) + String.fromCharCode(sep.charCodeAt(0) + 1);
+    const rows = this.db.prepare(`SELECT * FROM assets WHERE repo = 'shared' AND path >= ? AND path < ?
+      AND instr(substr(path, length(?) + 1), ?) = 0 AND id GLOB ?
+      ORDER BY name COLLATE NOCASE, path LIMIT 1000`)
+      .all(prefix, upper, prefix, sep, `shared:${rootId}:*`) as unknown as AssetRow[];
+    return rows.map(rowToAsset);
+  }
+
+  getSharedOrganization(id: string): SharedAssetOrganization {
+    const row = this.db.prepare("SELECT tags, collections, notes FROM organization.assets WHERE id = ?")
+      .get(id) as { tags: string; collections: string; notes: string } | undefined;
+    return row ? { tags: parseList(row.tags), collections: parseList(row.collections), notes: row.notes }
+      : { tags: [], collections: [], notes: "" };
+  }
+
+  setSharedOrganization(id: string, value: SharedAssetOrganization): void {
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM organization.asset_search WHERE id = ?").run(id);
+      if (!value.tags.length && !value.collections.length && !value.notes) {
+        this.db.prepare("DELETE FROM organization.assets WHERE id = ?").run(id);
+      } else {
+        this.db.prepare("INSERT OR REPLACE INTO organization.assets (id, tags, collections, notes) VALUES (?, ?, ?, ?)")
+          .run(id, JSON.stringify(value.tags), JSON.stringify(value.collections), value.notes);
+        this.db.prepare("INSERT INTO organization.asset_search(id, terms) VALUES (?, ?)")
+          .run(id, [...value.tags, ...value.collections, value.notes].join(" "));
+      }
+    });
+  }
+
+  private organizationOptions(): SharedOrganizationOptions {
+    const list = (column: "tags" | "collections"): string[] => {
+      const rows = this.db.prepare(`SELECT min(j.value) AS value
+        FROM organization.assets o JOIN assets a ON a.id = o.id, json_each(o.${column}) j
+        WHERE a.repo = 'shared' GROUP BY lower(j.value) ORDER BY lower(j.value)`).all() as unknown as ColumnRow[];
+      return rows.map(row => row.value);
+    };
+    return { tags: list("tags"), collections: list("collections") };
+  }
+
   setScannedAt(value: number): void {
     this.setMeta("scanned_at", String(value));
   }
@@ -349,7 +404,8 @@ export class LibraryIndex {
       limit,
       hasMore: offset + rows.length < total,
       tookMs: performance.now() - started,
-      ...(options.includeFacets === false ? { categories: [], packs: [] } : this.browseFacets(options))
+      ...(options.includeFacets === false ? { categories: [], packs: [] } : this.browseFacets(options)),
+      ...(options.provider === "shared" && options.includeFacets !== false ? { sharedOrganization: this.organizationOptions() } : {})
     };
   }
 
@@ -422,9 +478,22 @@ export class LibraryIndex {
       clauses.push("a.repo = ?");
       params.push(options.repo);
     }
-    if (searchTokens) {
+    const searchOrganization = !options.provider || options.provider === "all" || options.provider === "shared";
+    if (searchTokens && searchOrganization) {
+      clauses.push(`(a.rowid IN (SELECT rowid FROM assets_fts WHERE assets_fts MATCH ?)
+        OR a.id IN (SELECT id FROM organization.asset_search WHERE asset_search MATCH ?))`);
+      params.push(searchTokens, searchTokens);
+    } else if (searchTokens) {
       clauses.push("assets_fts MATCH ?");
       params.push(searchTokens);
+    }
+    if (options.sharedTag) {
+      clauses.push("a.id IN (SELECT o.id FROM organization.assets o, json_each(o.tags) j WHERE lower(j.value) = lower(?))");
+      params.push(options.sharedTag);
+    }
+    if (options.sharedCollection) {
+      clauses.push("a.id IN (SELECT o.id FROM organization.assets o, json_each(o.collections) j WHERE lower(j.value) = lower(?))");
+      params.push(options.sharedCollection);
     }
     const ready = new Set(options.ready ?? []);
     if (ready.has("tileable")) clauses.push("json_extract(a.technical_json, '$.tileable') = 1");
@@ -468,7 +537,7 @@ export class LibraryIndex {
       params.push(options.interiorExterior);
     }
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-    const from = searchTokens
+    const from = searchTokens && !searchOrganization
       ? "FROM assets a JOIN assets_fts ON assets_fts.rowid = a.rowid"
       : "FROM assets a";
     const orderBy: Record<NonNullable<LibraryQuery["sort"]>, string> = {

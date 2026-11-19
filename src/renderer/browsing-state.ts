@@ -19,6 +19,8 @@ export interface LocalFilters {
   localFavoritesOnly: boolean;
   favorites: string[];
   sharedFavorites?: string[];
+  sharedTag?: string;
+  sharedCollection?: string;
   localPack: PackRef | null;
   localReady: string[];
   localMaxTris: number | null;
@@ -32,6 +34,8 @@ export function libraryFilterQuery(state: LocalFilters): LibraryQuery {
     provider: state.localProvider === "all" ? undefined : state.localProvider,
     query: state.localQuery, repo: state.localRepo, type: state.localType || undefined,
     categoryPath: state.localCategoryPath, sort: state.localSort,
+    sharedTag: state.localProvider === "shared" ? state.sharedTag || undefined : undefined,
+    sharedCollection: state.localProvider === "shared" ? state.sharedCollection || undefined : undefined,
     ids: state.localFavoritesOnly
       ? state.localProvider === "shared" ? state.sharedFavorites ?? []
         : state.localProvider === "all" ? [...state.favorites, ...(state.sharedFavorites ?? [])] : state.favorites

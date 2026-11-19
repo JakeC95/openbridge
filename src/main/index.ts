@@ -1,3 +1,4 @@
+import { copySharedModelPackage, listSharedModelPackage } from "./shared-package";
 import { inspectSharedHdr, isInside, sharedRootId } from "./shared-library";
 import { decodeHdrFile } from "./hdr-decode";
 import { hdrLimitsFor } from "./public/preview-data";
@@ -607,6 +608,16 @@ function registerIpc(): void {
     return library.sharedFile(id);
   }
 
+  ipcMain.handle("shared:stopScanning", () => library?.stopSharedScan());
+  ipcMain.handle("shared:variants", (_event, id: string) => library?.sharedVariants(id) ?? []);
+  ipcMain.handle("shared:organization", (_event, id: string) => {
+    if (!library) throw new Error("Library service is not ready");
+    return library.getSharedOrganization(id);
+  });
+  ipcMain.handle("shared:saveOrganization", (_event, id: string, value: import("../shared/types").SharedAssetOrganization) => {
+    if (!library) throw new Error("Library service is not ready");
+    return library.saveSharedOrganization(id, value);
+  });
   const sharedHdrJobs = new Map<string, AbortController>();
   ipcMain.handle("shared:inspectHdr", async (_event, id: string) => inspectSharedHdr((await requireSharedFile(id)).path));
   ipcMain.handle("shared:hdr", async (event, id: string) => {
@@ -632,18 +643,31 @@ function registerIpc(): void {
     const error = await shell.openPath((await requireSharedFile(id)).path);
     if (error) throw new Error(error);
   });
-  ipcMain.handle("shared:copy", async (_event, id: string) => {
-    const result = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+  async function chooseSharedCopyDestination(): Promise<string | null> {
+    const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     if (result.canceled || !result.filePaths[0]) return null;
-    const { path } = await requireSharedFile(id);
     const directory = await realpath(result.filePaths[0]);
     for (const root of settings().sharedLibraryRoots ?? []) {
       const canonical = await realpath(root.path).catch(() => root.path);
       if (isInside(canonical, directory)) throw new Error("Choose a destination outside the shared library.");
     }
+    return directory;
+  }
+  ipcMain.handle("shared:copy", async (_event, id: string) => {
+    const directory = await chooseSharedCopyDestination();
+    if (!directory) return null;
+    const { path } = await requireSharedFile(id);
     const target = join(directory, basename(path));
     await copyFile(path, target, constants.COPYFILE_EXCL);
     return target;
+  });
+  ipcMain.handle("shared:copyPackage", async (_event, id: string) => {
+    const directory = await chooseSharedCopyDestination();
+    if (!directory) return null;
+    const { path } = await requireSharedFile(id);
+    const root = settings().sharedLibraryRoots?.find(entry => entry.id === sharedRootId(id));
+    if (!root) throw new Error("This shared root is no longer registered.");
+    return copySharedModelPackage(await realpath(root.path), path, directory);
   });
 
   ipcMain.handle("model:manifest", async (_event, request: import("../shared/model-preview").ModelManifestRequest) => {
@@ -653,7 +677,11 @@ function registerIpc(): void {
     if (request.provider === "shared" || sharedRootId(request.assetId)) {
       const { asset, path } = await requireSharedFile(request.assetId);
       if (asset.type !== "3d") throw new Error("This shared asset is not a 3D model.");
-      return scanLocalModel(dirname(path), asset.id, "shared", asset.type, path);
+      const configured = settings().sharedLibraryRoots?.find(root => root.id === sharedRootId(asset.id));
+      const dependencies = configured && /\.(obj|gltf|glb)$/i.test(path)
+        ? await listSharedModelPackage(await realpath(configured.path), path).catch(() => undefined)
+        : undefined;
+      return scanLocalModel(dirname(path), asset.id, "shared", asset.type, path, dependencies);
     }
     if (typeof request.path === "string" && request.path.trim()) {
       let local = await scanLocalModel(request.path, request.assetId, request.provider, request.type ?? "");
@@ -1191,7 +1219,11 @@ async function init(): Promise<void> {
     join(userData, "library-index.sqlite"),
     logger,
     () => ({ ambientcg: settings().ambientcgLibraryPath, blenderkit: settings().blenderkitLibraryPath, openhdri: settings().openhdriLibraryPath }),
-    () => settings().sharedLibraryRoots ?? []
+    () => settings().sharedLibraryRoots ?? [],
+    () => {
+      const snapshot = library?.sharedSnapshot();
+      if (snapshot) mainWindow?.webContents.send("library:updated", snapshot);
+    }
   );
 
   authService = new AuthService(logger, notify);

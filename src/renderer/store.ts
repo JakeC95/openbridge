@@ -6,6 +6,7 @@ import type {
   AssetProvider,
   LibrarySource,
   SharedLibraryStatus,
+  SharedOrganizationOptions,
   AssetRecord,
   AuthState,
   BatchStartResult,
@@ -114,6 +115,11 @@ interface State {
   localFavoritesOnly: boolean;
   sharedFavorites: string[];
   sharedLibraries: SharedLibraryStatus[];
+  sharedOrganization: SharedOrganizationOptions;
+  sharedTag: string;
+  sharedCollection: string;
+  setSharedTag(value: string): void;
+  setSharedCollection(value: string): void;
   toggleSharedFavorite(id: string): void;
   setLocalType(value: string): void;
   setLocalProvider(value: LibrarySource): void;
@@ -594,6 +600,11 @@ export const useStore = create<State>((set, get) => ({
     return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.startsWith("shared:")) : [];
   })(),
   sharedLibraries: [],
+  sharedOrganization: { tags: [], collections: [] },
+  sharedTag: "",
+  sharedCollection: "",
+  setSharedTag(sharedTag) { set({ sharedTag }); },
+  setSharedCollection(sharedCollection) { set({ sharedCollection }); },
   toggleSharedFavorite(id) {
     const current = get().sharedFavorites;
     const sharedFavorites = current.includes(id) ? current.filter(value => value !== id) : [...current, id];
@@ -775,6 +786,7 @@ export const useStore = create<State>((set, get) => ({
         libraryHasMore: firstPage.hasMore,
         localCategories: firstPage.categories,
         localPacks: firstPage.packs,
+        sharedOrganization: firstPage.sharedOrganization ?? { tags: [], collections: [] },
         libraryScannedAt: library.scannedAt,
         downloads: downloadMap,
         sync,
@@ -808,7 +820,6 @@ export const useStore = create<State>((set, get) => ({
             sharedLibraries: result.sharedLibraries ?? [],
             libraryCounts: result.counts,
             libraryTotal: result.total,
-            libraryFilteredTotal: 0,
             libraryScannedAt: result.scannedAt
           });
           void get().queryLocalLibrary(true);
@@ -1057,6 +1068,7 @@ export const useStore = create<State>((set, get) => ({
         libraryHasMore: result.hasMore,
         localCategories: result.categories,
         localPacks: result.packs,
+        sharedOrganization: result.sharedOrganization ?? state.sharedOrganization,
         libraryLoading: false
       }));
     } catch (error) {
@@ -1106,7 +1118,9 @@ export const useStore = create<State>((set, get) => ({
       localMaxTris: null,
       localColor: "",
       localState: "",
-      localInterior: ""
+      localInterior: "",
+      sharedTag: "",
+      sharedCollection: ""
     });
   },
 

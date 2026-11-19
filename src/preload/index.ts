@@ -54,12 +54,17 @@ const api: OpenBridgeApi = {
     ipcRenderer.invoke("library:ids", query) as Promise<string[]>,
   localPreviews: (assetId, indexedPath) => ipcRenderer.invoke("library:previews", assetId, indexedPath),
   sharedLibrary: {
+    stopScanning: () => ipcRenderer.invoke("shared:stopScanning"),
+    variants: id => ipcRenderer.invoke("shared:variants", id),
+    organization: id => ipcRenderer.invoke("shared:organization", id),
+    saveOrganization: (id, value) => ipcRenderer.invoke("shared:saveOrganization", id, value),
     inspectHdr: id => ipcRenderer.invoke("shared:inspectHdr", id),
     hdr: id => ipcRenderer.invoke("shared:hdr", id),
     cancelHdr: id => ipcRenderer.invoke("shared:cancelHdr", id),
     reveal: id => ipcRenderer.invoke("shared:reveal", id),
     open: id => ipcRenderer.invoke("shared:open", id),
-    copy: id => ipcRenderer.invoke("shared:copy", id)
+    copy: id => ipcRenderer.invoke("shared:copy", id),
+    copyPackage: id => ipcRenderer.invoke("shared:copyPackage", id)
   },
   libraryHealth: (force = false) =>
     ipcRenderer.invoke("library:health", force) as Promise<LibraryHealthReport>,

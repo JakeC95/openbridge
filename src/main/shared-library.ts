@@ -5,8 +5,7 @@ import type { AssetRecord, SharedLibraryRoot, SharedLibraryStatus } from "../sha
 import { modelFormatFromExtension } from "../shared/model-preview";
 import { checkHdrDimensions, hdrLimitsFor, PUBLIC_PREVIEW_MAX_BYTES } from "./public/preview-data";
 
-const MAX_ENTRIES = 30_000;
-const MAX_DEPTH = 12;
+const BATCH_SIZE = 128;
 const SKIP_FOLDERS = new Set(["archive", "archives", "cache", "caches", "temp", "tmp", "node_modules"]);
 const HDR_EXTENSIONS = new Set([".hdr", ".exr"]);
 const RENDER_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
@@ -41,73 +40,96 @@ function assetId(root: SharedLibraryRoot, path: string): string {
   return `shared:${root.id}:${createHash("sha256").update(locator).digest("hex").slice(0, 32)}`;
 }
 
+export function variantFamily(name: string): string {
+  let stem = name.toLowerCase().trim();
+  for (;;) {
+    const core = stem.replace(/[-_.\s]+(?:v\d{1,5}|lod[-_]?\d{1,2}|\d{1,2}k|\d{2,5}x\d{2,5}|lq|hq)$/i, "");
+    if (core === stem) return stem.replace(/[-_.\s]+/g, " ");
+    stem = core;
+  }
+}
+
 function matchingAsset(kind: SharedLibraryRoot["kind"], name: string): boolean {
   const extension = extname(name).toLowerCase();
   if (kind === "hdris") return HDR_EXTENSIONS.has(extension);
   return Boolean(modelFormatFromExtension(extension)) || extension === ".hip" || extension === ".hiplc" || extension === ".hipnc";
 }
 
-export async function scanSharedRoot(root: SharedLibraryRoot, cancelled: () => boolean): Promise<{
-  assets: AssetRecord[];
-  status: SharedLibraryStatus;
-}> {
-  const assets: AssetRecord[] = [];
+export async function scanSharedRoot(
+  root: SharedLibraryRoot,
+  cancelled: () => boolean,
+  publish: (assets: AssetRecord[]) => void
+): Promise<SharedLibraryStatus> {
   const canonicalRoot = await realpath(root.path).catch(() => null);
-  if (!canonicalRoot) return { assets, status: { id: root.id, state: "unavailable", count: 0 } };
-  let visited = 0;
+  if (!canonicalRoot) return { id: root.id, state: "unavailable", count: 0 };
+  const remaining = [root.path];
+  let batch: AssetRecord[] = [];
+  let count = 0;
   let partial = false;
-  let unreadable = false;
-  const visit = async (folder: string, depth: number): Promise<void> => {
-    if (cancelled()) return;
-    if (depth > MAX_DEPTH || visited >= MAX_ENTRIES) { partial = true; return; }
+
+  while (remaining.length && !cancelled()) {
+    const folder = remaining.pop()!;
+    const folders: string[] = [];
+    const candidateNames: string[] = [];
+    const renders = new Map<string, string>();
     try {
       const canonicalFolder = await realpath(folder);
       if (relative(join(canonicalRoot, relative(root.path, folder)), canonicalFolder) !== "") {
         partial = true;
-        return;
+        continue;
       }
       const entries = await opendir(folder);
-      const children: string[] = [];
-      const files: string[] = [];
       for await (const entry of entries) {
-        if (++visited > MAX_ENTRIES) { partial = true; break; }
-        if (cancelled()) return;
+        if (cancelled()) break;
         if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
-        if (entry.isDirectory() && !SKIP_FOLDERS.has(entry.name.toLowerCase())) children.push(join(folder, entry.name));
-        if (entry.isFile()) files.push(entry.name);
+        if (entry.isDirectory() && !SKIP_FOLDERS.has(entry.name.toLowerCase())) {
+          folders.push(join(folder, entry.name));
+        } else if (entry.isFile()) {
+          const extension = extname(entry.name);
+          if (matchingAsset(root.kind, entry.name)) candidateNames.push(entry.name);
+          else if (RENDER_EXTENSIONS.has(extension.toLowerCase())) {
+            renders.set(basename(entry.name, extension).toLowerCase(), entry.name);
+          }
+        }
       }
-      const renders = new Map(files.filter(file => RENDER_EXTENSIONS.has(extname(file).toLowerCase()))
-        .map(file => [basename(file, extname(file)).toLowerCase(), file]));
-      for (const file of files) {
-        if (cancelled()) return;
-        if (!matchingAsset(root.kind, file)) continue;
+    } catch {
+      if (folder === root.path) return { id: root.id, state: "unavailable", count };
+      partial = true;
+      continue;
+    }
+    for (const subfolder of folders) remaining.push(subfolder);
+    const categories = [root.name, ...relative(root.path, folder).split(sep).filter(Boolean)];
+    // Metadata reads are parallel in small groups to avoid serial round trips on a share.
+    for (let offset = 0; offset < candidateNames.length && !cancelled(); offset += 12) {
+      const files = await Promise.all(candidateNames.slice(offset, offset + 12).map(async file => {
         const path = join(folder, file);
         const info = await lstat(path).catch(() => null);
-        if (!info?.isFile()) { partial = true; continue; }
+        if (!info?.isFile()) { partial = true; return null; }
         const extension = extname(file);
         const stem = basename(file, extension);
         const image = renders.get(stem.toLowerCase()) ?? renders.get(`${stem.toLowerCase()}_preview`);
-        const categories = [root.name, ...relative(root.path, folder).split(sep).filter(Boolean)];
-        assets.push({
+        return {
           id: assetId(root, path), name: stem, type: root.kind === "hdris" ? "hdri" : "3d",
           repo: "shared", path, jsonPath: "", preview: image ? join(folder, image) : null, thumb: null,
           categories, tags: [extension.slice(1).toLowerCase()], mtime: info.mtimeMs, previewRelativeSize: "",
           searchStr: `${categories.join(" ")} ${file}`.toLowerCase(),
           sizeBytes: info.size, fileCount: 1
-        });
+        } satisfies AssetRecord;
+      }));
+      for (const file of files) if (file) batch.push(file);
+      if (batch.length >= BATCH_SIZE && !cancelled()) {
+        count += batch.length;
+        publish(batch);
+        batch = [];
+        await new Promise<void>(done => setImmediate(done));
       }
-      for (const child of children) {
-        if (cancelled()) break;
-        if (visited >= MAX_ENTRIES) { partial = true; break; }
-        await visit(child, depth + 1);
-      }
-    } catch {
-      if (depth === 0) unreadable = true;
-      else partial = true;
     }
-  };
-  await visit(root.path, 0);
-  return { assets, status: { id: root.id, state: unreadable ? "unavailable" : partial ? "partial" : "ready", count: assets.length } };
+  }
+  if (batch.length && !cancelled()) {
+    count += batch.length;
+    publish(batch);
+  }
+  return { id: root.id, state: partial ? "partial" : "ready", count };
 }
 
 /** Resolve only an indexed file under its current registered root. */

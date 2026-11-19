@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rename, rm, stat, symlink, utimes } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rename, rm, stat, symlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
@@ -18,6 +18,7 @@ const result = await build({
     export { LibraryService } from './src/main/library';
     export { inspectSharedHdr } from './src/main/shared-library';
     export { scanLocalModel } from './src/main/model-preview';
+    export { listSharedModelPackage, copySharedModelPackage } from './src/main/shared-package';
     export { CatalogMetadataProvider } from './src/main/catalog-metadata';
     export { assetTechnicalFacts } from './src/shared/asset-metadata';
     export { localCategoryPath } from './src/shared/browsing';
@@ -392,9 +393,14 @@ try {
   const beside = join(nested, "Table.obj");
   const hdr = join(sharedImages, "Day.hdr");
   const flat = join(sharedImages, "Flat.hdr");
-  await writeFile(model, "v 0 0 0\n");
+  await writeFile(model, "mtllib Chair.mtl\nv 0 0 0\n");
+  const chairLod = join(nested, "Chair_LOD1.obj");
+  await writeFile(chairLod, "v 0 0 0\n");
   await writeFile(beside, "v 1 0 0\n");
-  await writeFile(join(nested, "Chair.mtl"), "newmtl Wood\n");
+  await mkdir(join(sharedRoot, "Textures"));
+  const texture = join(sharedRoot, "Textures", "Wood # colour.png");
+  await writeFile(texture, "fixture texture");
+  await writeFile(join(nested, "Chair.mtl"), "newmtl Wood\nmap_Kd -s 1 1 1 ../Textures/Wood # colour.png\n");
   await writeFile(join(nested, "Chair_preview.jpg"), "fixture");
   await writeFile(hdr, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 32 +X 64\n");
   await writeFile(flat, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 32 +X 32\n");
@@ -413,14 +419,71 @@ try {
     const chair = assets.find(asset => asset.path === model);
     assert.ok(chair);
     check("shared models and HDRIs index independently from provider assets", () => {
-      assert.equal(assets.length, 4);
-      assert.equal(snapshot.counts.shared, 4);
+      assert.equal(assets.length, 5);
+      assert.equal(snapshot.counts.shared, 5);
       assert.equal(snapshot.counts.megascans, 0);
       assert.equal(shared.query({ provider: "megascans" }).total, 0);
-      assert.equal(shared.query({ provider: "shared", query: "chair" }).total, 1);
+      assert.equal(shared.query({ provider: "shared", query: "chair" }).total, 2);
       assert.equal(shared.query({ provider: "shared", type: "hdri" }).total, 2);
       assert.equal(chair.repo, "shared");
     });
+    const saved = shared.saveSharedOrganization(chair.id, {
+      tags: ["Furniture", " furniture "], collections: ["Studio props"], notes: "Approved by production."
+    });
+    check("shared notes, tags and collections are searchable and filterable", () => {
+      assert.deepEqual(saved.tags, ["Furniture"]);
+      assert.equal(shared.query({ query: "production" }).assets[0].id, chair.id);
+      assert.equal(shared.query({ provider: "megascans", query: "production" }).total, 0);
+      assert.equal(shared.query({ provider: "shared", sharedCollection: "studio props", sharedTag: "furniture" }).total, 1);
+      assert.deepEqual(shared.query({ provider: "shared" }).sharedOrganization.collections, ["Studio props"]);
+    });
+    const cleanIndex = new LibraryService(() => "", () => "", () => "", () => null, () => null,
+      join(directory, "rebuilt-shared.sqlite"), logger, () => ({}), () => roots);
+    try {
+      await cleanIndex.snapshot(true);
+      check("shared organization survives rebuilding the file index", () => {
+        assert.deepEqual(cleanIndex.getSharedOrganization(chair.id), saved);
+      });
+    } finally { cleanIndex.close(); }
+    check("shared variant matching keeps unrelated neighbors separate", () => {
+      assert.deepEqual(shared.sharedVariants(chair.id).map(item => item.path), [chairLod]);
+    });
+    const copyRoot = join(directory, "Project copies");
+    await mkdir(copyRoot);
+    const copied = await api.copySharedModelPackage(sharedRoot, model, copyRoot);
+    check("shared OBJ package preserves relative MTL and texture paths", () => assert.equal(copied.files, 3));
+    assert.equal(await readFile(join(copied.folder, "Textures", "Wood # colour.png"), "utf8"), "fixture texture");
+    assert.match(await readFile(join(copied.folder, "Versions # café", "Chair.obj"), "utf8"), /^mtllib Chair/);
+    const unsafe = join(nested, "Unsafe.gltf");
+    await writeFile(unsafe, JSON.stringify({ buffers: [{ uri: "../../outside.bin" }] }));
+    await assert.rejects(() => api.listSharedModelPackage(sharedRoot, unsafe), /outside its shared root/);
+    await rm(unsafe);
+    await writeFile(join(nested, "model.bin"), "mesh data");
+    const gltf = join(nested, "Fixture.gltf");
+    await writeFile(gltf, JSON.stringify({ buffers: [{ uri: "model.bin" }], images: [{ uri: "data:image/png;base64,eA==" }] }));
+    const gltfFiles = await api.listSharedModelPackage(sharedRoot, gltf);
+    check("shared glTF package includes local buffers and rejects escaping references", () =>
+      assert.deepEqual(gltfFiles, [gltf, join(nested, "model.bin")]));
+    const glb = join(nested, "Fixture.glb");
+    const json = Buffer.from(JSON.stringify({ buffers: [{ uri: "model.bin" }] }));
+    const header = Buffer.alloc(20);
+    header.writeUInt32LE(0x46546c67, 0);
+    header.writeUInt32LE(2, 4);
+    header.writeUInt32LE(header.length + json.length, 8);
+    header.writeUInt32LE(json.length, 12);
+    header.writeUInt32LE(0x4e4f534a, 16);
+    await writeFile(glb, Buffer.concat([header, json]));
+    assert.deepEqual(await api.listSharedModelPackage(sharedRoot, glb), [glb, join(nested, "model.bin")]);
+    if (process.platform !== "win32") {
+      const external = join(directory, "outside.bin");
+      const linked = join(nested, "linked.bin");
+      await writeFile(external, "private fixture");
+      await symlink(external, linked);
+      await writeFile(gltf, JSON.stringify({ buffers: [{ uri: "linked.bin" }] }));
+      await assert.rejects(() => api.listSharedModelPackage(sharedRoot, gltf), /linked model dependency/);
+    }
+    await rm(gltf);
+    await rm(glb);
     const preview = await shared.previews(chair.id);
     const source = await shared.sharedFile(chair.id);
     const manifest = await api.scanLocalModel(nested, chair.id, "shared", "3d", source.path);
@@ -450,9 +513,9 @@ try {
     const remap = await shared.snapshot(true);
     check("shared index survives unmount and managed-root changes and preserves IDs on remap", () => {
       assert.equal(offline.sharedLibraries[0].state, "unavailable");
-      assert.equal(offline.counts.shared, 4);
+      assert.equal(offline.counts.shared, 5);
       assert.equal(remap.sharedLibraries[0].state, "ready");
-      assert.equal(remap.counts.shared, 4);
+      assert.equal(remap.counts.shared, 5);
       assert.equal(shared.getAsset(chair.id).path, join(remapped, "Versions # café", "Chair.obj"));
     });
     roots = roots.filter(root => root.id === "hdris");
@@ -465,6 +528,30 @@ try {
     shared.close();
   }
 
+  const transitions = [];
+  let doneScanning;
+  const done = new Promise(resolve => { doneScanning = resolve; });
+  const background = new LibraryService(() => "", () => "", () => "", () => null, () => null,
+    join(directory, "background-shared.sqlite"), logger, () => ({}), () => roots,
+    () => {
+      const snapshot = background.sharedSnapshot();
+      transitions.push(snapshot.sharedLibraries[0]?.state);
+      if (snapshot.sharedLibraries[0]?.state === "ready") doneScanning(snapshot);
+    }
+  );
+  try {
+    const initial = await background.snapshot(true);
+    const settled = await Promise.race([done, new Promise((_, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Shared background scan timed out")), 5000);
+      timeout.unref();
+    })]);
+    check("shared background scans yield the initial Library before progressively publishing indexed files", () => {
+      assert.equal(initial.sharedLibraries[0].state, "scanning");
+      assert.ok(transitions.includes("scanning"));
+      assert.equal(settled.sharedLibraries[0].state, "ready");
+      assert.equal(settled.counts.shared, 2);
+    });
+  } finally { background.close(); }
   check("HDRI sky conditions ignore contradictory provider tags", () => {
     const condition = api.poliigonSkyCondition;
     assert.equal(condition({ name: "Clear Day HDRI", tags: ["clear sky"], categories: ["HDRIS / Sky / Clear"] }), "clear");

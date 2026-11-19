@@ -94,7 +94,7 @@ const SHARED_DEPENDENCY_MAX_BYTES = 32 * 1024 * 1024;
 const SHARED_MAX_FILES = 1200;
 const SHARED_RESOURCE_FOLDERS = new Set(["textures", "texture", "maps", "materials", "resources"]);
 
-async function listSharedModelFiles(primary: string): Promise<{ files: FileInfo[]; truncated: boolean }> {
+async function listSharedModelFiles(primary: string, dependencies?: string[]): Promise<{ files: FileInfo[]; truncated: boolean }> {
   const root = dirname(primary);
   const files: FileInfo[] = [];
   let inspected = 0;
@@ -121,6 +121,15 @@ async function listSharedModelFiles(primary: string): Promise<{ files: FileInfo[
   if (!info.isFile()) throw new Error("The shared model is no longer a regular file.");
   if (info.size > SHARED_MODEL_MAX_BYTES) throw new Error("This file exceeds the 96 MiB model preview limit. Open it in its associated app.");
   files.push({ path: primary, name: basename(primary), relative: basename(primary), bytes: info.size });
+  if (dependencies && dependencies.length > 1) {
+    for (const path of dependencies.slice(1)) {
+      const file = await lstat(path).catch(() => null);
+      if (file?.isFile() && file.size <= SHARED_DEPENDENCY_MAX_BYTES) {
+        files.push({ path, name: basename(path), relative: relative(root, path), bytes: file.size });
+      }
+    }
+    return { files, truncated: false };
+  }
   await visit(root, 0);
   return { files, truncated: inspected >= SHARED_MAX_FILES };
 }
@@ -197,11 +206,12 @@ export async function scanLocalModel(
   assetId: string,
   provider: string,
   type: string,
-  sharedFile?: string
+  sharedFile?: string,
+  sharedDependencies?: string[]
 ): Promise<ModelManifest> {
   const info = await stat(root).catch(() => null);
   if (!info?.isDirectory()) throw new Error("The local asset folder is not available.");
-  const { files, truncated } = await (sharedFile ? listSharedModelFiles(sharedFile) : listFiles(root));
+  const { files, truncated } = await (sharedFile ? listSharedModelFiles(sharedFile, sharedDependencies) : listFiles(root));
   const candidates: CandidateMesh[] = [];
   const unsupported: ModelManifest["unsupported"] = [];
   const textureVariants: ModelTextureVariant[] = [];
@@ -249,6 +259,9 @@ export async function scanLocalModel(
     .filter(candidate => candidate.format === bestFormat)
     .map(candidate => {
       const base = candidate.file.path.replace(/\.[^.]+$/, "").toLowerCase();
+      const localMaterial = mtlByBase.get(base);
+      const explicitMaterial = (sharedDependencies && files.find(file => extname(file.path).toLowerCase() === ".mtl")?.path);
+      const material = explicitMaterial ? pathToFileURL(explicitMaterial).href : localMaterial;
       return {
         url: pathToFileURL(candidate.file.path).href,
         format: candidate.format,
@@ -257,7 +270,7 @@ export async function scanLocalModel(
         quality: candidate.quality,
         bytes: candidate.file.bytes,
         triangles: candidate.triangles,
-        ...(candidate.format === "obj" && mtlByBase.has(base) ? { mtlUrl: mtlByBase.get(base)! } : {})
+        ...(candidate.format === "obj" && material ? { mtlUrl: material } : {})
       };
     });
 

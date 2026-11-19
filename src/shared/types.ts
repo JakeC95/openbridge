@@ -28,9 +28,20 @@ export interface SharedLibraryRoot {
   kind: "models" | "hdris";
 }
 
+export interface SharedAssetOrganization {
+  tags: string[];
+  collections: string[];
+  notes: string;
+}
+
+export interface SharedOrganizationOptions {
+  tags: string[];
+  collections: string[];
+}
+
 export interface SharedLibraryStatus {
   id: string;
-  state: "ready" | "partial" | "unavailable";
+  state: "scanning" | "paused" | "ready" | "partial" | "unavailable";
   count: number;
 }
 
@@ -630,6 +641,8 @@ export interface LibraryQuery {
   sort?: LibrarySort;
   type?: string;
   categoryPath?: string[];
+  sharedTag?: string;
+  sharedCollection?: string;
   ids?: string[];
   ready?: string[];
   maxTris?: number;
@@ -652,6 +665,7 @@ export interface LibraryQueryResult {
   tookMs: number;
   categories: CategoryNode[];
   packs: PackSummary[];
+  sharedOrganization?: SharedOrganizationOptions;
 }
 
 export interface LibrarySnapshot {
@@ -1018,12 +1032,17 @@ export interface OpenBridgeApi {
   queryLibraryIds(query: LibraryQuery): Promise<string[]>;
   localPreviews(assetId: string, indexedPath?: string): Promise<{ renders: MapPreview[]; maps: MapPreview[] }>;
   sharedLibrary: {
+    stopScanning(): Promise<void>;
+    variants(id: string): Promise<AssetRecord[]>;
+    organization(id: string): Promise<SharedAssetOrganization>;
+    saveOrganization(id: string, value: SharedAssetOrganization): Promise<SharedAssetOrganization>;
     inspectHdr(id: string): Promise<{ width: number; height: number; panorama: boolean }>;
     hdr(id: string): Promise<PoliigonHdrData>;
     cancelHdr(id: string): Promise<void>;
     reveal(id: string): Promise<void>;
     open(id: string): Promise<void>;
     copy(id: string): Promise<string | null>;
+    copyPackage(id: string): Promise<{ folder: string; files: number } | null>;
   };
   libraryHealth(force?: boolean): Promise<LibraryHealthReport>;
   cancelLibraryHealth(): Promise<void>;

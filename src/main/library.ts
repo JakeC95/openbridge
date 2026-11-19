@@ -1,5 +1,5 @@
-import { isInside, resolveSharedFile, scanSharedRoot } from "./shared-library";
-import type { SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
+import { isInside, resolveSharedFile, scanSharedRoot, sharedRootId, variantFamily } from "./shared-library";
+import type { SharedAssetOrganization, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
 import { realpath, readdir, readFile, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -844,7 +844,8 @@ export class LibraryService {
   private closed = false;
   private sharedStatus: SharedLibraryStatus[] = [];
   private sharedSignature = "";
-  private sharedScannedAt = 0;
+  private sharedEpoch = 0;
+  private sharedScan: { signature: string; epoch: number; result: Promise<void> } | null = null;
 
   constructor(
     private readonly getLibraryPath: () => string,
@@ -855,7 +856,8 @@ export class LibraryService {
     indexPath: string,
     private readonly logger: Logger,
     private readonly getPublicLibraryPaths: () => Partial<Record<PublicProviderId, string>> = () => ({}),
-    private readonly getSharedRoots: () => SharedLibraryRoot[] = () => []
+    private readonly getSharedRoots: () => SharedLibraryRoot[] = () => [],
+    private readonly onSharedProgress?: () => void
   ) {
     this.index = new LibraryIndex(indexPath, logger);
   }
@@ -1001,11 +1003,12 @@ export class LibraryService {
     }
 
     if (this.closed || revision !== this.scanRevision) return null;
-    await this.scanSharedAssets(force, revision, new Set(folders.map(item => item.folder)));
-    if (this.closed || revision !== this.scanRevision) return null;
     this.index.upsertMany(changes);
     if (healthChanges.length > 0) this.index.setHealthMany(healthChanges);
     const deleted = this.index.deleteMissing(seen);
+    const shared = this.startSharedScan(force);
+    if (!this.onSharedProgress) await shared;
+    if (this.closed || revision !== this.scanRevision) return null;
     const scannedAt = Date.now();
     this.index.setScannedAt(scannedAt);
     this.dirtyFolders.clear();
@@ -1031,37 +1034,147 @@ export class LibraryService {
     };
   }
 
-  private async scanSharedAssets(force: boolean, revision: number, managed: Set<string>): Promise<void> {
+  private startSharedScan(force: boolean): Promise<void> {
     const roots = this.getSharedRoots();
     const signature = JSON.stringify(roots);
-    if (!force && signature === this.sharedSignature && Date.now() - this.sharedScannedAt < 60_000) return;
-    const statuses: SharedLibraryStatus[] = [];
-    const scanned = new Map<string, Set<string>>();
-    const cancelled = () => this.closed || revision !== this.scanRevision;
-    for (const root of roots) {
-      const { assets, status } = await scanSharedRoot(root, cancelled);
-      if (cancelled()) return;
-      const available = assets.filter(asset => !managed.has(asset.path));
-      const changed = available.filter(asset => {
-        const previous = this.index.getCachedRow(asset.path);
-        return !previous || previous.id !== asset.id || previous.mtime !== Math.trunc(asset.mtime) ||
-          previous.preview !== asset.preview || previous.bytes !== asset.sizeBytes || previous.categories !== JSON.stringify(asset.categories);
-      });
-      this.index.upsertMany(changed.map(asset => ({ asset, folderMtime: asset.mtime, jsonMtime: 0 })));
-      if (changed.length) this.index.setHealthMany(changed.map(asset => ({
-        path: asset.path,
-        stats: { files: 1, bytes: asset.sizeBytes ?? 0, zeroBytes: Number(asset.sizeBytes === 0), meshes: Number(asset.type === "3d"), textures: 0 },
-        issues: asset.sizeBytes === 0 ? [{ kind: "zero-byte", severity: "error", assetId: asset.id, name: asset.name, path: asset.path, message: "This shared file is empty." }] : []
-      })));
-      // An unmounted share may leave an accessible but empty mount point.
-      const emptyPreviousRoot = available.length === 0 && this.index.countSharedRoot(root.id) > 0;
-      if (status.state === "ready" && !emptyPreviousRoot) scanned.set(root.id, new Set(available.map(asset => asset.path)));
-      statuses.push(emptyPreviousRoot && status.state === "ready" ? { ...status, state: "partial" } : status);
+    if (this.sharedScan?.signature === signature && this.sharedScan.epoch === this.sharedEpoch) return this.sharedScan.result;
+    if (!force && signature === this.sharedSignature) return Promise.resolve();
+    if (this.sharedScan) {
+      // The running scan observes the new settings and stops at its next batch.
+      return this.sharedScan.result.then(() => this.startSharedScan(force));
     }
-    this.index.reconcileSharedRoots(new Set(roots.map(root => root.id)), scanned);
-    this.sharedStatus = statuses.map(status => ({ ...status, count: this.index.countSharedRoot(status.id) }));
+    const epoch = ++this.sharedEpoch;
+    const result = this.scanSharedAssets(roots, signature, epoch).catch(error => {
+      if (this.closed) return;
+      this.logger.warn("Shared library scan failed", { error });
+      this.sharedStatus = this.sharedStatus.map(status => status.state === "scanning" ? { ...status, state: "partial" } : status);
+      this.snapshotCache = null;
+      this.onSharedProgress?.();
+    }).finally(() => { this.sharedScan = null; });
+    this.sharedScan = { signature, epoch, result };
+    return result;
+  }
+
+  stopSharedScan(): void {
+    if (!this.sharedScan || !this.sharedStatus.some(status => status.state === "scanning")) return;
+    this.sharedEpoch++;
+    this.sharedSignature = this.sharedScan.signature;
+    this.sharedStatus = this.sharedStatus.map(status => status.state === "scanning" ? {
+      id: status.id, state: "paused", count: this.index.countSharedRoot(status.id)
+    } : status);
+    this.snapshotCache = null;
+    this.onSharedProgress?.();
+  }
+
+  private async scanSharedAssets(roots: SharedLibraryRoot[], signature: string, epoch: number): Promise<void> {
+    const registered = new Set(roots.map(root => root.id));
+    this.index.reconcileSharedRoots(registered, new Map());
+    this.sharedStatus = roots.map(root => ({ id: root.id, state: "scanning", count: this.index.countSharedRoot(root.id) }));
+    let lastProgress = 0;
+    const progress = (): void => {
+      this.snapshotCache = null;
+      lastProgress = Date.now();
+      this.onSharedProgress?.();
+    };
+    let currentRoots = roots;
+    const cancelled = (): boolean => {
+      if (this.closed || this.sharedEpoch !== epoch) return true;
+      const changed = this.getSharedRoots();
+      if (changed === currentRoots) return false;
+      if (JSON.stringify(changed) !== signature) return true;
+      currentRoots = changed;
+      return false;
+    };
+    // Mounts progress independently. Commits are synchronous and each batch is bounded.
+    const outcomes = await Promise.allSettled(roots.map(async root => {
+      const seen = new Set<string>();
+      const status = await scanSharedRoot(root, cancelled, assets => {
+        const changed = assets.filter(asset => {
+          const previous = this.index.getCachedRow(asset.path);
+          if (previous && previous.repo !== "shared") return false;
+          seen.add(asset.path);
+          return !previous || previous.id !== asset.id || previous.mtime !== Math.trunc(asset.mtime) ||
+            previous.preview !== asset.preview || previous.bytes !== asset.sizeBytes || previous.categories !== JSON.stringify(asset.categories);
+        });
+        this.index.upsertMany(changed.map(asset => ({ asset, folderMtime: asset.mtime, jsonMtime: 0 })));
+        if (changed.length) this.index.setHealthMany(changed.map(asset => ({
+          path: asset.path,
+          stats: { files: 1, bytes: asset.sizeBytes ?? 0, zeroBytes: Number(asset.sizeBytes === 0), meshes: Number(asset.type === "3d"), textures: 0 },
+          issues: asset.sizeBytes === 0 ? [{ kind: "zero-byte", severity: "error", assetId: asset.id, name: asset.name, path: asset.path, message: "This shared file is empty." }] : []
+        })));
+        if (Date.now() - lastProgress > 2000) {
+          this.sharedStatus = this.sharedStatus.map(value => ({ ...value, count: this.index.countSharedRoot(value.id) }));
+          progress();
+        }
+      });
+      if (cancelled()) return;
+      // An unmounted share can leave an accessible, empty mount point.
+      const emptyMount = seen.size === 0 && this.index.countSharedRoot(root.id) > 0;
+      if (status.state === "ready" && !emptyMount) this.index.reconcileSharedRoots(registered, new Map([[root.id, seen]]));
+      this.sharedStatus = this.sharedStatus.map(value => value.id === root.id ? {
+        id: root.id, state: emptyMount && status.state === "ready" ? "partial" : status.state,
+        count: this.index.countSharedRoot(root.id)
+      } : value);
+      progress();
+    }));
+    if (cancelled()) return;
+    for (let index = 0; index < outcomes.length; index++) {
+      const outcome = outcomes[index];
+      if (outcome.status !== "rejected") continue;
+      const { id } = roots[index];
+      this.logger.warn("Shared source could not finish indexing", { id, error: outcome.reason });
+      this.sharedStatus = this.sharedStatus.map(value => value.id === id
+        ? { id, state: "partial", count: this.index.countSharedRoot(id) }
+        : value);
+      progress();
+    }
     this.sharedSignature = signature;
-    this.sharedScannedAt = Date.now();
+  }
+
+  sharedSnapshot(): LibrarySnapshot | null {
+    if (this.closed) return null;
+    const paths = this.getPublicLibraryPaths();
+    return this.readSnapshot({
+      scannedAt: this.index.getScannedAt(),
+      libraryPath: this.getLibraryPath(), poliigonLibraryPath: this.getPoliigonLibraryPath(),
+      polyhavenLibraryPath: this.getPolyHavenLibraryPath(), ambientcgLibraryPath: paths.ambientcg,
+      blenderkitLibraryPath: paths.blenderkit, openhdriLibraryPath: paths.openhdri,
+      sharedLibraries: this.sharedStatus
+    });
+  }
+
+  sharedVariants(id: string): AssetRecord[] {
+    const asset = typeof id === "string" ? this.index.getById(id) : null;
+    if (asset?.repo !== "shared") return [];
+    const family = variantFamily(asset.name);
+    return this.index.sharedSiblings(asset.path, sharedRootId(id))
+      .filter(item => item.id !== id && item.type === asset.type && variantFamily(item.name) === family);
+  }
+
+  getSharedOrganization(id: string): SharedAssetOrganization {
+    if (typeof id !== "string" || this.index.getById(id)?.repo !== "shared") throw new Error("This shared asset is no longer indexed.");
+    return this.index.getSharedOrganization(id);
+  }
+
+  saveSharedOrganization(id: string, value: SharedAssetOrganization): SharedAssetOrganization {
+    this.getSharedOrganization(id);
+    const normalize = (input: unknown): string[] => {
+      if (!Array.isArray(input)) return [];
+      const names = new Map<string, string>();
+      for (const entry of input.slice(0, 30)) {
+        if (typeof entry !== "string") continue;
+        const name = entry.trim().slice(0, 80);
+        if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+      }
+      return [...names.values()];
+    };
+    const clean = {
+      tags: normalize(value?.tags),
+      collections: normalize(value?.collections),
+      notes: typeof value?.notes === "string" ? value.notes.trim().slice(0, 4000) : ""
+    };
+    this.index.setSharedOrganization(id, clean);
+    return clean;
   }
 
   async sharedFile(id: string): Promise<{ asset: AssetRecord; path: string }> {

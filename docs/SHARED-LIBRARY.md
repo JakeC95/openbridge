@@ -9,17 +9,28 @@ or file extension. Use **Rescan** after changing files or reconnecting a share.
 
 The pilot supports the Library grid, list, selection and comparison, account-free favorites,
 compatible 3D previews, flat HDR and 360° HDRI previews, and same-name render images. Each model
-or HDR file is initially a separate Library item. The inspector can reveal, open or copy the
-selected original. Copy prompts for a destination and refuses to overwrite an existing file.
-Copying a source file does not gather its dependencies.
+or HDR file has its own Library item. The inspector links possible versions, LODs and resolution
+variants found in the same folder. It can reveal, open or copy the selected original. Copy
+prompts for a destination and refuses to overwrite an existing file.
 
-The scanner skips hidden folders, archives and cache folders. It indexes up to 30,000 entries
-and 12 levels below each registered root per scan. Partial scans and unavailable mounts
-retain cached results. The pilot checks individual files for zero bytes in the health report.
+Use **Organize** in the shared inspector to save tags, collections and notes. The Library
+searches that information and offers tag and collection filters under **Shared folders**.
+Organization is private to the application profile and survives index rebuilds.
+
+For glTF, GLB or OBJ, **Copy with dependencies** creates a new directory and preserves the
+relative paths for referenced buffers, material libraries and textures. Absolute, remote,
+missing and linked references fail with an explanation. Other formats can still be copied
+as single files.
+
+The scanner skips hidden folders, archives and cache folders. It scans registered roots in the
+background, publishes new results in batches and preserves the last good index when a share
+goes offline. Use **Stop shared indexing** to stop a long scan. **Rescan** starts another pass
+while keeping results already indexed. Partial scans keep cached results until a full scan
+completes. The pilot checks individual files for zero bytes in the health report.
 Model previews have a 96 MiB source limit and resolve eligible dependencies beside the model
 or in conventional resource subfolders. HDR previews use the existing 8K and 160 MiB limits.
-Large or native files can be opened in the associated application. Dependency packaging,
-grouping variants, local tags and notes, and explicit shared file edits remain planned.
+Large or native files can be opened in the associated application. Automatic grouping across
+folders, dependency packaging for more formats, and explicit shared file edits remain planned.
 
 ## Design and next stages
 

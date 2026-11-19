@@ -6048,3 +6048,23 @@ body {
 .shared-root-setting + .button-row {
   margin-top: 12px;
 }
+
+
+.shared-organization {
+  display: grid;
+  gap: 10px;
+}
+.shared-organization label {
+  display: grid;
+  gap: 5px;
+}
+.shared-organization input,
+.shared-organization textarea {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--bg-deep);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px;
+}

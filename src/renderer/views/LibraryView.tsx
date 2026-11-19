@@ -55,6 +55,9 @@ export function LibraryView() {
   const localProvider = useStore(state => state.localProvider);
   const sharedLibraries = useStore(state => state.sharedLibraries);
   const sharedFavorites = useStore(state => state.sharedFavorites);
+  const organization = useStore(state => state.sharedOrganization);
+  const sharedTag = useStore(state => state.sharedTag);
+  const sharedCollection = useStore(state => state.sharedCollection);
   const setLocalProvider = useStore(state => state.setLocalProvider);
   const localCategoryPath = useStore(state => state.localCategoryPath);
   const localSort = useStore(state => state.localSort);
@@ -137,6 +140,8 @@ export function LibraryView() {
     localColor,
     localState,
     localInterior,
+    sharedTag,
+    sharedCollection,
     queryLocalLibrary
   ]);
 
@@ -426,8 +431,13 @@ export function LibraryView() {
         {(localProvider === "all" || localProvider === "shared") && sharedLibraries.filter(root => root.state !== "ready").map(root =>
           <p className="hint" role="status" key={root.id}>
             {settings?.sharedLibraryRoots?.find(entry => entry.id === root.id)?.name ?? "Shared folder"}:
-            {root.state === "unavailable" ? " mount unavailable. Showing cached results." : " scan incomplete. Showing indexed results."}
+            {root.state === "unavailable" ? " mount unavailable. Showing cached results." : root.state === "scanning" ? ` indexing… ${root.count.toLocaleString()} files available.` : root.state === "paused" ? " indexing stopped. Select Rescan to try again." : " scan incomplete. Showing indexed results."}
           </p>
+        )}
+
+        {(localProvider === "all" || localProvider === "shared") && sharedLibraries.some(root => root.state === "scanning") && (
+          <button type="button" className="text-btn" onClick={() => void window.openbridge.sharedLibrary.stopScanning()
+            .catch(error => toast(String(error), true))}>Stop shared indexing</button>
         )}
 
         <div className="filter-row">
@@ -447,6 +457,16 @@ export function LibraryView() {
             onChange={value => useStore.getState().setLocalType(value === "all" ? "" : value)}
             options={[{ value: "all", label: "All types" }, ...typeOptions
               .map(value => ({ value, label: categoryLabel(value) }))]} />
+          {localProvider === "shared" && (organization.tags.length > 0 || sharedTag) && (
+            <Dropdown className="filter-select" value={sharedTag} ariaLabel="Shared tag"
+              onChange={value => useStore.getState().setSharedTag(value)}
+              options={[{ value: "", label: "All tags" }, ...organization.tags.map(tag => ({ value: tag, label: tag }))]} />
+          )}
+          {localProvider === "shared" && (organization.collections.length > 0 || sharedCollection) && (
+            <Dropdown className="filter-select" value={sharedCollection} ariaLabel="Shared collection"
+              onChange={value => useStore.getState().setSharedCollection(value)}
+              options={[{ value: "", label: "All collections" }, ...organization.collections.map(collection => ({ value: collection, label: collection }))]} />
+          )}
           <Dropdown className="filter-select" value={localSort} ariaLabel="Sort local library"
             onChange={value => useStore.getState().setLocalSort(value as typeof localSort)} options={sortOptions} />
           {filterGroups.length > 0 && (
