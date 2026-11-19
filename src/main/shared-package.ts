@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, mkdtemp, open, realpath, rm, statfs } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, statfs } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { SharedCopyReport } from "../shared/types";
 import { isInside } from "./shared-library";
 
 const MAX_MANIFEST = 24 * 1024 * 1024;
@@ -148,5 +149,45 @@ export async function copySharedModelPackage(root: string, primary: string, dest
   } catch (error) {
     await rm(folder, { recursive: true, force: true }).catch(() => {});
     throw error;
+  }
+}
+
+export async function copySharedSelection(
+  destination: string,
+  assets: Array<{ id: string; name: string }>,
+  resolveAsset: (id: string) => Promise<{ root: string; path: string }>,
+  signal: AbortSignal,
+  progress: (completed: number) => void
+): Promise<SharedCopyReport> {
+  const failures: SharedCopyReport["failures"] = [];
+  if (signal.aborted) return { folder: null, copied: 0, cancelled: true, failures };
+  const folder = await mkdtemp(join(destination, "OpenBridge assets-"));
+  let copied = 0;
+  let completed = 0;
+  try {
+    for (const asset of assets) {
+      if (signal.aborted) break;
+      try {
+        const { root, path } = await resolveAsset(asset.id);
+        if (/\.(gltf|glb|obj)$/i.test(path)) {
+          await copySharedModelPackage(root, path, folder);
+        } else {
+          const individual = await mkdtemp(join(folder, "Asset-"));
+          try {
+            await copyFile(path, join(individual, basename(path)), constants.COPYFILE_EXCL);
+          } catch (error) {
+            await rm(individual, { recursive: true, force: true }).catch(() => {});
+            throw error;
+          }
+        }
+        copied++;
+      } catch (error) {
+        failures.push({ name: asset.name, message: error instanceof Error ? error.message : String(error) });
+      }
+      progress(++completed);
+    }
+    return { folder: copied > 0 ? folder : null, copied, cancelled: signal.aborted && completed < assets.length, failures };
+  } finally {
+    if (copied === 0) await rmdir(folder).catch(() => {});
   }
 }

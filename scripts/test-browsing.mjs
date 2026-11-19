@@ -18,7 +18,7 @@ const result = await build({
     export { LibraryService } from './src/main/library';
     export { inspectSharedHdr } from './src/main/shared-library';
     export { scanLocalModel } from './src/main/model-preview';
-    export { listSharedModelPackage, copySharedModelPackage } from './src/main/shared-package';
+    export { listSharedModelPackage, copySharedModelPackage, copySharedSelection } from './src/main/shared-package';
     export { CatalogMetadataProvider } from './src/main/catalog-metadata';
     export { assetTechnicalFacts } from './src/shared/asset-metadata';
     export { localCategoryPath } from './src/shared/browsing';
@@ -447,6 +447,8 @@ try {
     } finally { cleanIndex.close(); }
     check("shared variant matching keeps unrelated neighbors separate", () => {
       assert.deepEqual(shared.sharedVariants(chair.id).map(item => item.path), [chairLod]);
+      assert.equal(shared.query({ provider: "shared", groupSharedVariants: true }).total, 4);
+      assert.equal(shared.query({ provider: "shared", groupSharedVariants: true, query: "lod1" }).assets[0].path, chairLod);
     });
     const copyRoot = join(directory, "Project copies");
     await mkdir(copyRoot);
@@ -485,6 +487,30 @@ try {
     }
     await rm(gltf);
     await rm(glb);
+    const progress = [];
+    const controller = new AbortController();
+    const selection = await api.copySharedSelection(copyRoot,
+      [{ id: "missing", name: "Missing" }, { id: "chair", name: "Chair" }, { id: "table", name: "Table" }],
+      async id => {
+        if (id === "missing") throw new Error("Source offline");
+        return { root: sharedRoot, path: id === "chair" ? model : beside };
+      }, controller.signal, completed => {
+        progress.push(completed);
+        if (completed === 2) controller.abort();
+      });
+    check("bulk shared copying reports per-asset failures and stops without discarding completed packages", () => {
+      assert.equal(selection.copied, 1);
+      assert.equal(selection.cancelled, true);
+      assert.deepEqual(selection.failures, [{ name: "Missing", message: "Source offline" }]);
+      assert.deepEqual(progress, [1, 2]);
+      assert.ok(selection.folder);
+    });
+    check("shared library filters by file format using the indexed extension", () => {
+      assert.equal(shared.query({ provider: "shared", sharedFormat: "obj" }).total, 3);
+      assert.equal(shared.query({ provider: "shared", sharedRoot: "hdris", sharedFormat: "obj" }).total, 0);
+      assert.equal(shared.query({ provider: "shared", sharedRoot: "hdris" }).total, 2);
+      assert.deepEqual(shared.query({ provider: "shared" }).sharedOrganization.formats, ["hdr", "obj"]);
+    });
     const preview = await shared.previews(chair.id);
     const source = await shared.sharedFile(chair.id);
     const manifest = await api.scanLocalModel(nested, chair.id, "shared", "3d", source.path);

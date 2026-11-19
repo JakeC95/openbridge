@@ -1,32 +1,36 @@
 # Shared asset library design
 
-## Read-only pilot
+## Shared folders in 1.7.0
 
-In a build from the current source, open **Settings → Shared library folders**, add a model
+Open **Settings → Shared library folders**, add a model
 folder and an HDRI folder, name each source, and save. In **Library**, select **Shared folders**.
 The category tree includes the root labels and nested folders. Search by file or folder name,
 or file extension. Use **Rescan** after changing files or reconnecting a share.
 
-The pilot supports the Library grid, list, selection and comparison, account-free favorites,
+OpenBridge supports the Library grid, list, selection and comparison, account-free favorites,
 compatible 3D previews, flat HDR and 360° HDRI previews, and same-name render images. Each model
-or HDR file has its own Library item. The inspector links possible versions, LODs and resolution
-variants found in the same folder. It can reveal, open or copy the selected original. Copy
+or HDR file has its own Library item. Turn on **Group variants** to see one representative
+per likely group in a folder. The inspector links possible versions, LODs and resolution
+variants. It can reveal, open or copy the selected original. Copy
 prompts for a destination and refuses to overwrite an existing file.
 
 Use **Organize** in the shared inspector to save tags, collections and notes. The Library
-searches that information and offers tag and collection filters under **Shared folders**.
-Organization is private to the application profile and survives index rebuilds.
+searches that information and offers folder, format, tag and collection filters under **Shared folders**.
+Organization is private to the application profile and survives index rebuilds. Use **Saved
+searches** to recall a shared query and its folder, format, collection, tag, category, sort, grouping and favorites filters.
 
 For glTF, GLB or OBJ, **Copy with dependencies** creates a new directory and preserves the
 relative paths for referenced buffers, material libraries and textures. Absolute, remote,
 missing and linked references fail with an explanation. Other formats can still be copied
-as single files.
+as single files. Select up to 100 shared items for a batch. OpenBridge packages supported
+models and copies other originals into separate folders, reporting failures by asset. You can
+stop between assets and keep the copies that already finished.
 
 The scanner skips hidden folders, archives and cache folders. It scans registered roots in the
 background, publishes new results in batches and preserves the last good index when a share
 goes offline. Use **Stop shared indexing** to pause a long scan and **Rescan** to continue.
 OpenBridge saves a checkpoint in the local index, so a restart on the same mount can continue
-from the last completed batch. Partial scans keep cached results until a full scan completes. The pilot checks individual files for zero bytes in the health report.
+from the last completed batch. Partial scans keep cached results until a full scan completes. The Library checks individual files for zero bytes in the health report.
 Model previews have a 96 MiB source limit and resolve eligible dependencies beside the model
 or in conventional resource subfolders. HDR previews use the existing 8K and 160 MiB limits.
 Large or native files can be opened in the associated application. Automatic grouping across

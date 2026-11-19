@@ -3,7 +3,8 @@ import { useStore } from "../store";
 import { assetCountLabel, readinessBadges, typeLabel } from "../catalog-utils";
 import { assetTypeClass } from "../asset-visuals";
 import { CheckIcon, CloseIcon, FolderIcon, UploadIcon } from "../icons";
-import type { LibrarySource, AssetRecord, LibraryHealthReport, LibrarySort, RepoKind } from "../../shared/types";
+import type { LibrarySource, AssetRecord, LibraryHealthReport, LibrarySort, RepoKind, SharedCopyProgress, SharedCopyReport } from "../../shared/types";
+import { SharedSavedSearches } from "../components/SharedSavedSearches";
 import { VirtualGrid } from "../components/VirtualGrid";
 import { Dropdown } from "../components/Dropdown";
 import { formatMeasurementText } from "../../shared/measurements";
@@ -56,6 +57,9 @@ export function LibraryView() {
   const sharedLibraries = useStore(state => state.sharedLibraries);
   const sharedFavorites = useStore(state => state.sharedFavorites);
   const organization = useStore(state => state.sharedOrganization);
+  const groupSharedVariants = useStore(state => state.groupSharedVariants);
+  const sharedRoot = useStore(state => state.sharedRoot);
+  const sharedFormat = useStore(state => state.sharedFormat);
   const sharedTag = useStore(state => state.sharedTag);
   const sharedCollection = useStore(state => state.sharedCollection);
   const setLocalProvider = useStore(state => state.setLocalProvider);
@@ -105,6 +109,9 @@ export function LibraryView() {
   const cancellingHealth = useRef(false);
   const [healthProgress, setHealthProgress] = useState<{ checked: number; total: number; percent: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copyProgress, setCopyProgress] = useState<SharedCopyProgress | null>(null);
+  const [copyReport, setCopyReport] = useState<SharedCopyReport | null>(null);
+  const [copyStopping, setCopyStopping] = useState(false);
   const [selectingAll, setSelectingAll] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   useBrowseScroll(bodyRef, "library", JSON.stringify(libraryFilterQuery(useStore.getState())));
@@ -140,6 +147,9 @@ export function LibraryView() {
     localColor,
     localState,
     localInterior,
+    groupSharedVariants,
+    sharedRoot,
+    sharedFormat,
     sharedTag,
     sharedCollection,
     queryLocalLibrary
@@ -189,6 +199,24 @@ export function LibraryView() {
   }
 
   const includesShared = [...selectedIds].some(id => id.startsWith("shared:"));
+  const onlyShared = includesShared && [...selectedIds].every(id => id.startsWith("shared:"));
+
+  async function copySelectedShared() {
+    if (!onlyShared || selectedIds.size > 100 || copyProgress) return;
+    setCopyReport(null);
+    setCopyProgress({ completed: 0, total: selectedIds.size });
+    const dispose = window.openbridge.sharedLibrary.onCopyProgress(setCopyProgress);
+    try {
+      const report = await window.openbridge.sharedLibrary.copySelection([...selectedIds], libraryFilterQuery(useStore.getState()));
+      if (report) setCopyReport(report);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      dispose();
+      setCopyProgress(null);
+      setCopyStopping(false);
+    }
+  }
 
   async function exportSelected(): Promise<void> {
     if (selectedIds.size === 0 || includesShared) return;
@@ -457,6 +485,17 @@ export function LibraryView() {
             onChange={value => useStore.getState().setLocalType(value === "all" ? "" : value)}
             options={[{ value: "all", label: "All types" }, ...typeOptions
               .map(value => ({ value, label: categoryLabel(value) }))]} />
+          {localProvider === "shared" && Boolean(settings?.sharedLibraryRoots?.length) && (
+            <Dropdown className="filter-select" value={sharedRoot} ariaLabel="Shared library folder"
+              onChange={value => useStore.getState().setSharedRoot(value)}
+              options={[{ value: "", label: "All shared folders" },
+                ...(settings?.sharedLibraryRoots ?? []).map(root => ({ value: root.id, label: root.name }))]} />
+          )}
+          {localProvider === "shared" && (organization.formats.length > 0 || sharedFormat) && (
+            <Dropdown className="filter-select" value={sharedFormat} ariaLabel="Shared file format"
+              onChange={value => useStore.getState().setSharedFormat(value)}
+              options={[{ value: "", label: "All formats" }, ...organization.formats.map(format => ({ value: format, label: format.toUpperCase() }))]} />
+          )}
           {localProvider === "shared" && (organization.tags.length > 0 || sharedTag) && (
             <Dropdown className="filter-select" value={sharedTag} ariaLabel="Shared tag"
               onChange={value => useStore.getState().setSharedTag(value)}
@@ -487,6 +526,11 @@ export function LibraryView() {
           <DensityControl />
           {assets.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
           {(localProvider === "all" || localProvider === "megascans") && <PackBrowser packs={localPacks} local />}
+          {localProvider === "shared" && <>
+            <button type="button" className={groupSharedVariants ? "chip active" : "chip"} aria-pressed={groupSharedVariants}
+              onClick={() => useStore.getState().setGroupSharedVariants(!groupSharedVariants)}>Group variants</button>
+            <SharedSavedSearches />
+          </>}
           <RecentBrowsing />
           <div className="chips">
             {(localProvider === "all" || localProvider === "megascans") && REPOS.map(item => (
@@ -540,12 +584,36 @@ export function LibraryView() {
           </section>
         )}
 
+        {copyProgress && <div className="poliigon-indexing" role="status">
+          <span>Copying shared assets · {copyProgress.completed} of {copyProgress.total} processed</span>
+          <button type="button" className="text-btn" disabled={copyStopping} onClick={() => {
+            setCopyStopping(true);
+            void window.openbridge.sharedLibrary.cancelCopySelection().catch(error => {
+              setCopyStopping(false);
+              toast(String(error), true);
+            });
+          }}>{copyStopping ? "Stopping…" : "Stop after current asset"}</button>
+        </div>}
+        {copyReport && <div className="poliigon-indexing" role="status">
+          <div>
+            <strong>{copyReport.cancelled ? "Copy stopped" : "Copy finished"} · {copyReport.copied} copied</strong>
+            {copyReport.failures.length > 0 && <details>
+              <summary>{copyReport.failures.length} could not be copied</summary>
+              {copyReport.failures.map((item, index) => <p key={index}>{item.name}: {item.message}</p>)}
+            </details>}
+          </div>
+          {copyReport.folder && <button type="button" className="text-btn"
+            onClick={() => void window.openbridge.openPath(copyReport.folder!).catch(error => toast(String(error), true))}>Open output folder</button>}
+          <button type="button" className="text-btn" onClick={() => setCopyReport(null)}>Dismiss</button>
+        </div>}
         {selectMode && (
           <div className="bulk-bar">
             <div className="bulk-scope">
               <span className="bulk-count" aria-live="polite">{selectedIds.size} selected</span>
               <span className="bulk-scope-detail">{selectionScope}</span>
-              <span className="bulk-scope-hint">{includesShared ? "Shared files can be copied from the inspector." : "Export writes JSON records. Delete removes local asset folders from disk."}</span>
+              <span className="bulk-scope-hint">{includesShared
+                ? onlyShared ? "Copy up to 100 shared assets to a separate project folder." : "Select shared assets separately to copy them."
+                : "Export writes JSON records. Delete removes local asset folders from disk."}</span>
             </div>
             <div className="bulk-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>
@@ -560,6 +628,8 @@ export function LibraryView() {
               >
                 {selectingAll ? "Selecting..." : `Select all ${total.toLocaleString()}`}
               </button>
+              {onlyShared && <button type="button" className="btn btn-primary" disabled={Boolean(copyProgress) || selectedIds.size > 100}
+                onClick={() => void copySelectedShared()}>Copy selected assets</button>}
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -588,17 +658,17 @@ export function LibraryView() {
           </div>
         )}
 
-        <div className="path-line">
-          <FolderIcon />
-          <span title={libraryPath}>{libraryPath}</span>
-          <button
-            type="button"
-            className="text-btn"
-            onClick={() => libraryPath && void window.openbridge.openPath(libraryPath)}
-          >
-            Open
-          </button>
-        </div>
+        {localProvider === "shared" ? (settings?.sharedLibraryRoots ?? [])
+          .filter(root => !sharedRoot || root.id === sharedRoot).map(root => <div className="path-line" key={root.id}>
+            <FolderIcon />
+            <span title={root.path}>{root.name}</span>
+            <button type="button" className="text-btn" title={root.path} onClick={() =>
+              void window.openbridge.openPath(root.path).catch(error => toast(String(error), true))}>Open</button>
+          </div>) : <div className="path-line">
+            <FolderIcon />
+            <span title={libraryPath}>{libraryPath}</span>
+            <button type="button" className="text-btn" onClick={() => libraryPath && void window.openbridge.openPath(libraryPath)}>Open</button>
+          </div>}
       </div>
 
       <div className="view-body" ref={bodyRef}>

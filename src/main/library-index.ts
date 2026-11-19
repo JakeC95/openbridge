@@ -16,7 +16,7 @@ import type {
   SharedOrganizationOptions
 } from "../shared/types";
 import type { Logger } from "./logger";
-import type { SharedTraversal } from "./shared-library";
+import { variantFamily, type SharedTraversal } from "./shared-library";
 import { canonicalType, categoryTree, localCategoryPath } from "../shared/browsing";
 
 const SCHEMA_VERSION = 8;
@@ -130,6 +130,8 @@ export class LibraryIndex {
       JSON.stringify(localCategoryPath(String(type), parseList(String(categories))))
     );
     this.db.function("canonical_type", { deterministic: true }, type => canonicalType(String(type)));
+    this.db.function("shared_parent", { deterministic: true }, path => dirname(String(path)));
+    this.db.function("shared_variant_family", { deterministic: true }, name => variantFamily(String(name)));
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -355,7 +357,9 @@ export class LibraryIndex {
         WHERE a.repo = 'shared' GROUP BY lower(j.value) ORDER BY lower(j.value)`).all() as unknown as ColumnRow[];
       return rows.map(row => row.value);
     };
-    return { tags: list("tags"), collections: list("collections") };
+    const formats = (this.db.prepare(`SELECT DISTINCT json_extract(tags, '$[0]') AS value
+      FROM assets WHERE repo = 'shared' ORDER BY value`).all() as unknown as ColumnRow[]).map(row => row.value).filter(Boolean);
+    return { formats, tags: list("tags"), collections: list("collections") };
   }
 
   setScannedAt(value: number): void {
@@ -542,6 +546,14 @@ export class LibraryIndex {
       clauses.push("assets_fts MATCH ?");
       params.push(searchTokens);
     }
+    if (options.sharedRoot && /^[a-z0-9-]{1,64}$/i.test(options.sharedRoot)) {
+      clauses.push("a.repo = 'shared'", "a.id GLOB ?");
+      params.push(`shared:${options.sharedRoot}:*`);
+    }
+    if (options.sharedFormat) {
+      clauses.push("a.repo = 'shared'", "json_extract(a.tags, '$[0]') = ?");
+      params.push(options.sharedFormat);
+    }
     if (options.sharedTag) {
       clauses.push("a.id IN (SELECT o.id FROM organization.assets o, json_each(o.tags) j WHERE lower(j.value) = lower(?))");
       params.push(options.sharedTag);
@@ -609,6 +621,21 @@ export class LibraryIndex {
       issues: "(SELECT COUNT(*) FROM issues i WHERE i.path = a.path) DESC, a.name COLLATE NOCASE ASC"
     };
     const order = orderBy[options.sort ?? "recent"] ?? orderBy.recent;
+    if (options.provider === "shared" && options.groupSharedVariants) {
+      // Filter before grouping so search, scoped selection and format filters still match
+      // alternate representations. Prefer files that are likely to preview successfully.
+      const grouped = `SELECT asset_rowid FROM (
+        SELECT a.rowid AS asset_rowid, row_number() OVER (
+          PARTITION BY a.type, shared_parent(a.path), shared_variant_family(a.name)
+          ORDER BY CASE
+            WHEN a.type = 'hdri' AND a.bytes > 0 AND a.bytes <= 167772160 THEN 0
+            WHEN a.type = '3d' AND a.bytes > 0 AND a.bytes <= 100663296
+              AND json_extract(a.tags, '$[0]') IN ('gltf','glb','fbx','obj','usd','usda','usdc','usdz','stl','ply','dae') THEN 0
+            ELSE 1 END, a.mtime DESC, a.path
+        ) AS position ${from} ${where}
+      ) WHERE position = 1`;
+      return { from: "FROM assets a", where: `WHERE a.rowid IN (${grouped})`, order, params };
+    }
     return { from, where, order, params };
   }
 

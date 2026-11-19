@@ -35,8 +35,21 @@ export interface SharedAssetOrganization {
 }
 
 export interface SharedOrganizationOptions {
+  formats: string[];
   tags: string[];
   collections: string[];
+}
+
+export interface SharedCopyProgress {
+  completed: number;
+  total: number;
+}
+
+export interface SharedCopyReport {
+  folder: string | null;
+  copied: number;
+  cancelled: boolean;
+  failures: Array<{ name: string; message: string }>;
 }
 
 export interface SharedLibraryStatus {
@@ -641,6 +654,9 @@ export interface LibraryQuery {
   sort?: LibrarySort;
   type?: string;
   categoryPath?: string[];
+  groupSharedVariants?: boolean;
+  sharedRoot?: string;
+  sharedFormat?: string;
   sharedTag?: string;
   sharedCollection?: string;
   ids?: string[];
@@ -1043,6 +1059,9 @@ export interface OpenBridgeApi {
     open(id: string): Promise<void>;
     copy(id: string): Promise<string | null>;
     copyPackage(id: string): Promise<{ folder: string; files: number } | null>;
+    copySelection(ids: string[], scope: LibraryQuery): Promise<SharedCopyReport | null>;
+    cancelCopySelection(): Promise<void>;
+    onCopyProgress(callback: (progress: SharedCopyProgress) => void): () => void;
   };
   libraryHealth(force?: boolean): Promise<LibraryHealthReport>;
   cancelLibraryHealth(): Promise<void>;

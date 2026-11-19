@@ -309,11 +309,10 @@ See [POLYHAVEN.md](POLYHAVEN.md).
   Epic sign-in can be saved between launches.
 - Run browsing, networking, provider and Electron UI checks on both platforms in CI.
 
-## Existing shared model and HDRI libraries (read-only pilot)
+## Existing shared model and HDRI libraries (1.7.0)
 
 Register existing folders in Library, index them where they are, and reuse the browsing and preview
-tools for supported local files. The remaining plan covers shared storage, model dependencies, HDRI preview
-limits, organization and explicit file operations. See [Shared asset library design](SHARED-LIBRARY.md).
+tools for supported local files. The remaining plan covers richer model dependencies, larger HDRI previews and explicit shared file edits. See [Shared asset library design](SHARED-LIBRARY.md).
 
 ## Non-goals
 

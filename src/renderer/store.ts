@@ -116,6 +116,12 @@ interface State {
   sharedFavorites: string[];
   sharedLibraries: SharedLibraryStatus[];
   sharedOrganization: SharedOrganizationOptions;
+  groupSharedVariants: boolean;
+  setGroupSharedVariants(value: boolean): void;
+  sharedRoot: string;
+  setSharedRoot(value: string): void;
+  sharedFormat: string;
+  setSharedFormat(value: string): void;
   sharedTag: string;
   sharedCollection: string;
   setSharedTag(value: string): void;
@@ -600,7 +606,16 @@ export const useStore = create<State>((set, get) => ({
     return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.startsWith("shared:")) : [];
   })(),
   sharedLibraries: [],
-  sharedOrganization: { tags: [], collections: [] },
+  sharedOrganization: { formats: [], tags: [], collections: [] },
+  groupSharedVariants: readPreference<boolean>("groupSharedVariants", false) === true,
+  setGroupSharedVariants(groupSharedVariants) {
+    writePreference("groupSharedVariants", groupSharedVariants);
+    set({ groupSharedVariants });
+  },
+  sharedRoot: "",
+  setSharedRoot(sharedRoot) { set({ sharedRoot, localCategoryPath: [], localType: "" }); },
+  sharedFormat: "",
+  setSharedFormat(sharedFormat) { set({ sharedFormat }); },
   sharedTag: "",
   sharedCollection: "",
   setSharedTag(sharedTag) { set({ sharedTag }); },
@@ -786,7 +801,7 @@ export const useStore = create<State>((set, get) => ({
         libraryHasMore: firstPage.hasMore,
         localCategories: firstPage.categories,
         localPacks: firstPage.packs,
-        sharedOrganization: firstPage.sharedOrganization ?? { tags: [], collections: [] },
+        sharedOrganization: firstPage.sharedOrganization ?? { formats: [], tags: [], collections: [] },
         libraryScannedAt: library.scannedAt,
         downloads: downloadMap,
         sync,
@@ -1119,6 +1134,8 @@ export const useStore = create<State>((set, get) => ({
       localColor: "",
       localState: "",
       localInterior: "",
+      sharedRoot: "",
+      sharedFormat: "",
       sharedTag: "",
       sharedCollection: ""
     });

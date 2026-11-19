@@ -1,4 +1,4 @@
-import { copySharedModelPackage, listSharedModelPackage } from "./shared-package";
+import { copySharedModelPackage, copySharedSelection, listSharedModelPackage } from "./shared-package";
 import { inspectSharedHdr, isInside, sharedRootId } from "./shared-library";
 import { decodeHdrFile } from "./hdr-decode";
 import { hdrLimitsFor } from "./public/preview-data";
@@ -668,6 +668,38 @@ function registerIpc(): void {
     const root = settings().sharedLibraryRoots?.find(entry => entry.id === sharedRootId(id));
     if (!root) throw new Error("This shared root is no longer registered.");
     return copySharedModelPackage(await realpath(root.path), path, directory);
+  });
+
+  const sharedCopyJobs = new Map<number, AbortController>();
+  ipcMain.handle("shared:cancelCopySelection", event => sharedCopyJobs.get(event.sender.id)?.abort());
+  ipcMain.handle("shared:copySelection", async (event, ids: string[], scope: LibraryQuery) => {
+    if (!library || !Array.isArray(ids) || !ids.length || ids.length > 100 ||
+        ids.some(id => typeof id !== "string" || !sharedRootId(id))) {
+      throw new Error("Select between 1 and 100 shared assets to copy.");
+    }
+    const sender = event.sender;
+    if (sharedCopyJobs.has(sender.id)) throw new Error("A shared copy is already in progress.");
+    const records = library.matchingAssets([...new Set(ids)], { ...scope, provider: "shared" });
+    if (!records.length) throw new Error("The selected files are no longer in the current Library scope.");
+    const controller = new AbortController();
+    sharedCopyJobs.set(sender.id, controller);
+    const close = () => controller.abort();
+    sender.once("destroyed", close);
+    try {
+      const directory = await chooseSharedCopyDestination();
+      if (!directory) return null;
+      return await copySharedSelection(directory, records, async id => {
+        const { path } = await requireSharedFile(id);
+        const root = settings().sharedLibraryRoots?.find(entry => entry.id === sharedRootId(id));
+        if (!root) throw new Error("This shared root is no longer registered.");
+        return { root: await realpath(root.path), path };
+      }, controller.signal, completed => {
+        if (!sender.isDestroyed()) sender.send("shared:copyProgress", { completed, total: records.length });
+      });
+    } finally {
+      sender.off("destroyed", close);
+      sharedCopyJobs.delete(sender.id);
+    }
   });
 
   ipcMain.handle("model:manifest", async (_event, request: import("../shared/model-preview").ModelManifestRequest) => {

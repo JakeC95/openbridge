@@ -36,6 +36,7 @@ import type {
   PolyHavenQueryResult,
   Profile,
   ScanResult,
+  SharedCopyProgress,
   SyncStatus,
   UpdateInfo
 } from "../shared/types";
@@ -64,7 +65,14 @@ const api: OpenBridgeApi = {
     reveal: id => ipcRenderer.invoke("shared:reveal", id),
     open: id => ipcRenderer.invoke("shared:open", id),
     copy: id => ipcRenderer.invoke("shared:copy", id),
-    copyPackage: id => ipcRenderer.invoke("shared:copyPackage", id)
+    copyPackage: id => ipcRenderer.invoke("shared:copyPackage", id),
+    copySelection: (ids, scope) => ipcRenderer.invoke("shared:copySelection", ids, scope),
+    cancelCopySelection: () => ipcRenderer.invoke("shared:cancelCopySelection"),
+    onCopyProgress: callback => {
+      const listener = (_event: unknown, progress: SharedCopyProgress) => callback(progress);
+      ipcRenderer.on("shared:copyProgress", listener);
+      return () => ipcRenderer.removeListener("shared:copyProgress", listener);
+    }
   },
   libraryHealth: (force = false) =>
     ipcRenderer.invoke("library:health", force) as Promise<LibraryHealthReport>,
