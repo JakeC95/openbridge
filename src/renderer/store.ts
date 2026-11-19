@@ -639,7 +639,7 @@ export const useStore = create<State>((set, get) => ({
   setLocalType(localType) { set({ localType, localCategoryPath: [] }); },
   setLocalProvider(localProvider) {
     if (get().localProvider === localProvider) return;
-    set({ localProvider, localType: "", localCategoryPath: [], localRepo: "all", localFavoritesOnly: false, localPack: null, localReady: [], localMaxTris: null, localColor: "", localState: "", localInterior: "" });
+    set({ localProvider, localSort: localProvider === "shared" ? "previews" : get().localSort === "previews" ? "recent" : get().localSort, localType: "", localCategoryPath: [], localRepo: "all", localFavoritesOnly: false, localPack: null, localReady: [], localMaxTris: null, localColor: "", localState: "", localInterior: "" });
   },
   setLocalCategoryPath(localCategoryPath) { set({ localCategoryPath, localType: "" }); },
   setLocalSort(localSort) { set({ localSort }); writePreference("localSort", localSort); },

@@ -75,6 +75,18 @@ ownership, licensing, semantic categories, weather or physically measured scale.
 Model previews retain valid OBJ/glTF dependencies when another referenced file is missing and
 show a missing-resource note. Copying a model package still rejects incomplete dependencies.
 
+## Authored covers in model collections
+
+OpenBridge looks for a matching image in a collection’s `preview` or `previews` folder.
+This covers layouts such as `collection/model/asset.abc` beside
+`collection/preview/asset.jpg`. Explicit version and LOD suffixes can share an unversioned
+cover. Duplicate cover candidates are skipped and distinct asset identifiers are preserved.
+Rescan an existing shared library to populate the new associations.
+
+Shared folders start with **Previews first**, ranking authored covers ahead of files eligible
+for the 3D viewer. Use **Recently modified** to browse by file date. A cover is available for
+browsing even when the source format needs its associated application for geometry viewing.
+
 ## Resource browsing and thumbnails
 
 The shared model inspector offers **3D** and **Resources** views, plus a **Render** view when a

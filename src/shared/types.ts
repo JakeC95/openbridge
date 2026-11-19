@@ -675,7 +675,7 @@ export interface LibraryCounts {
   dhi: number;
 }
 
-export type LibrarySort = "recent" | "name" | "name-desc" | "type" | "resolution" | "triangles" | "maps" | "lods" | "variations" | "size" | "issues";
+export type LibrarySort = "previews" | "recent" | "name" | "name-desc" | "type" | "resolution" | "triangles" | "maps" | "lods" | "variations" | "size" | "issues";
 
 export interface PackRef {
   id?: string;

@@ -405,6 +405,7 @@ export function LibraryView() {
       { value: "size", label: "Library size · largest first" },
       { value: "issues", label: "Health issues · most first" }
     ];
+    if (localProvider === "shared") options.unshift({ value: "previews", label: "Previews first" });
     if (localType !== "hdri" || localProvider === "shared") {
       options.splice(4, 0,
         { value: "resolution", label: "Resolution · highest first" },

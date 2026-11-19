@@ -20,7 +20,7 @@ const result = await build({
   stdin: { contents: `
     export { LibraryIndex } from './src/main/library-index';
     export { LibraryService } from './src/main/library';
-    export { inspectSharedHdr } from './src/main/shared-library';
+    export { inspectSharedHdr, scanSharedRoot } from './src/main/shared-library';
     export { scanLocalModel } from './src/main/model-preview';
     export { listSharedModelPackage, inspectSharedModelDependencies, copySharedModelPackage, copySharedSelection } from './src/main/shared-package';
     export { CatalogMetadataProvider } from './src/main/catalog-metadata';
@@ -690,6 +690,29 @@ try {
     shared.close();
   }
 
+  const kit = join(directory, "Cover fixtures");
+  const modelFolder = join(kit, "model");
+  const coverFolder = join(kit, "preview");
+  await Promise.all([mkdir(modelFolder, { recursive: true }), mkdir(coverFolder, { recursive: true })]);
+  await Promise.all([
+    writeFile(join(modelFolder, "Building_A_v001.abc"), "fixture"),
+    writeFile(join(modelFolder, "Building_B.abc"), "fixture"),
+    writeFile(join(modelFolder, "Building_C.abc"), "fixture"),
+    writeFile(join(coverFolder, "Building_A..jpg"), "fixture"),
+    writeFile(join(coverFolder, "Building_B.jpg"), "fixture"),
+    writeFile(join(coverFolder, "Building_B.png"), "fixture")
+  ]);
+  const kitAssets = [];
+  await api.scanSharedRoot({ id: "cover-kit", name: "Cover fixtures", kind: "models", path: kit }, {
+    cancelled: () => false, loadCheckpoint: () => null, checkpoint: () => {},
+    publish: assets => kitAssets.push(...assets)
+  });
+  check("package covers match exact stems and explicit versions while rejecting ambiguous images", () => {
+    assert.equal(kitAssets.find(asset => asset.name === "Building_A_v001").preview, join(coverFolder, "Building_A..jpg"));
+    assert.equal(kitAssets.find(asset => asset.name === "Building_B").preview, null);
+    assert.equal(kitAssets.find(asset => asset.name === "Building_C").preview, null);
+  });
+
   const factsRoot = join(directory, "Metadata source");
   await mkdir(factsRoot);
   const factsImageRoot = join(directory, "Metadata images");
@@ -720,6 +743,9 @@ try {
       assert.equal(viewer.total, 1);
       assert.equal(viewer.assets[0].id, sourceAsset.id);
       assert.deepEqual(factsLibrary.ids({ provider: "shared", sharedFormat: "viewer" }), [sourceAsset.id]);
+    });
+    check("previews-first sorting puts supported models above newer native scenes", () => {
+      assert.deepEqual(factsLibrary.ids({ provider: "shared", type: "3d", sort: "previews" }), [sourceAsset.id, nativeAsset.id]);
     });
     const pendingFacts = factsLibrary.inspectSharedMetadata(sourceAsset.id);
     assert.equal(factsLibrary.inspectSharedMetadata(sourceAsset.id), pendingFacts);

@@ -21,6 +21,10 @@ import { canonicalType, categoryTree, localCategoryPath } from "../shared/browsi
 
 const SCHEMA_VERSION = 8;
 
+const VIEWER_MODEL = "a.type = '3d' AND a.bytes > 0 AND a.bytes <= 100663296 AND json_extract(a.tags, '$[0]') IN ('gltf','glb','fbx','obj','usd','usda','usdc','usdz','stl','ply','dae')";
+const SHARED_PREVIEW_RANK = `CASE WHEN a.preview IS NOT NULL AND a.preview != '' THEN 0
+  WHEN ${VIEWER_MODEL} THEN 1 ELSE 2 END`;
+
 interface AssetRow {
   rowid: number;
   path: string;
@@ -562,8 +566,7 @@ export class LibraryIndex {
       params.push(`shared:${options.sharedRoot}:*`);
     }
     if (options.sharedFormat === "viewer") {
-      clauses.push("a.repo = 'shared'", "a.type = '3d'", "a.bytes > 0", "a.bytes <= 100663296",
-        "json_extract(a.tags, '$[0]') IN ('gltf','glb','fbx','obj','usd','usda','usdc','usdz','stl','ply','dae','3mf')");
+      clauses.push("a.repo = 'shared'", VIEWER_MODEL);
     } else if (options.sharedFormat) {
       clauses.push("a.repo = 'shared'", "json_extract(a.tags, '$[0]') = ?");
       params.push(options.sharedFormat);
@@ -623,6 +626,7 @@ export class LibraryIndex {
       : "FROM assets a";
     const orderBy: Record<NonNullable<LibraryQuery["sort"]>, string> = {
       recent: "a.mtime DESC, a.name COLLATE NOCASE ASC",
+      previews: `${SHARED_PREVIEW_RANK}, a.mtime DESC, a.name COLLATE NOCASE ASC, a.path`,
       name: "a.name COLLATE NOCASE ASC, a.id ASC",
       "name-desc": "a.name COLLATE NOCASE DESC, a.id ASC",
       type: "a.type COLLATE NOCASE ASC, a.name COLLATE NOCASE ASC",
@@ -643,8 +647,7 @@ export class LibraryIndex {
           PARTITION BY a.type, shared_parent(a.path), shared_variant_family(a.name)
           ORDER BY CASE
             WHEN a.type = 'hdri' AND a.bytes > 0 AND a.bytes <= 167772160 THEN 0
-            WHEN a.type = '3d' AND a.bytes > 0 AND a.bytes <= 100663296
-              AND json_extract(a.tags, '$[0]') IN ('gltf','glb','fbx','obj','usd','usda','usdc','usdz','stl','ply','dae') THEN 0
+            WHEN ${VIEWER_MODEL} THEN 0
             ELSE 1 END, a.mtime DESC, a.path
         ) AS position ${from} ${where}
       ) WHERE position = 1`;

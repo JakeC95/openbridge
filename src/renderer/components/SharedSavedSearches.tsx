@@ -3,7 +3,7 @@ import { readPreference, writePreference } from "../browsing-state";
 import { useStore } from "../store";
 import type { LibrarySort } from "../../shared/types";
 
-const validSorts = new Set<LibrarySort>(["recent", "name", "name-desc", "type", "resolution", "triangles", "maps", "lods", "variations", "size", "issues"]);
+const validSorts = new Set<LibrarySort>(["previews", "recent", "name", "name-desc", "type", "resolution", "triangles", "maps", "lods", "variations", "size", "issues"]);
 
 interface SavedSearch {
   id: string;

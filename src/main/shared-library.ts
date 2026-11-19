@@ -10,6 +10,37 @@ const BATCH_SIZE = 128;
 const SKIP_FOLDERS = new Set(["archive", "archives", "cache", "caches", "temp", "tmp", "node_modules"]);
 const HDR_EXTENSIONS = new Set([".hdr", ".exr"]);
 const RENDER_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const MODEL_FOLDERS = /^(?:model[s]?|geo|geometry|mesh(?:es)?)$/i;
+const PREVIEW_FOLDERS = ["preview", "previews"];
+const MAX_PACKAGE_PREVIEW_ENTRIES = 4096;
+
+function coverStem(stem: string): string {
+  return stem.toLowerCase().replace(/[.\s]+$/, "").replace(/[-_.\s]+(?:preview|thumbnail|render)$/i, "");
+}
+
+/** Only look in explicitly named cover folders within the same package. */
+async function packageCovers(folder: string, canonicalFolder: string, cancelled: () => boolean): Promise<Map<string, string | null>> {
+  const covers = new Map<string, string | null>();
+  for (const name of PREVIEW_FOLDERS) {
+    if (cancelled()) break;
+    const directory = join(folder, name);
+    try {
+      if (!(await lstat(directory)).isDirectory() ||
+          relative(join(canonicalFolder, name), await realpath(directory)) !== "") continue;
+      let inspected = 0;
+      for await (const entry of await opendir(directory)) {
+        if (cancelled() || ++inspected > MAX_PACKAGE_PREVIEW_ENTRIES) return new Map();
+        const extension = extname(entry.name);
+        if (entry.name.startsWith(".") || !entry.isFile() || !RENDER_EXTENSIONS.has(extension.toLowerCase())) continue;
+        const key = coverStem(basename(entry.name, extension));
+        covers.set(key, covers.has(key) ? null : join(directory, entry.name));
+      }
+    } catch {
+      // Optional cover folders do not affect source indexing.
+    }
+  }
+  return covers;
+}
 
 export function isInside(root: string, path: string): boolean {
   const child = relative(root, path);
@@ -85,8 +116,9 @@ export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptio
     const folders: string[] = [];
     const candidateNames: string[] = [];
     const renders = new Map<string, string>();
+    let canonicalFolder: string;
     try {
-      const canonicalFolder = await realpath(folder);
+      canonicalFolder = await realpath(folder);
       if (!isInside(root.path, folder) || relative(join(canonicalRoot, locator), canonicalFolder) !== "") {
         return { folders, assets: [] as AssetRecord[], partial: true, offline: !locator };
       }
@@ -110,6 +142,13 @@ export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptio
     const categories = [root.name, ...locator.split(sep).filter(Boolean)];
     const assets: AssetRecord[] = [];
     let partial = false;
+    let covers = new Map<string, string | null>();
+    if (root.kind === "models" && candidateNames.length && !cancelled()) {
+      const inModelFolder = Boolean(locator) && MODEL_FOLDERS.test(basename(folder));
+      const packageFolder = inModelFolder ? dirname(folder) : folder;
+      const canonicalPackage = inModelFolder ? dirname(canonicalFolder) : canonicalFolder;
+      covers = await packageCovers(packageFolder, canonicalPackage, cancelled);
+    }
     for (let offset = 0; offset < candidateNames.length && !cancelled(); offset += 8) {
       const files = await Promise.all(candidateNames.slice(offset, offset + 8).map(async file => {
         const path = join(folder, file);
@@ -118,9 +157,14 @@ export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptio
         const extension = extname(file);
         const stem = basename(file, extension);
         const image = renders.get(stem.toLowerCase()) ?? renders.get(`${stem.toLowerCase()}_preview`);
+        const key = coverStem(stem);
+        // A version or LOD may use the explicitly named unversioned cover.
+        // Preserve distinct letter/number suffixes used as asset identifiers.
+        const family = key.replace(/(?:[-_.\s]+(?:v\d{1,5}|lod[-_]?\d{1,2}))+$/i, "");
+        const cover = covers.has(key) ? covers.get(key) : covers.get(family);
         return {
           id: assetId(root, path), name: stem, type: root.kind === "hdris" ? "hdri" : "3d",
-          repo: "shared", path, jsonPath: "", preview: image ? join(folder, image) : null, thumb: null,
+          repo: "shared", path, jsonPath: "", preview: image ? join(folder, image) : cover ?? null, thumb: null,
           categories, tags: [extension.slice(1).toLowerCase()], mtime: info.mtimeMs, previewRelativeSize: "",
           searchStr: `${categories.join(" ")} ${file}`.toLowerCase(),
           sizeBytes: info.size, fileCount: 1
