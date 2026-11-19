@@ -17,6 +17,9 @@ export async function readSharedFileFacts(path: string, signal?: AbortSignal): P
   };
   if (facts.format === "hdr" || facts.format === "exr") {
     facts.image = await inspectSharedHdrFacts(path);
+    if (facts.image.format !== facts.format) {
+      facts.notes.push(`The .${facts.format} filename contains ${facts.image.format === "exr" ? "OpenEXR" : "Radiance HDR"} data; inspection and preview use its detected encoding.`);
+    }
     if (facts.image.views.length > 1) facts.notes.push("This EXR contains multiple views.");
     if (facts.image.deep || facts.image.multipart || facts.image.tiled) {
       facts.notes.push("This EXR layout is available for inspection but requires an external tool for preview.");

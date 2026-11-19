@@ -73,6 +73,14 @@ try {
   assert.equal(sky.channels[3].name, "Exponent");
   console.log("PASS Radiance RGBE is described as shared-exponent data without invented 8-bit RGB precision");
 
+  const exrNamedHdr = join(directory, "misnamed.hdr");
+  await writeFile(exrNamedHdr, exr({width: 2048,height: 1024}));
+  assert.equal((await inspectSharedHdrFacts(exrNamedHdr)).format,"exr");
+  const hdrNamedExr = join(directory,"misnamed.exr");
+  await writeFile(hdrNamedExr,"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 2\n");
+  assert.equal((await inspectSharedHdrFacts(hdrNamedExr)).format,"hdr");
+  console.log("PASS image encoding follows content even when HDR and EXR filename suffixes disagree");
+
   const broken = join(directory, "broken.exr");
   await writeFile(broken, exr().subarray(0, 43));
   await assert.rejects(() => inspectSharedHdrFacts(broken), /header|limit|Invalid/);

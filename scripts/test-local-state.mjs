@@ -50,7 +50,7 @@ try {
 
   const secondProfile = join(directory, "second-profile");
   const localOptions = { platform: "linux", override: "", filesystemType: async () => 0x58465342 };
-  assert.equal(await prepareLocalState(secondProfile, localOptions), secondProfile);
+  assert.equal(await prepareLocalState(secondProfile, localOptions), await realpath(secondProfile));
   const overridden = await prepareLocalState(secondProfile, { ...localOptions, override: fallbackRoot });
   assert.notEqual(overridden, selected);
   assert.equal(localStatePath(secondProfile, "library-index.sqlite"), join(overridden, "library-index.sqlite"));
@@ -75,7 +75,7 @@ try {
   assert.equal(current.prepare("SELECT value FROM annotation").get().value, "new local rating");
   current.exec("UPDATE annotation SET value='latest moved rating'");
   current.close();
-  assert.equal(await prepareLocalState(profile, localOptions), profile);
+  assert.equal(await prepareLocalState(profile, localOptions), await realpath(profile));
   current = new DatabaseSync(join(profile, "shared-organization.sqlite"));
   assert.equal(current.prepare("SELECT value FROM annotation").get().value, "latest moved rating");
   current.close();

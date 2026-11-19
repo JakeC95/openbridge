@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
+import { encodeExrRgba } from "@bb-studio/exr";
 
 const directory = await mkdtemp(join(tmpdir(), "openbridge-file-facts-"));
 const require = createRequire(import.meta.url);
@@ -103,6 +104,20 @@ try {
   assert.equal(decoded.width, 2);
   assert.equal(decoded.height, 1);
   assert.equal(decoded.data.length, 8);
+  const exrNamedHdr = join(directory, "misnamed.hdr");
+  await writeFile(exrNamedHdr, encodeExrRgba({width:2,height:1,
+    rgba:new Float32Array([1,0.5,0.25,1,0.25,0.5,1,1])},{precision:"half",includeAlpha:true}));
+  const misnamedFacts=await inspectSharedFileFacts(exrNamedHdr);
+  assert.equal(misnamedFacts.image.format,"exr");
+  assert.match(misnamedFacts.notes[0],/filename contains OpenEXR/);
+  const exrDecoded=await decodeHdrFile(exrNamedHdr,limits,AbortSignal.timeout(10_000));
+  assert.equal(exrDecoded.width,2);
+  assert.deepEqual([...exrDecoded.data.slice(0,4)],[15360,14336,13312,15360]);
+  const hdrNamedExr=join(directory,"misnamed.exr");
+  await writeFile(hdrNamedExr,Buffer.concat([Buffer.from(header),Buffer.from([128,64,32,129,64,32,16,129])]));
+  assert.equal((await inspectSharedFileFacts(hdrNamedExr)).image.format,"hdr");
+  assert.deepEqual((await decodeHdrFile(hdrNamedExr,limits,AbortSignal.timeout(10_000))).data,decoded.data);
+  console.log("PASS mismatched HDR/EXR filenames retain actual encoding and decode correct half-float pixels");
   const huge = join(directory, "huge.hdr");
   await sparse(huge, 2 * 1024 * 1024 * 1024);
   await assert.rejects(decodeHdrFile(huge, limits, AbortSignal.timeout(10_000)), /160 MiB live preview limit/);

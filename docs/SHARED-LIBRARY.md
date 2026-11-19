@@ -48,7 +48,9 @@ The shared roots remain read-only.
 - HDR/EXR: pixel dimensions, aspect-ratio projection hint, channel names and precision,
   compression and EXR layout/view information. Inspection reads at most 1 MiB of headers,
   including for files too large for live preview. A 2:1 aspect is a panorama candidate;
-  it does not establish the camera projection. RGBE uses a shared exponent.
+  it does not establish the camera projection. RGBE uses a shared exponent. Header signatures
+  identify the encoding even when a `.hdr`/`.exr` filename suffix is incorrect; the inspector
+  discloses that mismatch and previews use the detected encoding.
 - OBJ: stored vertices, polygon triangle counts, UVs/normals, assigned material names,
   referenced material libraries and bounds in source units. OBJ does not declare metres.
   The metadata parser reads at most 24 MiB and does not load material textures.

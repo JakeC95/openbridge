@@ -459,10 +459,11 @@ try {
     const completeMaterial = await readFile(materialFile, "utf8");
     await writeFile(materialFile, "newmtl Wood\nmap_Bump ../Textures/Missing.png\nmap_Kd -s 1 1 1 ../Textures/Wood # colour.png\n");
     const availableDependencies = await api.inspectSharedModelDependencies(sharedRoot, model);
+    const canonicalTexture = await realpath(texture);
     const incompleteManifest = await api.scanLocalModel(nested, chair.id, "shared", "3d", model, availableDependencies.files);
     check("a missing MTL map preserves valid referenced textures outside the model directory for preview", () => {
       assert.equal(availableDependencies.files.length, 3);
-      assert.ok(availableDependencies.files.includes(texture));
+      assert.ok(availableDependencies.files.includes(canonicalTexture));
       assert.equal(availableDependencies.notes.length, 1);
       assert.match(availableDependencies.notes[0], /Missing\.png/);
       const validTextureUrl = new URL("../Textures/Wood%20%23%20colour.png", incompleteManifest.meshes[0].mtlUrl).href;

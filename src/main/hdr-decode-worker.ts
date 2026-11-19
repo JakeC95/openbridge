@@ -2,6 +2,7 @@ import { open } from "node:fs/promises";
 import { extname } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
 import { decodeExrRgba } from "@bb-studio/exr";
+import { detectHdrFormat } from "./shared-hdr-facts";
 import { decodeRadianceHdr, rgbaToHalfRgba, rgbToHalfRgba } from "./poliigon/hdr";
 import { checkHdrDimensions, PUBLIC_PREVIEW_MAX_BYTES, type HdrLimits } from "./public/preview-data";
 
@@ -35,8 +36,10 @@ void (async () => {
   try {
     const buffer = await readPreviewSource(path);
     const extension = extname(path).toLowerCase();
-    checkHdrDimensions(buffer, extension, limits);
-    const result = extension === ".exr"
+    if (extension !== ".hdr" && extension !== ".exr") throw new Error("Expected an HDR or EXR source.");
+    const format = detectHdrFormat(buffer);
+    checkHdrDimensions(buffer, `.${format}`, limits);
+    const result = format === "exr"
       ? (() => {
           const { width, height, rgba } = decodeExrRgba(buffer);
           return { width, height, data: rgbaToHalfRgba(rgba) };

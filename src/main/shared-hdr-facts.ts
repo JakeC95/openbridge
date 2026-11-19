@@ -7,6 +7,13 @@ const COMPRESSION = [
   "None", "RLE", "ZIPS", "ZIP", "PIZ", "PXR24", "B44", "B44A", "DWAA", "DWAB"
 ];
 
+/** Filename suffixes are only an allowlist; the header identifies the encoding. */
+export function detectHdrFormat(buffer: Buffer): "exr" | "hdr" {
+  if (buffer.length >= 4 && buffer.readUInt32LE(0) === EXR_MAGIC) return "exr";
+  if (/^#\?(?:RADIANCE|RGBE)\r?\n/.test(buffer.toString("ascii", 0, Math.min(buffer.length, 16)))) return "hdr";
+  throw new Error("Invalid OpenEXR or Radiance HDR header.");
+}
+
 export interface SharedHdrFacts {
   format: "exr" | "hdr";
   width: number;
@@ -154,6 +161,6 @@ export async function inspectSharedHdrFacts(path: string): Promise<SharedHdrFact
       length += read.bytesRead;
     }
     const buffer = header.subarray(0, length);
-    return extension === ".exr" ? parseExr(buffer) : parseRadiance(buffer);
+    return detectHdrFormat(buffer) === "exr" ? parseExr(buffer) : parseRadiance(buffer);
   } finally { await file.close(); }
 }
