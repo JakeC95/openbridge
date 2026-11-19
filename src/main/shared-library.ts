@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, open, opendir, realpath } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { AssetRecord, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
+import type { AssetRecord, SharedHdrInfo, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
 import { modelFormatFromExtension } from "../shared/model-preview";
 import { checkHdrDimensions, hdrLimitsFor, PUBLIC_PREVIEW_MAX_BYTES } from "./public/preview-data";
 
@@ -182,18 +182,25 @@ export async function resolveSharedFile(asset: AssetRecord, roots: SharedLibrary
 }
 
 
-export async function inspectSharedHdr(path: string): Promise<{ width: number; height: number; panorama: boolean }> {
+export async function inspectSharedHdr(path: string): Promise<SharedHdrInfo> {
   if (!HDR_EXTENSIONS.has(extname(path).toLowerCase())) throw new Error("This file is not an HDR or EXR source.");
   const file = await open(path);
   try {
     const info = await file.stat();
-    if (!info.isFile() || info.size > PUBLIC_PREVIEW_MAX_BYTES) {
-      throw new Error("This HDR file exceeds the 160 MiB live preview limit. Open the original in its associated app.");
-    }
+    if (!info.isFile()) throw new Error("This HDR source is no longer a regular file.");
     const header = Buffer.alloc(Math.min(info.size, 1024 * 1024));
     const { bytesRead } = await file.read(header, 0, header.length, 0);
-    const { width, height } = checkHdrDimensions(header.subarray(0, bytesRead), extname(path), hdrLimitsFor("shared"));
-    return { width, height, panorama: width / height >= 1.95 && width / height <= 2.05 };
+    const { width, height } = checkHdrDimensions(header.subarray(0, bytesRead), extname(path), {
+      maxWidth: 1_000_000, maxPixels: Number.MAX_SAFE_INTEGER
+    });
+    const limits = hdrLimitsFor("shared");
+    const reason = info.size > PUBLIC_PREVIEW_MAX_BYTES
+      ? "This source exceeds the 160 MiB live preview limit. Choose a smaller variant or open the original in its associated app."
+      : width > limits.maxWidth || height > limits.maxWidth || width * height > limits.maxPixels
+        ? "This source exceeds the 8K live preview limit. Choose a smaller variant or open the original in its associated app."
+        : undefined;
+    return { width, height, panorama: width / height >= 1.95 && width / height <= 2.05,
+      previewAvailable: !reason, ...(reason ? { reason } : {}) };
   } finally {
     await file.close();
   }

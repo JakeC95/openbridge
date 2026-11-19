@@ -524,9 +524,18 @@ try {
     });
     const panorama = await api.inspectSharedHdr(hdr);
     const still = await api.inspectSharedHdr(flat);
+    const oversized = join(directory, "Oversized.hdr");
+    await writeFile(oversized, "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 8192 +X 16384\n");
+    const oversizedInfo = await api.inspectSharedHdr(oversized);
+    check("oversized HDR header facts remain available without allocating decoded pixels", () => {
+      assert.equal(oversizedInfo.width, 16384);
+      assert.equal(oversizedInfo.height, 8192);
+      assert.equal(oversizedInfo.previewAvailable, false);
+      assert.match(oversizedInfo.reason, /8K/);
+    });
     const removal = await shared.removeAssets([chair.id]);
     check("shared HDR inspection distinguishes flat images and deletion leaves files untouched", () => {
-      assert.deepEqual(panorama, { width: 64, height: 32, panorama: true });
+      assert.deepEqual(panorama, { width: 64, height: 32, panorama: true, previewAvailable: true });
       assert.equal(still.panorama, false);
       assert.equal(removal.removed, 0);
     });

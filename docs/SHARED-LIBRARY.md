@@ -32,7 +32,8 @@ goes offline. Use **Stop shared indexing** to pause a long scan and **Rescan** t
 OpenBridge saves a checkpoint in the local index, so a restart on the same mount can continue
 from the last completed batch. Partial scans keep cached results until a full scan completes. The Library checks individual files for zero bytes in the health report.
 Model previews have a 96 MiB source limit and resolve eligible dependencies beside the model
-or in conventional resource subfolders. HDR previews use the existing 8K and 160 MiB limits.
+or in conventional resource subfolders. HDR previews use the existing 8K and 160 MiB limits. The current source also inspects
+dimensions from oversized HDR headers, so source facts remain available when decoding is unavailable.
 Large or native files can be opened in the associated application. Automatic grouping across
 folders, dependency packaging for more formats, and explicit shared file edits remain planned.
 

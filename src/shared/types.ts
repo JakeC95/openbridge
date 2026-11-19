@@ -40,6 +40,14 @@ export interface SharedOrganizationOptions {
   collections: string[];
 }
 
+export interface SharedHdrInfo {
+  width: number;
+  height: number;
+  panorama: boolean;
+  previewAvailable: boolean;
+  reason?: string;
+}
+
 export interface SharedCopyProgress {
   completed: number;
   total: number;
@@ -1052,7 +1060,7 @@ export interface OpenBridgeApi {
     variants(id: string): Promise<AssetRecord[]>;
     organization(id: string): Promise<SharedAssetOrganization>;
     saveOrganization(id: string, value: SharedAssetOrganization): Promise<SharedAssetOrganization>;
-    inspectHdr(id: string): Promise<{ width: number; height: number; panorama: boolean }>;
+    inspectHdr(id: string): Promise<SharedHdrInfo>;
     hdr(id: string): Promise<PoliigonHdrData>;
     cancelHdr(id: string): Promise<void>;
     reveal(id: string): Promise<void>;

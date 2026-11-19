@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AssetRecord, MapPreview } from "../../shared/types";
+import type { AssetRecord, MapPreview, SharedHdrInfo } from "../../shared/types";
 import { CloseIcon } from "../icons";
 import { useStore } from "../store";
 import { ImageViewer } from "./ImageViewer";
@@ -11,7 +11,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const favorite = useStore(state => state.sharedFavorites.includes(asset.id));
   const toast = useStore(state => state.toast);
   const [image, setImage] = useState<MapPreview | null>(null);
-  const [hdr, setHdr] = useState<{ width: number; height: number; panorama: boolean } | null>(null);
+  const [hdr, setHdr] = useState<SharedHdrInfo | null>(null);
   const [problem, setProblem] = useState("");
   const [view, setView] = useState<"render" | "model">(asset.preview ? "render" : "model");
   const [item, setItem] = useState<MapPreview | null>(null);
@@ -110,11 +110,11 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
             <img src={image.url} alt={asset.name} />
           </button>}
         </div>}
-        {hdrAsset && hdr && <button type="button" className="btn btn-primary" onClick={() => setItem({
+        {hdrAsset && hdr?.previewAvailable && <button type="button" className="btn btn-primary" onClick={() => setItem({
           type: "HDR", label: `${asset.name} · ${hdr.width} × ${hdr.height}`, url: image?.url ?? "",
           exposure: { assetId: asset.id, mapType: "HDR" }, panorama: hdr.panorama
         })}>{hdr.panorama ? "Open HDRI viewer" : "Open HDR image"}</button>}
-        {hdrAsset && problem && <p className="hint" role="status">{problem}</p>}
+        {hdrAsset && (problem || hdr?.reason) && <p className="hint" role="status">{problem || hdr?.reason}</p>}
         <div className="technical-grid">
           <div><span>Format</span><strong>{asset.tags[0]?.toUpperCase()}</strong></div>
           {asset.sizeBytes !== undefined && <div><span>Size</span><strong>{(asset.sizeBytes / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 })} MiB</strong></div>}

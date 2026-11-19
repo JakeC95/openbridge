@@ -629,7 +629,8 @@ function registerIpc(): void {
     event.sender.once("destroyed", close);
     try {
       const { path } = await requireSharedFile(id);
-      await inspectSharedHdr(path);
+      const info = await inspectSharedHdr(path);
+      if (!info.previewAvailable) throw new Error(info.reason);
       const data = await decodeHdrFile(path, hdrLimitsFor("shared"), AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]));
       return { ...data, resolution: `${data.width} × ${data.height}` };
     } finally {
