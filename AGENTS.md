@@ -8,7 +8,7 @@ It is an Electron 45 + React 19 + TypeScript
 application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution model.
 
 - Branch: `main`, tracking `origin/main`
-- Release tag: `v1.7.1` (prepared; verify GitHub release status)
+- Release tag: `v1.7.1` (published and verified)
 - Current app version: `1.7.1`
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
@@ -643,6 +643,21 @@ Do not delete or rename released tags. The updater and pack downloader resolve a
 `releases/latest/download` and tag-specific release URLs.
 
 ## Release status and known facts
+
+`v1.7.1` assets (published 2026-11-19, source `2358bf5`):
+
+- Windows portable ZIP: `162,562,301` bytes, SHA-256
+  `289EE96272749F5774E786CC1BE112900583492F81B0CEDB147114149DA6DA25`.
+- Linux portable tar.gz: `128,422,091` bytes, SHA-256
+  `DBD9FA4681B8D43CC1D8A7D0905B466F18326AE2238F27FE2CF055D9689CF534`.
+- Downloaded both published archives and checked size/hash against their update manifests.
+  Windows ZIP package version and metadata worker entry were verified.
+- Quality main run `44492456704` and tag run `44492838572` passed on both platforms;
+  Release run `44492838522` passed.
+- The downloaded Linux executable passed real-backend metadata persistence/sorting, OBJ/HDR
+  previews, organization, saved searches, batch inspection and startup state-record checks.
+  Native copy writes were separately exercised through the actual source main process fixture.
+
 
 `v1.6.2` assets (published 2026-11-18, tag `v1.6.2`, commit `6caa6b2`):
 
