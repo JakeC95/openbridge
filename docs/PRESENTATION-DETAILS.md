@@ -142,6 +142,11 @@ verify them.
 
 ### Choosing the first screen
 
+For translated looks, distinguish the production renderer from the viewer
+look. Keep the neutral transparent turntable as the lead preview, put
+native studio renders in an `Authored reference` group, and label native-only
+texture references separately from textures bound in the viewer.
+
 Mark at most four facts and roughly four to six maps as `primary`. The drawer
 shows those first. If a manifest has no primary marks, it falls back to the
 first four facts and the full map list, so small hand-authored sidecars still

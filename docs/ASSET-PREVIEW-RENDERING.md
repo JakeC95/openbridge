@@ -56,6 +56,23 @@ visual consistency in the app and adjust shared defaults rather than adding
 per-asset lighting exceptions. Keep source lookdev distinct from generated
 technical previews in the presentation metadata.
 
+## Fidelity review before replacing previews
+
+Use the native scene as evidence for shader assignments, not as a reason to
+change the shared thumbnail or turntable style. Compare front and rear proofs
+under the same camera and lights. Check transparent covers, clear coat and the
+texture channels actually exported to the interactive model. Keep any native
+studio render separately as an authored reference. See the
+[ingest playbook](ASSET-INGEST-PLAYBOOK.md) for native scene and proxy tooling.
+
+Stage the model, poster, stills and turntable together. Verify frame count,
+resolution, decoded alpha, and playback, then open the interactive model in
+the packaged app. Do not replace a working entry with a partial render.
+Use `ffprobe` to confirm dimensions and frame rate, then run
+`python3 scripts/check-preview-alpha.py path/to/turntable.webm` to check all
+72 decoded frames for visible pixels, transparency, and clear edges.
+Pass explicit dimensions and frame count for nonstandard proofs.
+
 ## Consistent presentation metadata
 
 - Use the generated turntable as the hero and include the same four angles in

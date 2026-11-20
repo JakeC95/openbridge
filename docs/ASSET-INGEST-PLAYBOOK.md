@@ -33,6 +33,112 @@ artwork and evidence logs in local handoffs, not in this public repository.
    Distinguish source textures from render outputs, previews and references.
    A matching basename or a native thumbnail does not recover shader graphs.
 
+## Native scene adapters
+
+- **Houdini (`.hip`, `.hiplc`, `.hipnc`):** Prefer published lookdev and
+  assembly scenes for assignments, and model publishes for geometry. Compare the
+  published scene with the work scene rather than assuming they match. Start
+  with `python3 scripts/inventory-hip-archive.py <scene>` for uncompressed odc
+  archives. It reads serialized node types and parameter evidence without
+  extracting members, executing scene code, or following paths. Pair numbered
+  group selectors with material paths on the same SOP, then trace image nodes
+  and distinguish input files from render/export destinations. Texture tokens
+  such as `<UDIM>` and `latest` are declarations, not proof of tile availability.
+  Resolve and record exact publish versions before preparing a preview.
+
+  For trusted scenes use the matching studio Houdini/plugin environment and
+  `hython scripts/probe-houdini-scene.py <scene> --geometry /path/to/output`.
+  The optional geometry probe cooks the selected SOP and reports local bounds,
+  groups and attribute tables. String tables are not per-face assignments.
+  For packed Alembic and Solaris, verify packed contents or USD prim material
+  bindings separately. Loading/cooking a scene can execute custom code: use a
+  restricted worker with read-only mounts and a deadline, never app indexing.
+  If Houdini or renderer startup fails, label archive results as declared
+  evidence and do not promote them to evaluated geometry or shader facts.
+- **MAX:** Try the optional [Blender MAX importer](https://extensions.blender.org/add-ons/io-scene-max/)
+  on a scratch copy with verified companion files. `scripts/probe-max-scene.py`
+  was exercised with Blender 5.1.2 and importer v1.9.2 (commit `37db107`).
+  Use a reviewed checkout, a separate worker, no credentials, read-only source
+  access and a time limit. Do not bundle the importer or run it during indexing.
+  `MAX_PROBE` is a report of translated data, not a native scene evaluation.
+  Compare hierarchy, UV layers, face counts per material slot, shader socket
+  values and image links. Explicitly record unsupported or approximated
+  channels; a named material with no transmission or map connection is not
+  evidence that the original was opaque or untextured.
+  Separate **slot present**, **faces using the slot**, **image connected** and
+  **image exported**. An image omitted from GLB can belong to an unused slot,
+  not a broken exporter. Label a texture by its actual shader connection,
+  not its filename. Compare triangulated counts separately from polygon
+  counts when assessing topology across formats.
+
+  ```sh
+  OPENBRIDGE_MAX_INPUT="/scratch/model.max" blender -b --factory-startup \
+    --disable-autoexec --python-exit-code 1 --python scripts/probe-max-scene.py -- \
+    --addon /path/to/io_scene_max/source
+  ```
+
+  A full scene can include studio geometry that swamps framing. Exclude only
+  inspected non-asset meshes with `--exclude`, and compare units, topology,
+  material assignments, glass and decals against the exchange source and any
+  authored reference before promoting an experimental `--glb` export.
+  Check scale against a second publish with known units; native import units
+  may differ by 100×. Inspect the exported GLB, not just the Blender scene:
+  an imported image can be missing from the export if its node connections
+  are unsupported. For glass, verify transmission and tint in both the
+  turntable and the interactive viewer. Record any preview-only shader edits
+  as approximations and retain the authored reference for comparison.
+  Use [3ds Max Batch](https://help.autodesk.com/view/3DSMAX/2026/ENU/?guid=GUID-0968FF0A-5ADD-454D-B8F6-1983E76A4AF9)
+  with compatible V-Ray for authoritative evaluation or a native reference render.
+- **V-Ray scenes (`.vrscene`):** Use a bounded, non-executing inventory for
+  plugin declarations and dependency references. Keep includes and external
+  paths unresolved unless explicitly permitted. `python3 scripts/inventory-vrscene.py <scene>`
+  reports selected node, material, bitmap and proxy links from text scenes
+  up to 32 MiB. It has been checked against a synthetic fixture, not a native
+  production export. It is not a shader or geometry decoder. Use the
+  [Chaos App SDK](https://documentation.chaos.com/space/APPSDK/132645055/Getting+Started)
+  for authoritative plugin graphs or V-Ray Standalone for reference renders.
+  The MIT-licensed [C++ vrscene_parser](https://github.com/nilss0n/vrscene_parser)
+  is another syntax reader: revision `5551c50` passed a synthetic scene after
+  supplying `<cmath>` at compile time. It does not evaluate plugins or load
+  binary geometry. [Chaos's Blender add-on source](https://github.com/ChaosGroup/vray_for_blender_addon)
+  is useful for parameter mappings, not a standalone replacement for the renderer.
+- **V-Ray proxies (`.vrmesh`):** Prefer Chaos
+  [`ply2vrmesh -info`](https://documentation.chaos.com/space/VRAY4TOOLS/117637141.md)
+  for inventory and the SDK for geometry extraction. Keep viewport preview
+  geometry separate from full geometry and material IDs separate from assigned
+  shaders; the latter come from the host scene. Check installed Houdini and
+  Maya V-Ray bundles even if the converter is not on `PATH` (some Linux builds
+  name it `ply2vrmesh.bin`). `scripts/probe-vrmesh.py <proxy> --tool <executable>`
+  reads one frame and keeps full and preview triangle counts separate. Verified
+  against a one-triangle proxy created with Chaos's July 2025 converter.
+  Full mesh extraction through the SDK is not yet verified.
+
+Production exports can be hundreds of MiB. Keep the small text inventory
+bounded; use the vendor runtime or stream selected declarations without
+retaining geometry payloads. Compare duplicate exports with the timestamp
+header excluded. Remap verified bitmap paths in a scratch copy only, and
+check native reference images visually: a successful render can still be
+limited to the author's saved region. Use `-region=none` for a full-frame
+reference. For proxy reports, handle comma-separated counts and inspect
+object names before treating aggregate counts as asset-only geometry.
+Keep a verified native render in an authored-reference group when the 3D
+viewer uses translated materials. Show packed scalar textures as the actual
+grayscale channel (for example, green for glTF roughness), not the combined
+RGB packing image. Label native-only maps separately from viewer bindings.
+Use matched proof renders under the shared preview rig when adjusting a
+translated look. Trace native shader values through the actual object
+assignment before applying a correction. For example, refractive lamp covers
+can translate as opaque despite a preserved IOR, and a layered paint can need
+an explicit coat approximation. Keep lighting, camera and framing unchanged
+for before/after review; a better material translation should not require a
+one-off presentation style.
+
+For native-look parity, obtain a compatible DCC export and reference renders
+with the asset isolated. Compare matched views and check geometry, material
+assignments, UVs, glass, layered paint, lights and missing map behavior before
+replacing a translated preview. Preserve the native source and reference
+even when the real-time material must remain an approximation.
+
 ## Prepare and verify
 
 - Choose the best verified geometry source and the best verified look source

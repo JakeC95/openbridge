@@ -193,6 +193,7 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 - [Shared asset library design](docs/SHARED-LIBRARY.md)
 - [Prepared presentation details](docs/PRESENTATION-DETAILS.md)
 - [Consistent local asset preview rendering](docs/ASSET-PREVIEW-RENDERING.md)
+- [Studio asset ingest and native-scene verification](docs/ASSET-INGEST-PLAYBOOK.md)
 - [Local API and export protocol](docs/PROTOCOL.md)
 - [Reverse-engineering notes](docs/REVERSE-ENGINEERING.md)
 - [Poliigon research and integration plan](docs/POLIIGON.md)
