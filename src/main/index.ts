@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { prepareLocalState, finalizeLocalState, localStatePath } from "./local-state";
 import { copySharedModelPackage, copySharedSelection, inspectSharedModelDependencies, legacyFbxCompanion } from "./shared-package";
 import { readSharedPresentation } from "./shared-presentation";
+import { readPresentationCard } from "./shared-presentation-card";
 import { sharedHdrInfo, isInside, sharedRootId } from "./shared-library";
 import { decodeHdrFile } from "./hdr-decode";
 import { hdrLimitsFor } from "./public/preview-data";
@@ -692,6 +693,11 @@ function registerIpc(): void {
     if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");
     const { path } = await requireSharedFile(id);
     return readSharedPresentation(path);
+  });
+  ipcMain.handle("shared:presentationCard", async (_event, id: string) => {
+    if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");
+    const { path } = await requireSharedFile(id);
+    return readPresentationCard(path);
   });
   ipcMain.handle("shared:inspectFile", (_event, id: string) => {
     if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");

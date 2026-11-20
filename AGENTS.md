@@ -23,20 +23,21 @@ for how to register existing model and HDRI roots, test the shared workflows and
 
 ## 1.9.0 curated presentation details
 
-- Prepared presentations can carry an optional `presentation.json` sidecar. It adds a concise
-  subtitle and description, authored stills and a turntable video, four primary specs, named
-  parts with source counts, primary texture cards with previews and UDIM tiles, and collapsed
-  version, source and credit disclosures.
+- Prepared presentations can carry an optional `presentation.json` sidecar. Library cards show
+  the cover, name, job, artist, original format, renderer and original on-disk size. The drawer
+  opens on the turntable when one exists, with four primary specs (original format, original
+  size, renderer, faces), anatomy, primary texture cards and collapsed provenance.
 - The reader is bounded and read-only: 256 KiB manifest cap, relative media paths only,
   symlink-aware containment inside the presentation folder, image/video size limits, HTTPS-only
   external links and no HTML. Missing or unsafe entries become collapsed warnings instead of
   hiding the rest of the page.
-- The shared drawer keeps the 3D viewer first, adds a Turntable view when the hero is a video,
-  and places curated details below the preview. Measured source facts and the Resources view
-  remain authoritative. See [prepared presentation details](docs/PRESENTATION-DETAILS.md).
+- The shared drawer opens on the turntable when one exists, with 3D and Resources beside it.
+  Without a video it opens on 3D with Render available. Job, artist, renderer and original
+  format feed the indexed search text. Measured source facts and the Resources view remain
+  authoritative. See [prepared presentation details](docs/PRESENTATION-DETAILS.md).
 - The shared UI fixture writes a presentation manifest beside a prepared GLB and verifies the
-  headline, facts, gallery lightbox, anatomy, map preview, timeline, warnings and fullscreen
-  navigation.
+  card job/artist/format metadata, job/artist search, turntable default, primary facts, gallery
+  lightbox, anatomy, map preview, timeline, warnings and fullscreen navigation.
 
 ## 1.8.0 local asset parity work
 

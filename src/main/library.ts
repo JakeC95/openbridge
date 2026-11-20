@@ -1105,7 +1105,8 @@ export class LibraryService {
             if (previous && previous.repo !== "shared") return false;
             paths.push(asset.path);
             return !previous || previous.id !== asset.id || previous.mtime !== Math.trunc(asset.mtime) ||
-              previous.preview !== asset.preview || previous.bytes !== asset.sizeBytes || previous.categories !== JSON.stringify(asset.categories);
+              previous.preview !== asset.preview || previous.bytes !== asset.sizeBytes ||
+              previous.categories !== JSON.stringify(asset.categories) || previous.search_str !== asset.searchStr;
           });
           this.index.upsertMany(changed.map(asset => ({ asset, folderMtime: asset.mtime, jsonMtime: 0 })));
           if (changed.length) this.index.setHealthMany(changed.map(asset => ({

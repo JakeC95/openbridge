@@ -58,6 +58,21 @@ export interface SharedAssetDependencies {
   complete: boolean;
 }
 
+export interface SharedPresentationOriginal {
+  format?: string;
+  formats?: string[];
+  size?: string;
+  detail?: string;
+}
+
+export interface SharedPresentationCard {
+  job?: string;
+  artist?: string;
+  renderer?: string;
+  originalFormat?: string;
+  originalSize?: string;
+}
+
 export interface SharedPresentationMedia {
   kind: "image" | "video";
   label: string;
@@ -130,6 +145,10 @@ export interface SharedPresentation {
   title?: string;
   subtitle?: string;
   summary?: string;
+  job?: string;
+  artist?: string;
+  renderer?: string;
+  original?: SharedPresentationOriginal;
   hero?: SharedPresentationMedia;
   media: SharedPresentationMedia[];
   facts: SharedPresentationFact[];
@@ -1185,6 +1204,7 @@ export interface OpenBridgeApi {
     inspectFile(id: string): Promise<SharedFileFacts>;
     dependencies(id: string): Promise<SharedAssetDependencies>;
     presentation(id: string): Promise<SharedPresentationResult>;
+    presentationCard(id: string): Promise<SharedPresentationCard | null>;
     thumbnail(id: string, requestId: string): Promise<SharedAssetThumbnail>;
     cancelThumbnail(requestId: string): Promise<void>;
     stopScanning(): Promise<void>;

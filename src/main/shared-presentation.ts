@@ -9,6 +9,7 @@ import type {
   SharedPresentationLink,
   SharedPresentationMap,
   SharedPresentationMedia,
+  SharedPresentationOriginal,
   SharedPresentationPart,
   SharedPresentationResult,
   SharedPresentationVersion
@@ -318,6 +319,19 @@ function parseCredits(value: unknown): SharedPresentationCredit[] {
   return credits;
 }
 
+function parseOriginal(value: unknown): SharedPresentationOriginal | undefined {
+  const entry = record(value);
+  if (!entry) return undefined;
+  const formats = Array.isArray(entry.formats)
+    ? entry.formats.map(item => cleanText(item, 60)).filter((item): item is string => Boolean(item)).slice(0, 12)
+    : [];
+  const format = cleanText(entry.format, 120);
+  const size = cleanText(entry.size, 80);
+  const detail = cleanText(entry.detail, 600);
+  if (!format && !formats.length && !size && !detail) return undefined;
+  return { format, formats: formats.length ? formats : undefined, size, detail };
+}
+
 export async function readSharedPresentation(assetPath: string): Promise<SharedPresentationResult> {
   const folder = await realpath(dirname(assetPath)).catch(() => null);
   if (!folder) return { presentation: null };
@@ -378,6 +392,10 @@ export async function readSharedPresentation(assetPath: string): Promise<SharedP
     title: cleanText(manifest.title, 120),
     subtitle: cleanText(manifest.subtitle, 200),
     summary: cleanText(manifest.summary, 1600),
+    job: cleanText(manifest.job, 120),
+    artist: cleanText(manifest.artist, 80),
+    renderer: cleanText(manifest.renderer, 120),
+    original: parseOriginal(manifest.original),
     hero: hero ?? undefined,
     media,
     facts: parseFacts(manifest.facts),
@@ -391,6 +409,7 @@ export async function readSharedPresentation(assetPath: string): Promise<SharedP
   };
 
   const hasContent = Boolean(presentation.title || presentation.subtitle || presentation.summary ||
+    presentation.job || presentation.artist || presentation.renderer || presentation.original ||
     presentation.hero || presentation.media.length ||
     presentation.facts.length || presentation.parts.length || presentation.maps.length ||
     presentation.versions.length || presentation.links.length || presentation.credits.length ||

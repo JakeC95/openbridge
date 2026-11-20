@@ -74,6 +74,10 @@ await writeFile(join(sample, "presentation.json"), JSON.stringify({
   title: "Prepared prop presentation",
   subtitle: "Curated fixture details",
   summary: "Curated details render beside measured source facts.",
+  job: "Fixture job",
+  artist: "Fixture artist",
+  renderer: "Arnold",
+  original: { format: "Maya .mb", formats: ["Maya .mb", "Alembic .abc"], size: "14 GB" },
   hero: { kind: "image", src: "Prepared prop.png", label: "Prepared prop cover" },
   media: [
     { kind: "image", src: "Prepared prop.png", label: "Beauty still", caption: "Fixture gallery image." },
@@ -237,7 +241,10 @@ try {
   await until(()=>evaluate(`document.querySelector('button[aria-label="Shared library folder"]')?.textContent.includes('Prepared assets')`),"Shared folders did not default to the prepared collection");
   const presentation = await evaluate(`window.openbridge.queryLibrary({provider:'shared',sharedRoot:'prepared'}).then(result=>({total:result.total,id:result.assets[0]?.id}))`);
   assert.equal(presentation.total,1);
+  const byArtist = await evaluate(`window.openbridge.queryLibrary({provider:'shared',query:'Fixture artist'}).then(result=>result.total)`);
+  assert.equal(byArtist,1);
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${presentation.id}"] img')?.naturalWidth)`),"Prepared asset cover did not load");
+  await until(()=>evaluate(`document.querySelector('.shared-card-meta')?.textContent.includes('Fixture job')`),"Prepared card metadata did not load");
   await evaluate(`(()=>{
     window.uploadedEmbeddedFixture=false;
     const proto=WebGL2RenderingContext.prototype;
@@ -262,6 +269,8 @@ try {
     const summaries=[...panel.querySelectorAll('summary')].map(node=>node.textContent);
     return {
       summary: drawer.textContent.includes("Curated details render beside measured source facts."),
+      byline: drawer.querySelector('.shared-presentation-subtitle')?.textContent.includes("Fixture job · Fixture artist"),
+      cardMeta: document.querySelector('.shared-card-meta')?.textContent.includes("Maya .mb · Arnold · 14 GB"),
       noStatus: !drawer.querySelector('.shared-presentation-status'),
       sections: ["Specs","Anatomy","Textures","Version history","Source & credits"].every(label=>panel.textContent.includes(label)),
       moreFacts: summaries.some(text=>text.includes("More specifications")),
@@ -274,7 +283,7 @@ try {
       partPreview: panel.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7
     };
   })()`);
-  assert.deepEqual(curated,{summary:true,noStatus:true,sections:true,moreFacts:true,moreMaps:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
+  assert.deepEqual(curated,{summary:true,byline:true,cardMeta:true,noStatus:true,sections:true,moreFacts:true,moreMaps:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
   await evaluate(`document.querySelector('.shared-presentation-gallery-card').click()`);
   await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer'))`),"Curated gallery did not open fullscreen");
   await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);

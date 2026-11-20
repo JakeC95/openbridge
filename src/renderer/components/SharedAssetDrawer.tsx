@@ -58,21 +58,25 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const [variantQuery, setVariantQuery] = useState("");
   const [variantsError, setVariantsError] = useState("");
   const currentAsset = useRef(asset.id);
+  const viewTouched = useRef(false);
   currentAsset.current = asset.id;
   const openImageItems = (items: MapPreview[], index: number) => { setViewerIndex(index); setViewerItems(items); };
   const showImage = (preview: MapPreview) => openImageItems([preview], 0);
+  const chooseView = (next: typeof view) => { viewTouched.current = true; setView(next); };
   const [copying, setCopying] = useState(false);
   const [variants, setVariants] = useState<AssetRecord[]>([]);
   const [organization, setOrganization] = useState({ tags: "", collections: "", notes: "" });
   const [organizationReady, setOrganizationReady] = useState(false);
   const [organizationBusy, setOrganizationBusy] = useState(false);
   const hdrAsset = asset.type === "hdri";
+  const presentationByline = [presentation?.job, presentation?.artist].filter(Boolean).join(" · ") || presentation?.subtitle;
 
   useEffect(() => {
     let current = true;
     setOrganizationReady(false);
     setOrganization({ tags: "", collections: "", notes: "" });
     setOrganizationBusy(false);
+    viewTouched.current = false;
     setView(asset.preview && !prepared ? "render" : "model");
     setViewerItems([]);
     setVariants([]);
@@ -120,6 +124,11 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     });
     return () => { current = false; };
   }, [asset.id, prepared]);
+
+  useEffect(() => {
+    if (!prepared || viewTouched.current) return;
+    if (view === "model" && presentation?.hero?.kind === "video") setView("turntable");
+  }, [prepared, presentation, view]);
 
   useEffect(() => {
     let current = true;
@@ -229,20 +238,20 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
       </div>
       <div className="drawer-scroll">
         <h2 className="drawer-title">{presentation?.title ?? asset.name}</h2>
-        {presentation?.subtitle
-          ? <p className="shared-presentation-subtitle">{presentation.subtitle}</p>
+        {presentationByline
+          ? <p className="shared-presentation-subtitle">{presentationByline}</p>
           : <p className="drawer-id">{asset.categories.join(" / ")}</p>}
         {presentation?.summary && <p className="shared-presentation-summary">{presentation.summary}</p>}
         {presentationError && <p className="hint" role="status">Presentation details could not be read: {presentationError}</p>}
         {!hdrAsset && <div className="button-row horizontal shared-preview-modes" role="group" aria-label="Local asset preview">
-          <button type="button" className={view === "model" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "model"} onClick={() => setView("model")}>3D</button>
-          {presentation?.hero?.kind === "video" && <button type="button" className={view === "turntable" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "turntable"} onClick={() => setView("turntable")}>Turntable</button>}
-          {image && presentation?.hero?.kind !== "video" && <button type="button" aria-pressed={view === "render"} className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("render")}>Render</button>}
-          <button type="button" aria-pressed={view === "resources"} className={view === "resources" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("resources")}>Resources</button>
+          {presentation?.hero?.kind === "video" && <button type="button" className={view === "turntable" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "turntable"} onClick={() => chooseView("turntable")}>Turntable</button>}
+          <button type="button" className={view === "model" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "model"} onClick={() => chooseView("model")}>3D</button>
+          {image && presentation?.hero?.kind !== "video" && <button type="button" aria-pressed={view === "render"} className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => chooseView("render")}>Render</button>}
+          <button type="button" aria-pressed={view === "resources"} className={view === "resources" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => chooseView("resources")}>Resources</button>
         </div>}
         {((!hdrAsset && (view === "model" || view === "turntable")) || (image && (hdrAsset || view === "render"))) && <div className={`drawer-preview${view === "turntable" ? " shared-presentation-video" : ""}${prepared ? " shared-presentation-preview" : ""}`}>
           {!hdrAsset && view === "model" && <ModelPreviewPanel assetId={asset.id} provider="shared" name={asset.name} type={asset.type} />}
-          {!hdrAsset && view === "turntable" && presentation?.hero?.kind === "video" && <video key={presentation.hero.url} controls playsInline preload="metadata" loop
+          {!hdrAsset && view === "turntable" && presentation?.hero?.kind === "video" && <video key={presentation.hero.url} controls playsInline preload="metadata" autoPlay muted loop
             poster={presentation.hero.poster} aria-label={presentation.hero.label}>
             <source src={presentation.hero.url} type={presentation.hero.mimeType} />
           </video>}
@@ -296,7 +305,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         </section>}
         <div className="technical-grid">
           <div><span>Format</span><strong>{(facts?.format ?? asset.tags[0])?.toUpperCase() || "Unknown"}</strong></div>
-          {asset.sizeBytes !== undefined && <div><span>Size</span><strong>{bytesLabel(asset.sizeBytes)}</strong></div>}
+          {asset.sizeBytes !== undefined && <div><span>{prepared ? "GLB size" : "Size"}</span><strong>{bytesLabel(asset.sizeBytes)}</strong></div>}
           {hdr && <div><span>Dimensions</span><strong>{hdr.width} × {hdr.height}</strong></div>}
           <div><span>Modified</span><strong>{new Date(asset.mtime).toLocaleDateString()}</strong></div>
         </div>

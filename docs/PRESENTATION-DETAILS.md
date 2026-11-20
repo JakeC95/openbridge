@@ -30,16 +30,31 @@ in the same folder as the prepared GLB. A folder without a manifest behaves
 exactly as before. The scanner still indexes one presentation per folder and
 ignores the manifest, media and other supporting files.
 
+The scanner reads `job`, `artist`, `renderer` and `original.format` into the
+indexed search text. **Rescan** after editing a manifest while the app is
+running; a restart scans the collection again. The card metadata itself is read
+on demand, so a manifest edit updates the card and drawer immediately.
+
 ## What it enables
 
-- A concise identity line and short description above the preview. There is no
-  approval badge, review workflow or tag cloud in the artist-facing view.
-- A **Turntable** view when `hero` is a video, beside 3D, Render and Resources.
-- **Specs**: four high-value facts chosen by the manifest author, with the rest
-  behind a closed **More specifications** disclosure.
+This is built for an artist hunting a known asset in a large local library.
+
+- **Library card**: cover, name, job, artist, original format, renderer and
+  original on-disk size. The long shared ID, source badge and file-facts line
+  stay out of the grid. Hovering the card still exposes the full technical
+  facts, and the inspector has everything.
+- **Search by job and artist**: the scanner adds job, artist, renderer and
+  original format to the indexed search text, so a search for a show, a person
+  or “Arnold” can find the asset. Rescan after editing a manifest while the app
+  is running.
+- **Turntable first**: when `hero` is a video, the drawer opens on the
+  **Turntable** and plays it muted on a loop. 3D and Resources remain one click
+  away. Without a video, the drawer opens on 3D and Render is available.
+- **Specs**: original format, original size, renderer and face count. Project
+  codes, publish dates, GLB counts and source applications sit behind **More
+  specifications**.
 - **Anatomy** for named parts, face/vertex counts, material slots, UDIM tiles
-  and part thumbnails. Notes stay in the row tooltip instead of adding a
-  paragraph to every part.
+  and part thumbnails. Notes stay in the row tooltip.
 - **Textures** cards for the primary channels, with resolution, format, version
   and per-tile thumbnails. Secondary channels sit behind a closed disclosure.
 - **Media** for authored stills, a contact sheet, a reference frame and detail
@@ -47,8 +62,7 @@ ignores the manifest, media and other supporting files.
 - **Version history**, **Source & credits** and **notes** behind closed
   disclosures. They are available for provenance work without competing with
   the asset.
-- A collapsed list of skipped media or map entries, so a broken relative path is
-  visible without hiding the rest of the page.
+- A collapsed list of skipped media or map entries.
 
 The rule is selection, not omission. The manifest can carry more than the page
 shows; `primary: true` marks the facts and maps that deserve the first screen.
@@ -82,9 +96,13 @@ All fields are optional except `schemaVersion`. Unknown fields are ignored.
 | --- | --- | --- |
 | `schemaVersion` | number | Must be `1`. |
 | `title` | string | Optional display title. The drawer falls back to the indexed asset name. |
-| `subtitle` | string | One line below the title; useful for variant or finish. |
+| `subtitle` | string | One line below the title when job/artist are absent; useful for variant or finish. |
 | `summary` | string | Short description, clamped to two lines in the drawer. Plain text only. |
-| `hero` | media | Image or video. A video adds the **Turntable** view. |
+| `job` | string | Show or job name. Shown on the card and as the drawer byline; indexed for search. |
+| `artist` | string | Artist name. Shown on the card and as the drawer byline; indexed for search. |
+| `renderer` | string | Primary renderer, for example `Arnold`. Shown on the card and specs; indexed for search. |
+| `original` | object | `{ format?, formats?, size?, detail? }` for the original on-disk formats and size, not the preview GLB. |
+| `hero` | media | Image or video. A video makes **Turntable** the default drawer view. |
 | `media` | media[] | Up to 24 image or video entries; images appear in the Media gallery. |
 | `facts` | fact[] | Up to 24 `{ label, value, detail?, primary? }` entries. `primary` marks the first-screen specs. |
 | `parts` | part[] | Up to 64 named parts. `faces`, `vertices`, `material`, `tile`, `color`, `preview` and `note` are optional. `note` is shown as a tooltip. |
@@ -122,11 +140,14 @@ verify them.
 Mark at most four facts and roughly four to six maps as `primary`. The drawer
 shows those first. If a manifest has no primary marks, it falls back to the
 first four facts and the full map list, so small hand-authored sidecars still
-work. Keep the primary values short enough to scan in one pass: counts, physical
-size, texture set, real-time cost. Primary facts render as compact label/value
-stats, so keep them to one line; `detail` text is only shown for secondary
-facts. Put project codes, source applications, publish dates and review history
-in the secondary facts or the closed disclosures.
+work. For an asset-hunting view, the first four are usually **original format,
+original size, renderer and face count**. The card uses `job`, `artist`,
+`original.format`, `renderer` and `original.size` independently of the facts.
+
+Keep primary values short enough to scan in one pass; primary facts render as
+compact label/value stats, so `detail` text is only shown for secondary facts.
+Put project codes, source applications, publish dates and review history in the
+secondary facts or the closed disclosures.
 
 ### Map entry
 
@@ -163,6 +184,15 @@ other auxiliary maps can use a free-form channel such as `brand`.
   "title": "Studio prop",
   "subtitle": "Hero variant",
   "summary": "Prepared review copy with named parts and a published UDIM texture set.",
+  "job": "Spring campaign 2027",
+  "artist": "Alex Example",
+  "renderer": "Arnold",
+  "original": {
+    "format": "Maya .mb",
+    "formats": ["Maya .mb", "Alembic .abc", "Substance .spp", "UDIM EXR"],
+    "size": "14 GB",
+    "detail": "4.5 GB model + textures · 8.6 GB lookdev"
+  },
   "hero": {
     "kind": "video",
     "src": "media/turntable.mp4",
@@ -175,9 +205,10 @@ other auxiliary maps can use a free-form channel such as `brand`.
     { "kind": "image", "src": "media/stills/detail.jpg", "label": "Detail crop" }
   ],
   "facts": [
-    { "label": "Geometry", "value": "6 parts · 50,740 faces", "primary": true },
-    { "label": "Size", "value": "27.8 × 68.1 × 3.3 cm", "primary": true },
-    { "label": "Textures", "value": "7 × 6 UDIM · 4K", "primary": true }
+    { "label": "Original", "value": "Maya .mb", "detail": "Alembic .abc · Substance .spp · UDIM EXR", "primary": true },
+    { "label": "Original size", "value": "14 GB", "detail": "4.5 GB model + textures · 8.6 GB lookdev", "primary": true },
+    { "label": "Renderer", "value": "Arnold", "detail": "Houdini 20.5 · HtoA 6.4.5", "primary": true },
+    { "label": "Faces", "value": "50,740", "detail": "126k triangles in the GLB", "primary": true }
   ],
   "parts": [
     { "name": "frame", "label": "Frame", "faces": 1840, "vertices": 918, "material": "phong1", "tile": 1005, "color": "#e05a8a", "preview": "media/anatomy/frame.png", "note": "Outer frame." },
@@ -242,7 +273,9 @@ Use the strongest available evidence and label its source:
 
 | Evidence | Good use |
 | --- | --- |
-| Authored comp or turntable | Hero video, cover, stills, contact sheet. |
+| Job, artist and renderer | Card byline, drawer byline, search fields. |
+| Original scene/export formats and on-disk size | Primary specs and card format line. Do not substitute the preview GLB. |
+| Authored comp or turntable | Hero video, cover, stills, contact sheet; default drawer view. |
 | Published model version | Anatomy counts, material slots, source units, bounds. |
 | Published texture manifests | Channel list, UDIM tiles, resolution, bit depth, version. |
 | Saved lookdev or render scene | Frame size, colour space, source task. |

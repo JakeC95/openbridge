@@ -4,6 +4,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import type { AssetRecord, SharedHdrInfo, SharedLibraryRoot, SharedLibraryStatus } from "../shared/types";
 import { modelFormatFromExtension } from "../shared/model-preview";
 import { type SharedHdrFacts, inspectSharedHdrFacts } from "./shared-hdr-facts";
+import { readPresentationCard } from "./shared-presentation-card";
 import { hdrLimitsFor, PUBLIC_PREVIEW_MAX_BYTES } from "./public/preview-data";
 
 const BATCH_SIZE = 128;
@@ -169,11 +170,13 @@ export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptio
         // Preserve distinct letter/number suffixes used as asset identifiers.
         const family = key.replace(/(?:[-_.\s]+(?:v\d{1,5}|lod[-_]?\d{1,2}))+$/i, "");
         const cover = covers.has(key) ? covers.get(key) : covers.get(family);
+        const card = root.kind === "presentations" ? await readPresentationCard(path) : null;
         return {
           id: assetId(root, path), name: stem, type: root.kind === "hdris" ? "hdri" : "3d",
           repo: "shared", path, jsonPath: "", preview: image ? join(folder, image) : cover ?? null, thumb: null,
           categories, tags: [extension.slice(1).toLowerCase()], mtime: info.mtimeMs, previewRelativeSize: "",
-          searchStr: `${categories.join(" ")} ${file}`.toLowerCase(),
+          searchStr: [categories.join(" "), file, card?.job, card?.artist, card?.renderer, card?.originalFormat, card?.originalSize]
+            .filter(Boolean).join(" ").toLowerCase(),
           sizeBytes: info.size, fileCount: 1
         } satisfies AssetRecord;
       }));
