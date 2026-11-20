@@ -970,6 +970,12 @@ function refreshDisplay(state: ViewerState, options: DisplayOptions): void {
   state.render();
 }
 
+function meshFbxAliases(manifest: ModelManifest): Map<string, string> {
+  return manifest.meshes.some(mesh => mesh.format === "fbx")
+    ? new Map((manifest.textureAliases ?? []).map(([request, target]) => [request.toLowerCase(), target]))
+    : new Map();
+}
+
 export interface ModelViewerProps {
   manifest: ModelManifest;
   quality: number;
@@ -1218,11 +1224,15 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     });
     if (manifest.allowedFileUrls && !thumbnailMode) {
       const allowed = new Set(manifest.allowedFileUrls);
+      const aliases = new Map(manifest.textureAliases);
+      const foldedAliases = meshFbxAliases(manifest);
       manager.setURLModifier(value => {
         if (value.startsWith("data:") || value.startsWith("blob:")) return value;
         try {
           const url = new URL(value);
           if (allowed.has(url.href)) return url.href;
+          const alias = aliases.get(url.href) ?? foldedAliases.get(url.href.toLowerCase());
+          if (alias && allowed.has(alias)) return alias;
         } catch {
           // The loader did not resolve this reference to an indexed file.
         }

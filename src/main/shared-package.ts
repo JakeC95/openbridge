@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, mkdtemp, open, realpath, rm, rmdir, statfs } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, open, opendir, realpath, rm, rmdir, statfs } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { SharedCopyReport } from "../shared/types";
@@ -17,6 +17,7 @@ export interface SharedModelDependencies {
   notes: string[];
   maps: Array<{ path: string; type: ModelMapType; material: string; role: string }>;
   complete: boolean;
+  textureAliases: Array<[string, string]>;
 }
 
 async function readManifest(path: string, binary = false, signal?: AbortSignal): Promise<string> {
@@ -68,6 +69,85 @@ async function dependency(root: string, author: string, reference: string, encod
   return actual;
 }
 
+/** Older binary FBX exports can have a matching OBJ export in the same collection. */
+export async function legacyFbxCompanion(root: string, primary: string, signal?: AbortSignal): Promise<{ legacy: boolean; path: string | null }> {
+  const unsupported = { legacy: true, path: null };
+  if (!/\.fbx$/i.test(primary)) return { legacy: false, path: null };
+  signal?.throwIfAborted();
+  const file = await open(primary);
+  const header = Buffer.alloc(27);
+  try { await file.read(header, 0, header.length, 0); }
+  finally { await file.close(); }
+  if (header.subarray(0, 23).toString("binary") !== "Kaydara FBX Binary  \0\x1a\0" ||
+      header.readUInt32LE(23) >= 7000) return { legacy: false, path: null };
+  const folder = dirname(primary);
+  const parent = dirname(folder);
+  if (basename(folder).toLowerCase() !== "fbx" || !isInside(root, parent)) return unsupported;
+  try {
+    let objFolder: string | undefined;
+    let inspected = 0;
+    for await (const entry of await opendir(parent)) {
+      signal?.throwIfAborted();
+      if (++inspected > 4096) return unsupported;
+      if (!entry.isDirectory() || entry.name.toLowerCase() !== "obj") continue;
+      if (objFolder) return unsupported;
+      objFolder = join(parent, entry.name);
+    }
+    if (!objFolder || relative(objFolder, await realpath(objFolder)) !== "") return unsupported;
+    const stem = basename(primary, extname(primary)).toLowerCase();
+    let match: string | null = null;
+    inspected = 0;
+    for await (const entry of await opendir(objFolder)) {
+      signal?.throwIfAborted();
+      if (++inspected > 4096) return unsupported;
+      if (!entry.isFile() || ![stem + ".obj", stem + "_scanline.obj"].includes(entry.name.toLowerCase())) continue;
+      if (match) return unsupported;
+      match = join(objFolder, entry.name);
+    }
+    if (match && relative(match, await realpath(match)) === "") {
+      const info = await lstat(match);
+      if (info.isFile() && info.size > 0 && info.size <= 96 * 1024 * 1024) return { legacy: true, path: match };
+    }
+  } catch {
+    signal?.throwIfAborted();
+  }
+  return unsupported;
+}
+
+// Some OBJ collections place meshes in OBJ/ and their authored maps in a
+// sibling TEXTURES/ folder. Resolve a bare reference only inside that package.
+async function siblingObjTextures(root: string, primary: string, signal?: AbortSignal): Promise<Map<string, string | null>> {
+  const folder = dirname(primary);
+  const matches = new Map<string, string | null>();
+  if (basename(folder).toLowerCase() !== "obj") return matches;
+  const parent = dirname(folder);
+  if (!isInside(root, parent)) return matches;
+  try {
+    let textureFolder: string | undefined;
+    let inspected = 0;
+    for await (const entry of await opendir(parent)) {
+      signal?.throwIfAborted();
+      if (++inspected > 4096) return new Map();
+      if (!entry.isDirectory() || entry.name.toLowerCase() !== "textures") continue;
+      if (textureFolder) return new Map();
+      textureFolder = join(parent, entry.name);
+    }
+    if (!textureFolder || relative(textureFolder, await realpath(textureFolder)) !== "") return matches;
+    inspected = 0;
+    for await (const entry of await opendir(textureFolder)) {
+      signal?.throwIfAborted();
+      if (++inspected > 4096) return new Map();
+      if (!entry.isFile() || !/\.(png|jpe?g|webp|tga|exr)$/i.test(entry.name)) continue;
+      const key = entry.name.toLowerCase();
+      matches.set(key, matches.has(key) ? null : join(textureFolder, entry.name));
+    }
+    return matches;
+  } catch {
+    signal?.throwIfAborted();
+    return new Map();
+  }
+}
+
 function mtlTexture(value: string): string {
   // Standard MTL switches precede the filename. A quoted filename can contain spaces.
   const words = value.match(/"[^"]*"|[^\s]+/g) ?? [];
@@ -97,6 +177,7 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
   const files = new Set([primary]);
   const notes = new Set<string>();
   const maps: SharedModelDependencies["maps"] = [];
+  const textureAliases: SharedModelDependencies["textureAliases"] = [];
   let complete = true;
   const addMap = (path: string | null | undefined, type: ModelMapType, material: string, role = type as string) => {
     if (path && !maps.some(map => map.path === path && map.type === type && map.material === material)) {
@@ -184,6 +265,7 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
         }
       }
     }
+    let siblingTextures: Map<string, string | null> | undefined;
     for (const material of materials) {
       const contents = await readManifest(material, false, signal);
       let materialName = basename(material);
@@ -191,14 +273,34 @@ async function listSharedDependencies(root: string, primary: string, tolerateMis
       for (const match of contents.matchAll(/^[ \t]*(newmtl|map_\w+|bump|disp|decal|refl|norm)[ \t]+([^\r\n]+)$/gim)) {
         const key = match[1].toLowerCase();
         if (key === "newmtl") { materialName = match[2].trim(); continue; }
-        const path = await addAvailable(material, mtlTexture(match[2]));
+        const reference = mtlTexture(match[2]).replace(/^"(.*)"$/, "$1");
+        let path: string | null;
+        try {
+          path = await add(material, reference);
+        } catch (error) {
+          path = null;
+          if (tolerateMissing && error instanceof MissingDependencyError &&
+              !/[/\\:#?%]/.test(reference)) {
+            siblingTextures ??= await siblingObjTextures(root, primary, signal);
+            const candidate = siblingTextures.get(reference.toLowerCase());
+            if (candidate && relative(candidate, await realpath(candidate).catch(() => root)) === "" &&
+                (await lstat(candidate).catch(() => null))?.isFile()) {
+              path = candidate;
+              files.add(candidate);
+              textureAliases.push([new URL(reference, pathToFileURL(material)).href, pathToFileURL(candidate).href]);
+              complete = false;
+              notes.add("Preview resolved authored texture filenames in the package’s sibling textures folder. Package copy still requires the authored paths.");
+            }
+          }
+          if (!path && !missing(error)) throw error;
+        }
         addMap(path, types[key] ?? "unknown", materialName, match[1]);
       }
     }
   } else {
     throw new Error("Dependency packaging supports glTF, GLB and OBJ.");
   }
-  return { files: [...files], notes: [...notes], maps, complete };
+  return { files: [...files], notes: [...notes], maps, complete, textureAliases };
 }
 
 /** Preview omits and reports missing/unsafe references; only validated resources are returned. */

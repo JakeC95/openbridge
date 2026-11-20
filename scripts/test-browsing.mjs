@@ -22,7 +22,7 @@ const result = await build({
     export { LibraryService } from './src/main/library';
     export { inspectSharedHdr, scanSharedRoot } from './src/main/shared-library';
     export { scanLocalModel } from './src/main/model-preview';
-    export { listSharedModelPackage, inspectSharedModelDependencies, copySharedModelPackage, copySharedSelection } from './src/main/shared-package';
+    export { listSharedModelPackage, inspectSharedModelDependencies, legacyFbxCompanion, copySharedModelPackage, copySharedSelection } from './src/main/shared-package';
     export { CatalogMetadataProvider } from './src/main/catalog-metadata';
     export { assetTechnicalFacts } from './src/shared/asset-metadata';
     export { localCategoryPath } from './src/shared/browsing';
@@ -711,6 +711,57 @@ try {
     assert.equal(kitAssets.find(asset => asset.name === "Building_A_v001").preview, join(coverFolder, "Building_A..jpg"));
     assert.equal(kitAssets.find(asset => asset.name === "Building_B").preview, null);
     assert.equal(kitAssets.find(asset => asset.name === "Building_C").preview, null);
+  });
+
+  const splitPackage = join(directory, "Split package");
+  const objFolder = join(splitPackage, "OBJ");
+  const fbxFolder = join(splitPackage, "FBX");
+  const mapsFolder = join(splitPackage, "TEXTURES");
+  await Promise.all([objFolder, fbxFolder, mapsFolder].map(path => mkdir(path, { recursive: true })));
+  const sourceObj = join(objFolder, "014_Scanline.obj");
+  const sourceFbx = join(fbxFolder, "014.FBX");
+  const sourceMtl = join(objFolder, "Model.mtl");
+  const sourceMap = join(mapsFolder, "Color.JPG");
+  const oldHeader = Buffer.alloc(27);
+  oldHeader.write("Kaydara FBX Binary  \0\x1a\0", "binary");
+  oldHeader.writeUInt32LE(6100, 23);
+  await Promise.all([
+    writeFile(sourceFbx, oldHeader),
+    writeFile(sourceObj, "mtllib Model.mtl\n"),
+    writeFile(sourceMtl, "newmtl Paint\nmap_Kd -s 4 1 1 color.jpg\n"),
+    writeFile(sourceMap, "texture")
+  ]);
+  const canonicalPackage = await realpath(splitPackage);
+  const companion = await api.legacyFbxCompanion(canonicalPackage, await realpath(sourceFbx));
+  const dependencies = await api.inspectSharedModelDependencies(splitPackage, sourceObj);
+  const sourceMapPath = await realpath(sourceMap);
+  check("legacy FBX preview finds its matching OBJ and uniquely resolves its sibling texture case", () => {
+    assert.equal(companion.legacy, true);
+    assert.equal(companion.path, dependencies.files[0]);
+    assert.equal(dependencies.maps[0].path, sourceMapPath);
+    assert.equal(dependencies.complete, false);
+    assert.match(dependencies.textureAliases[0][0], /OBJ\/color\.jpg$/);
+    assert.match(dependencies.textureAliases[0][1], /TEXTURES\/Color\.JPG$/);
+  });
+  await assert.rejects(api.listSharedModelPackage(splitPackage, sourceObj), /Missing model dependency/);
+  await writeFile(join(objFolder, "014.obj"), "ambiguous candidate");
+  assert.equal((await api.legacyFbxCompanion(canonicalPackage, await realpath(sourceFbx))).path, null);
+  const lodMesh = join(fbxFolder, "Rock_LOD0.fbx");
+  const media = join(fbxFolder, "Rock_LOD0.fbm");
+  await mkdir(media);
+  await Promise.all([
+    writeFile(lodMesh, "fixture"),
+    writeFile(join(fbxFolder, "Rock_2K_Albedo.jpg"), "texture"),
+    writeFile(join(fbxFolder, "RockOther_2K_Albedo.jpg"), "unrelated"),
+    writeFile(join(media, "External.jpg"), "authored image")
+  ]);
+  const manifest = await api.scanLocalModel(await realpath(fbxFolder), "rock", "shared", "3d", await realpath(lodMesh));
+  check("shared LOD meshes find asset maps and allow only their own FBX media aliases", () => {
+    assert.equal(manifest.textures.length, 1);
+    assert.match(manifest.textures[0].url, /Rock_2K_Albedo\.jpg$/);
+    assert.equal(manifest.textureAliases.length, 1);
+    assert.match(manifest.textureAliases[0][1], /Rock_LOD0\.fbm\/External\.jpg$/);
+    assert.ok(manifest.allowedFileUrls.includes(manifest.textureAliases[0][1]));
   });
 
   const factsRoot = join(directory, "Metadata source");

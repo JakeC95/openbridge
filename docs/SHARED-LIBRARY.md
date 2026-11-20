@@ -87,6 +87,23 @@ Shared folders start with **Previews first**, ranking authored covers ahead of f
 for the 3D viewer. Use **Recently modified** to browse by file date. A cover is available for
 browsing even when the source format needs its associated application for geometry viewing.
 
+## Models with separated texture files
+
+- A shared OBJ in an `OBJ` folder can resolve a missing bare MTL texture filename in the
+  same package’s sibling `TEXTURES` folder. A unique case-insensitive filename match
+  handles Windows-authored extensions on Linux. Authored material slots and texture options
+  remain in use. **Copy with dependencies** still requires the original references to resolve.
+- A legacy binary FBX in an `FBX` folder can use a matching OBJ export from the same
+  package’s `OBJ` folder. The inspector names the actual preview mesh. Only an unambiguous
+  matching filename, including an explicit `_Scanline` export suffix, qualifies.
+- A supported FBX can resolve authored texture filenames in its own `<mesh>.fbm` folder.
+  A mesh with a trailing LOD number can also find maps named for the asset stem, while
+  the viewer retains its existing map quality and LOD selection rules.
+
+Published Maya rigs, Alembic caches and Substance Painter work exports can occur in the
+same project. Their paths alone do not identify a textured representation. Tiled EXR
+materials need the matching UV layout and an explicit assignment or material export.
+
 ## Resource browsing and thumbnails
 
 The shared model inspector offers **3D** and **Resources** views, plus a **Render** view when a

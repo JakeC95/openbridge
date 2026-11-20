@@ -97,6 +97,7 @@ const SHARED_RESOURCE_FOLDERS = new Set(["textures", "texture", "maps", "materia
 async function listSharedModelFiles(primary: string, dependencies?: string[]): Promise<{ files: FileInfo[]; truncated: boolean }> {
   const root = dirname(primary);
   const files: FileInfo[] = [];
+  const fbxMedia = /\.fbx$/i.test(primary) ? basename(primary, extname(primary)).toLowerCase() + ".fbm" : "";
   let inspected = 0;
   async function visit(folder: string, depth: number): Promise<void> {
     if (inspected >= SHARED_MAX_FILES) return;
@@ -105,7 +106,7 @@ async function listSharedModelFiles(primary: string, dependencies?: string[]): P
       if (++inspected >= SHARED_MAX_FILES) break;
       if (entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
       const path = join(folder, entry.name);
-      if (entry.isDirectory() && depth === 0 && SHARED_RESOURCE_FOLDERS.has(entry.name.toLowerCase())) {
+      if (entry.isDirectory() && depth === 0 && (SHARED_RESOURCE_FOLDERS.has(entry.name.toLowerCase()) || entry.name.toLowerCase() === fbxMedia)) {
         await visit(path, depth + 1);
       } else if (entry.isFile() && path !== primary) {
         const ext = extname(path).toLowerCase();
@@ -240,7 +241,9 @@ export async function scanLocalModel(
       continue;
     }
     const texture = textureVariant(file);
-    if (texture && (!sharedFile || file.name.toLowerCase().startsWith(basename(sharedFile, extname(sharedFile)).toLowerCase()))) {
+    const sharedStem = sharedFile ? basename(sharedFile, extname(sharedFile)).toLowerCase().replace(/[-_ ]lod[-_ ]?\d+$/i, "") : "";
+    if (texture && (!sharedFile || file.name.toLowerCase().startsWith(sharedStem + "_") ||
+        file.name.toLowerCase().startsWith(sharedStem + "-"))) {
       textureVariants.push(texture);
     }
   }
@@ -311,7 +314,24 @@ export async function scanLocalModel(
       ? "This asset contains an Alembic mesh but no runtime FBX/glTF/OBJ/USD mesh. Download a runtime format to preview."
       : "No runtime 3D mesh was found. Download a glTF/FBX/OBJ/USD version to preview.");
   }
-  if (!textureVariants.length) notes.push("No browser-readable texture maps were found; the model will use a neutral material.");
+  if (!textureVariants.length && !sharedFile) notes.push("No browser-readable sidecar texture maps were found.");
+
+  const textureAliases: Array<[string, string]> = [];
+  if (sharedFile && /\.fbx$/i.test(sharedFile)) {
+    const directory = dirname(sharedFile);
+    const media = basename(sharedFile, extname(sharedFile)).toLowerCase() + ".fbm";
+    const byName = new Map<string, FileInfo | null>();
+    for (const file of files) {
+      if (dirname(dirname(file.path)) !== directory ||
+          basename(dirname(file.path)).toLowerCase() !== media ||
+          !MODEL_IMAGE_EXTENSIONS.has(extname(file.path).toLowerCase())) continue;
+      const key = file.name.toLowerCase();
+      byName.set(key, byName.has(key) ? null : file);
+    }
+    for (const file of byName.values()) {
+      if (file) textureAliases.push([pathToFileURL(join(directory, file.name)).href, pathToFileURL(file.path).href]);
+    }
+  }
 
   return {
     assetId,
@@ -326,6 +346,7 @@ export async function scanLocalModel(
     alpha,
     notes,
     ...(sharedFile ? { allowedFileUrls: files.map(file => pathToFileURL(file.path).href) } : {}),
+    textureAliases,
     unsupported
   };
 }

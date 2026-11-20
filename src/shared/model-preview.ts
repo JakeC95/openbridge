@@ -97,6 +97,8 @@ export interface ModelManifest {
   surface?: boolean;
   notes: string[];
   allowedFileUrls?: string[];
+  /** Scoped loader requests mapped to validated package textures. */
+  textureAliases?: Array<[string, string]>;
   /** Runtime formats that were published but cannot be displayed without conversion/download. */
   unsupported: Array<{ format: ModelFormat; url?: string; reason: string }>;
 }

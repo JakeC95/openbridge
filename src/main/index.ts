@@ -3,7 +3,7 @@ import { withAbort } from "./abortable";
 import { SharedHdrThumbnailCache } from "./shared-hdr-thumbnails";
 import { pathToFileURL } from "node:url";
 import { prepareLocalState, finalizeLocalState, localStatePath } from "./local-state";
-import { copySharedModelPackage, copySharedSelection, inspectSharedModelDependencies } from "./shared-package";
+import { copySharedModelPackage, copySharedSelection, inspectSharedModelDependencies, legacyFbxCompanion } from "./shared-package";
 import { sharedHdrInfo, isInside, sharedRootId } from "./shared-library";
 import { decodeHdrFile } from "./hdr-decode";
 import { hdrLimitsFor } from "./public/preview-data";
@@ -625,15 +625,26 @@ function registerIpc(): void {
   });
   async function sharedModelManifest(id: string, signal?: AbortSignal) {
     signal?.throwIfAborted();
-      const { asset, path } = await requireSharedFile(id);
-      if (asset.type !== "3d") throw new Error("This shared asset is not a 3D model.");
-      const configured = settings().sharedLibraryRoots?.find(root => root.id === sharedRootId(asset.id));
-      const dependencies = configured && /\.(obj|gltf|glb)$/i.test(path)
-        ? await inspectSharedModelDependencies(await realpath(configured.path), path, signal)
-        : undefined;
-      const manifest = await scanLocalModel(dirname(path), asset.id, "shared", asset.type, path, dependencies?.files);
-      if (dependencies) manifest.notes.push(...dependencies.notes);
-      return manifest;
+    const { asset, path } = await requireSharedFile(id);
+    if (asset.type !== "3d") throw new Error("This shared asset is not a 3D model.");
+    const configured = settings().sharedLibraryRoots?.find(root => root.id === sharedRootId(asset.id));
+    if (!configured) throw new Error("This shared root is no longer registered.");
+    const root = await realpath(configured.path);
+    const companion = await legacyFbxCompanion(root, path, signal);
+    if (companion.legacy && !companion.path) {
+      throw new Error("This older FBX version needs an OBJ companion or a newer mesh export for 3D preview.");
+    }
+    const mesh = companion.path ?? path;
+    const dependencies = /\.(obj|gltf|glb)$/i.test(mesh)
+      ? await inspectSharedModelDependencies(root, mesh, signal)
+      : undefined;
+    const manifest = await scanLocalModel(dirname(mesh), asset.id, "shared", asset.type, mesh, dependencies?.files);
+    if (dependencies) {
+      manifest.notes.push(...dependencies.notes);
+      manifest.textureAliases = dependencies.textureAliases;
+    }
+    if (companion.path) manifest.notes.unshift(`Preview uses the collection’s matching OBJ export: ${basename(mesh)}.`);
+    return manifest;
   }
   let sharedThumbnails: SharedHdrThumbnailCache | undefined;
   const thumbnailJobs = new Map<string, AbortController>();
