@@ -1,0 +1,10 @@
+Renderer marks
+==============
+
+The Arnold name and mark are trademarks of Autodesk, Inc. The mark is used only
+to identify the renderer in the OpenBridge UI.
+
+- arnold.svg: Autodesk Arnold logo artwork. The file is sourced from Wikimedia
+  Commons at https://commons.wikimedia.org/wiki/File:Autodesk_Arnold_Logo.svg;
+  that file identifies Autodesk's Arnold product page as its source:
+  https://www.autodesk.com/products/arnold/overview.

@@ -6342,6 +6342,40 @@ body {
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
+.shared-presentation-stat-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.renderer-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 3px;
+  background: #ffffff;
+}
+.renderer-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.shared-renderer-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: 40px;
+  height: 20px;
+  padding: 3px;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
 .shared-presentation-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

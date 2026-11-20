@@ -77,13 +77,14 @@ await writeFile(join(sample, "presentation.json"), JSON.stringify({
   job: "Fixture job",
   artist: "Fixture artist",
   renderer: "Arnold",
-  original: { format: "Maya .mb", formats: ["Maya .mb", "Alembic .abc"], size: "14 GB" },
+  original: { format: "Maya .mb", formats: ["Maya .mb", "Alembic .abc"], size: "6.9 MB" },
   hero: { kind: "image", src: "Prepared prop.png", label: "Prepared prop cover" },
   media: [
     { kind: "image", src: "Prepared prop.png", label: "Beauty still", caption: "Fixture gallery image." },
     { kind: "image", src: "../outside.png", label: "Unsafe media" }
   ],
   facts: [
+    { label: "Renderer", value: "Arnold", primary: true },
     { label: "Parts", value: "1", primary: true },
     { label: "Maps", value: "1" }
   ],
@@ -245,6 +246,7 @@ try {
   assert.equal(byArtist,1);
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${presentation.id}"] img')?.naturalWidth)`),"Prepared asset cover did not load");
   await until(()=>evaluate(`document.querySelector('.shared-card-meta')?.textContent.includes('Fixture job')`),"Prepared card metadata did not load");
+  await until(()=>evaluate(`Boolean(document.querySelector('.shared-renderer-badge img')?.naturalWidth)`),"Renderer badge did not decode");
   await evaluate(`(()=>{
     window.uploadedEmbeddedFixture=false;
     const proto=WebGL2RenderingContext.prototype;
@@ -261,6 +263,7 @@ try {
   await evaluate(`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent==='3D').click()`);
   await until(()=>evaluate(`window.uploadedEmbeddedFixture`),"The GLB embedded image was not uploaded to WebGL");
   await until(()=>evaluate(`Boolean(document.querySelector('[aria-label="Asset details"]'))`),"Curated presentation details did not load");
+  await until(()=>evaluate(`Boolean(document.querySelector('.shared-presentation-stat-value .renderer-mark img')?.naturalWidth)`),"Renderer stat badge did not decode");
   await until(()=>evaluate(`document.querySelector('.shared-presentation-map-image img')?.naturalWidth===7`),"Curated map preview did not decode");
   await until(()=>evaluate(`document.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7`),"Curated part preview did not decode");
   const curated = await evaluate(`(()=>{
@@ -270,7 +273,9 @@ try {
     return {
       summary: drawer.textContent.includes("Curated details render beside measured source facts."),
       byline: drawer.querySelector('.shared-presentation-subtitle')?.textContent.includes("Fixture job · Fixture artist"),
-      cardMeta: document.querySelector('.shared-card-meta')?.textContent.includes("Maya .mb · Arnold · 14 GB"),
+      cardMeta: document.querySelector('.shared-card-meta')?.textContent.includes("Maya .mb · Arnold · 6.9 MB"),
+      rendererBadge: Boolean(document.querySelector('.shared-renderer-badge img')?.naturalWidth),
+      rendererMark: Boolean(document.querySelector('.shared-presentation-stat-value .renderer-mark img')?.naturalWidth),
       noStatus: !drawer.querySelector('.shared-presentation-status'),
       sections: ["Specs","Anatomy","Textures","Version history","Source & credits"].every(label=>panel.textContent.includes(label)),
       moreFacts: summaries.some(text=>text.includes("More specifications")),
@@ -283,7 +288,7 @@ try {
       partPreview: panel.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7
     };
   })()`);
-  assert.deepEqual(curated,{summary:true,byline:true,cardMeta:true,noStatus:true,sections:true,moreFacts:true,moreMaps:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
+  assert.deepEqual(curated,{summary:true,byline:true,cardMeta:true,rendererBadge:true,rendererMark:true,noStatus:true,sections:true,moreFacts:true,moreMaps:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
   await evaluate(`document.querySelector('.shared-presentation-gallery-card').click()`);
   await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer'))`),"Curated gallery did not open fullscreen");
   await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);

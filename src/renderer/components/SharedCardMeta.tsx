@@ -1,25 +1,9 @@
-import { useEffect, useState } from "react";
-import type { AssetRecord, SharedPresentationCard } from "../../shared/types";
-
-const cache = new Map<string, SharedPresentationCard | null>();
+import type { AssetRecord } from "../../shared/types";
+import { RendererMark } from "./RendererMark";
+import { usePresentationCard } from "./use-presentation-card";
 
 export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
-  const [card, setCard] = useState<SharedPresentationCard | null | undefined>(() => cache.get(asset.id));
-  useEffect(() => {
-    let current = true;
-    if (cache.has(asset.id)) {
-      setCard(cache.get(asset.id));
-      return () => { current = false; };
-    }
-    void window.openbridge.sharedLibrary.presentationCard(asset.id).then(result => {
-      cache.set(asset.id, result);
-      if (current) setCard(result);
-    }).catch(() => {
-      if (current) setCard(null);
-    });
-    return () => { current = false; };
-  }, [asset.id]);
-
+  const card = usePresentationCard(asset);
   if (!card) return null;
   const byline = [card.job, card.artist].filter(Boolean).join(" · ");
   const specs = [card.originalFormat, card.renderer, card.originalSize].filter(Boolean).join(" · ");
@@ -28,4 +12,10 @@ export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
     {byline && <span title={byline}>{byline}</span>}
     {specs && <span title={specs}>{specs}</span>}
   </span>;
+}
+
+export function SharedRendererBadge({ asset }: { asset: AssetRecord }) {
+  const card = usePresentationCard(asset);
+  if (!card?.renderer) return null;
+  return <RendererMark renderer={card.renderer} className="shared-renderer-badge" />;
 }

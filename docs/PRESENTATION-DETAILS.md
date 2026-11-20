@@ -35,12 +35,17 @@ indexed search text. **Rescan** after editing a manifest while the app is
 running; a restart scans the collection again. The card metadata itself is read
 on demand, so a manifest edit updates the card and drawer immediately.
 
+When a renderer has a bundled product mark, the card and its primary spec show
+that mark beside the renderer name. Unknown renderers remain text-only rather
+than receiving a guessed logo. Renderer artwork and source attribution live in
+`src/renderer/renderers/`.
+
 ## What it enables
 
 This is built for an artist hunting a known asset in a large local library.
 
 - **Library card**: cover, name, job, artist, original format, renderer and
-  original on-disk size. The long shared ID, source badge and file-facts line
+  original model size. The long shared ID, source badge and file-facts line
   stay out of the grid. Hovering the card still exposes the full technical
   facts, and the inspector has everything.
 - **Search by job and artist**: the scanner adds job, artist, renderer and
@@ -50,7 +55,7 @@ This is built for an artist hunting a known asset in a large local library.
 - **Turntable first**: when `hero` is a video, the drawer opens on the
   **Turntable** and plays it muted on a loop. 3D and Resources remain one click
   away. Without a video, the drawer opens on 3D and Render is available.
-- **Specs**: original format, original size, renderer and face count. Project
+- **Specs**: original format, model size, renderer and face count. Project
   codes, publish dates, GLB counts and source applications sit behind **More
   specifications**.
 - **Anatomy** for named parts, face/vertex counts, material slots, UDIM tiles
@@ -101,7 +106,7 @@ All fields are optional except `schemaVersion`. Unknown fields are ignored.
 | `job` | string | Show or job name. Shown on the card and as the drawer byline; indexed for search. |
 | `artist` | string | Artist name. Shown on the card and as the drawer byline; indexed for search. |
 | `renderer` | string | Primary renderer, for example `Arnold`. Shown on the card and specs; indexed for search. |
-| `original` | object | `{ format?, formats?, size?, detail? }` for the original on-disk formats and size, not the preview GLB. |
+| `original` | object | `{ format?, formats?, size?, detail? }` for the original model formats and model file size. Do not use the whole asset root or the preview GLB. |
 | `hero` | media | Image or video. A video makes **Turntable** the default drawer view. |
 | `media` | media[] | Up to 24 image or video entries; images appear in the Media gallery. |
 | `facts` | fact[] | Up to 24 `{ label, value, detail?, primary? }` entries. `primary` marks the first-screen specs. |
@@ -141,7 +146,7 @@ Mark at most four facts and roughly four to six maps as `primary`. The drawer
 shows those first. If a manifest has no primary marks, it falls back to the
 first four facts and the full map list, so small hand-authored sidecars still
 work. For an asset-hunting view, the first four are usually **original format,
-original size, renderer and face count**. The card uses `job`, `artist`,
+model size, renderer and face count**. The card uses `job`, `artist`,
 `original.format`, `renderer` and `original.size` independently of the facts.
 
 Keep primary values short enough to scan in one pass; primary facts render as
@@ -190,8 +195,8 @@ other auxiliary maps can use a free-form channel such as `brand`.
   "original": {
     "format": "Maya .mb",
     "formats": ["Maya .mb", "Alembic .abc", "Substance .spp", "UDIM EXR"],
-    "size": "14 GB",
-    "detail": "4.5 GB model + textures · 8.6 GB lookdev"
+    "size": "6.9 MB",
+    "detail": "Maya .mb 6.9 MB · Alembic .abc 4.5 MB"
   },
   "hero": {
     "kind": "video",
@@ -206,7 +211,7 @@ other auxiliary maps can use a free-form channel such as `brand`.
   ],
   "facts": [
     { "label": "Original", "value": "Maya .mb", "detail": "Alembic .abc · Substance .spp · UDIM EXR", "primary": true },
-    { "label": "Original size", "value": "14 GB", "detail": "4.5 GB model + textures · 8.6 GB lookdev", "primary": true },
+    { "label": "Model size", "value": "6.9 MB", "detail": "Maya .mb 6.9 MB · Alembic .abc 4.5 MB", "primary": true },
     { "label": "Renderer", "value": "Arnold", "detail": "Houdini 20.5 · HtoA 6.4.5", "primary": true },
     { "label": "Faces", "value": "50,740", "detail": "126k triangles in the GLB", "primary": true }
   ],
@@ -274,7 +279,7 @@ Use the strongest available evidence and label its source:
 | Evidence | Good use |
 | --- | --- |
 | Job, artist and renderer | Card byline, drawer byline, search fields. |
-| Original scene/export formats and on-disk size | Primary specs and card format line. Do not substitute the preview GLB. |
+| Original model formats and model file size | Primary specs and card format line. Do not use the whole asset root or substitute the preview GLB. |
 | Authored comp or turntable | Hero video, cover, stills, contact sheet; default drawer view. |
 | Published model version | Anatomy counts, material slots, source units, bounds. |
 | Published texture manifests | Channel list, UDIM tiles, resolution, bit depth, version. |

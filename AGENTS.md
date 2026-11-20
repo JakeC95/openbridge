@@ -24,9 +24,9 @@ for how to register existing model and HDRI roots, test the shared workflows and
 ## 1.9.0 curated presentation details
 
 - Prepared presentations can carry an optional `presentation.json` sidecar. Library cards show
-  the cover, name, job, artist, original format, renderer and original on-disk size. The drawer
-  opens on the turntable when one exists, with four primary specs (original format, original
-  size, renderer, faces), anatomy, primary texture cards and collapsed provenance.
+  the cover, name, job, artist, original format, renderer and original model file size. The drawer
+  opens on the turntable when one exists, with four primary specs (original format, model
+  file size, renderer, faces), anatomy, primary texture cards and collapsed provenance.
 - The reader is bounded and read-only: 256 KiB manifest cap, relative media paths only,
   symlink-aware containment inside the presentation folder, image/video size limits, HTTPS-only
   external links and no HTML. Missing or unsafe entries become collapsed warnings instead of

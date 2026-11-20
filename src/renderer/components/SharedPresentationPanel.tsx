@@ -1,4 +1,5 @@
 import type { MapPreview, SharedPresentation, SharedPresentationFact, SharedPresentationMap } from "../../shared/types";
+import { RendererMark } from "./RendererMark";
 
 function countLabel(value: number | undefined): string | undefined {
   return value === undefined ? undefined : value.toLocaleString();
@@ -98,7 +99,12 @@ export function SharedPresentationPanel({ presentation, onOpenImage }: {
     {facts.length > 0 && <section className="shared-presentation-section">
       <h3>Specs</h3>
       <div className="shared-presentation-stats">
-        {facts.map((fact, index) => <Stat fact={fact} key={`${fact.label}-${index}`} />)}
+        {facts.map((fact, index) => fact.label === "Renderer"
+          ? <div className="shared-presentation-stat" key={`${fact.label}-${index}`}>
+            <span>{fact.label}</span>
+            <strong className="shared-presentation-stat-value"><RendererMark renderer={fact.value} />{fact.value}</strong>
+          </div>
+          : <Stat fact={fact} key={`${fact.label}-${index}`} />)}
       </div>
       {moreFacts.length > 0 && <details className="shared-presentation-disclosure">
         <summary>More specifications ({moreFacts.length})</summary>

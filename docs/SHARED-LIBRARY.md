@@ -106,7 +106,7 @@ not run the source scene or its scripts.
 
 A prepared folder can also include an optional `presentation.json` sidecar beside
 the GLB and cover. The sidecar supplies curated context that the GLB cannot carry:
-job and artist names, the original renderer, original on-disk formats and size,
+job and artist names, the original renderer, original model formats and model file size,
 authored stills and turntable video, named mesh parts, primary texture channel
 cards, and collapsed version, source and credit disclosures. Job, artist,
 renderer and original format feed the indexed search text. It is read-only, uses
