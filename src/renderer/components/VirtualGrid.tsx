@@ -13,6 +13,7 @@ interface Props<T> {
   minItemWidth?: number;
   gap?: number;
   aspectRatio?: number;
+  footerHeight?: number;
   overscanRows?: number;
   className?: string;
   itemKey?: (item: T) => string;
@@ -40,6 +41,7 @@ export function VirtualGrid<T>({
   minItemWidth = 220,
   gap = 28,
   aspectRatio = 1,
+  footerHeight = 0,
   overscanRows = 3,
   className = "",
   itemKey
@@ -110,7 +112,7 @@ export function VirtualGrid<T>({
       : 1;
   const itemWidth =
     width > 0 ? (width - gap * (columns - 1)) / columns : minItemWidth;
-  const itemHeight = itemWidth / aspectRatio;
+  const itemHeight = itemWidth / aspectRatio + footerHeight;
   const rowStep = itemHeight + gap;
   const rows = Math.ceil(items.length / columns);
   const totalHeight =

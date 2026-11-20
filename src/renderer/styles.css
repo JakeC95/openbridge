@@ -3315,8 +3315,20 @@ body {
   pointer-events: none;
 }
 .asset-meta.prepared-card-meta {
-  padding-top: 62px;
-  padding-right: 38px;
+  position: static;
+  height: 106px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  background: var(--bg-deep);
+  border-top: 1px solid var(--line);
+}
+.asset-card:has(.prepared-card-meta) {
+  aspect-ratio: auto;
+}
+.asset-card:has(.prepared-card-meta) .asset-thumb {
+  position: relative;
+  height: auto;
+  aspect-ratio: 1;
 }
 .asset-card:not(:hover, :focus-within, .selected, .skeleton) .asset-meta.prepared-card-meta > .shared-card-meta {
   display: grid;
@@ -6577,14 +6589,11 @@ body {
   font-size: 11px;
 }
 .shared-presentation-maps {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 125px), 1fr));
+  gap: 14px 10px;
 }
 .shared-presentation-map {
-  flex: 0 0 190px;
   display: grid;
   align-content: start;
   gap: 3px;
@@ -6603,7 +6612,7 @@ body {
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 4 / 3;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);

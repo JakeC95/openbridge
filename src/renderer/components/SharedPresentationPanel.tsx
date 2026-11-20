@@ -142,13 +142,16 @@ export function SharedPresentationPanel({ presentation, onOpenImage }: {
       <strong>{map.label}</strong>
       <span>{[map.resolution, map.format].filter(Boolean).join(" · ")}</span>
       <span>{[map.version, map.tiles?.length ? `${map.tiles.length} tiles` : "", map.part].filter(Boolean).join(" · ")}</span>
-      {map.tilePreviews && map.tilePreviews.length > 0 && <div className="shared-presentation-tiles">
+      {map.tilePreviews && map.tilePreviews.length > 0 && <details className="shared-presentation-disclosure">
+        <summary>UDIM tiles ({map.tilePreviews.length})</summary>
+        <div className="shared-presentation-tiles">
         {map.tilePreviews.map(tile => <button key={tile.tile} type="button" aria-label={`View ${map.label} tile ${tile.tile}`}
           onClick={() => openMap(tile.url)}>
           <img src={tile.url} alt={`${map.label} ${tile.tile}`} loading="lazy" />
           <span>{tile.tile}</span>
         </button>)}
-      </div>}
+        </div>
+      </details>}
     </div>;
   }
 
@@ -252,8 +255,8 @@ export function SharedPresentationPanel({ presentation, onOpenImage }: {
               {presentation.links.map((link, index) => <li key={`${link.label}-${index}`}>
                 {link.href ? <button type="button" className="text-btn" onClick={() => void window.openbridge.openExternal(link.href!)}>{link.label}</button>
                   : <strong>{link.label}</strong>}
-                {link.value && <span><SoftwareMarks text={link.value} />{link.value}</span>}
-                {link.note && <small><SoftwareMarks text={link.note} />{link.note}</small>}
+              {link.value && <span>{link.value}</span>}
+              {link.note && <small>{link.note}</small>}
               </li>)}
             </ul>
           </div>}

@@ -756,6 +756,7 @@ export function LibraryView() {
         }))} />}
         {assets.length > 0 && !listView && (
           <VirtualGrid
+            footerHeight={preparedCollection ? 106 : 0}
             items={assets}
             minItemWidth={density === "compact" ? 160 : density === "large" ? 320 : 220}
             gap={28}

@@ -5,15 +5,15 @@ import { usePresentationCard } from "./use-presentation-card";
 export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
   const card = usePresentationCard(asset);
   if (!card) return null;
-  const byline = [card.category, card.job && `Job: ${card.job}`, card.artist && `Artist: ${card.artist}`].filter(Boolean);
+  const byline = [card.category, card.job, card.artist].filter(Boolean).join(" · ");
   const formats = card.originalFormats?.length
     ? card.originalFormats
     : card.originalFormat ? [card.originalFormat] : [];
   const specs = [formats.join(" · "), card.renderer, card.originalSize].filter(Boolean).join(" · ");
   const detail = [...formats, card.renderer, card.originalSize, card.originalDetail].filter(Boolean).join(" · ");
-  if (!byline.length && !specs) return null;
+  if (!byline && !specs) return null;
   return <span className="shared-card-meta">
-    {byline.map(value => <span key={value} title={value}>{value}</span>)}
+    {card.category && <span title={byline}>{card.category}</span>}
     {specs && <span className="shared-card-specs" title={detail || specs}>
       {formats.length > 0 && <span className="shared-card-formats">
         Source: {formats.join(" · ")}
@@ -24,5 +24,6 @@ export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
         {card.originalSize}
       </span>}
     </span>}
+    {card.job && <span title={byline}>{card.job}</span>}
   </span>;
 }
