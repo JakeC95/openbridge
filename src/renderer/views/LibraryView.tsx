@@ -479,9 +479,9 @@ export function LibraryView() {
       <div className="view-header">
         <div className="header-line">
           <div className="header-actions">
-            <button type="button" className="btn btn-ghost" onClick={() => void loadHealth()}>
+            {!preparedCollection && <button type="button" className="btn btn-ghost" onClick={() => void loadHealth()}>
               Health
-            </button>
+            </button>}
             <button
               type="button"
               className={selectMode ? "btn btn-ghost active" : "btn btn-ghost"}
@@ -499,7 +499,7 @@ export function LibraryView() {
                 </button>
               </>
             )}
-            {localProvider === "shared" && <button type="button" className="btn btn-ghost"
+            {localProvider === "shared" && !preparedCollection && <button type="button" className="btn btn-ghost"
               disabled={!total || Boolean(inspectionProgress)} onClick={() => void inspectSelectedShared(true)}>
               Inspect matching files
             </button>}
@@ -508,9 +508,9 @@ export function LibraryView() {
             </button>
           </div>
         </div>
-        <p className="hint library-scope-note">
+        {!preparedCollection && <p className="hint library-scope-note">
           Browse files on disk and on registered shared folders. Shared files require access to their mount.
-        </p>
+        </p>}
 
         {(localProvider === "all" || localProvider === "shared") && sharedLibraries.filter(root => root.state !== "ready").map(root =>
           <p className="hint" role="status" key={root.id}>
@@ -537,10 +537,10 @@ export function LibraryView() {
               { value: "openhdri", label: "OpenHDRI" },
               { value: "shared", label: "Shared folders" }
             ]} />
-          <Dropdown className="filter-select" value={localType || "all"} ariaLabel="Local asset type"
+          {!preparedCollection && <Dropdown className="filter-select" value={localType || "all"} ariaLabel="Local asset type"
             onChange={value => useStore.getState().setLocalType(value === "all" ? "" : value)}
             options={[{ value: "all", label: "All types" }, ...typeOptions
-              .map(value => ({ value, label: categoryLabel(value) }))]} />
+              .map(value => ({ value, label: categoryLabel(value) }))]} />}
           {localProvider === "shared" && Boolean(settings?.sharedLibraryRoots?.length) && (
             <Dropdown className="filter-select" value={sharedRoot} ariaLabel="Shared library folder"
               onChange={value => useStore.getState().setSharedRoot(value)}
@@ -759,7 +759,7 @@ export function LibraryView() {
             gap={28}
             renderItem={asset => {
               const selected = selectedIds.has(asset.id);
-              const facts = localFacts(asset);
+              const hoverFacts = localFacts(asset);
               return (
                 <div
                   role="button"
@@ -787,7 +787,7 @@ export function LibraryView() {
                       localPath: asset.path
                     });
                   }}
-                  title={asset.name}
+                  title={hoverFacts ? `${asset.name} — ${hoverFacts}` : asset.name}
                 >
                   <div className="asset-thumb">
                     {asset.preview ? (
@@ -804,7 +804,7 @@ export function LibraryView() {
                     ) : (
                       <span className="asset-placeholder">{typeLabel(asset.type)}</span>
                     )}
-                    <span className={`asset-type ${assetTypeClass(typeLabel(asset.type))}`}>{typeLabel(asset.type)}</span>
+                    {!preparedCollection && <span className={`asset-type ${assetTypeClass(typeLabel(asset.type))}`}>{typeLabel(asset.type)}</span>}
                     {!selectMode && asset.repo !== "shared" && (
                       <ProviderLogo
                         provider={asset.provider ?? "megascans"}
@@ -841,9 +841,7 @@ export function LibraryView() {
                   </div>
                   <div className="asset-meta">
                     <strong>{asset.name}</strong>
-                    <span>{asset.id}</span>
-                    <em>{isPublicProviderId(asset.provider) ? publicProviderLabel(asset.provider) : asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>
-                    {facts && <span className="asset-facts">{facts}</span>}
+                    {localProvider === "all" && <em>{isPublicProviderId(asset.provider) ? publicProviderLabel(asset.provider) : asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>}
                   </div>
                 </div>
               );

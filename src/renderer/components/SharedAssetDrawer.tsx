@@ -237,7 +237,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         {!hdrAsset && <div className="button-row horizontal shared-preview-modes" role="group" aria-label="Local asset preview">
           <button type="button" className={view === "model" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "model"} onClick={() => setView("model")}>3D</button>
           {presentation?.hero?.kind === "video" && <button type="button" className={view === "turntable" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "turntable"} onClick={() => setView("turntable")}>Turntable</button>}
-          {image && <button type="button" aria-pressed={view === "render"} className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("render")}>Render</button>}
+          {image && presentation?.hero?.kind !== "video" && <button type="button" aria-pressed={view === "render"} className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("render")}>Render</button>}
           <button type="button" aria-pressed={view === "resources"} className={view === "resources" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("resources")}>Resources</button>
         </div>}
         {((!hdrAsset && (view === "model" || view === "turntable")) || (image && (hdrAsset || view === "render"))) && <div className={`drawer-preview${view === "turntable" ? " shared-presentation-video" : ""}${prepared ? " shared-presentation-preview" : ""}`}>
@@ -339,8 +339,8 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
       </div>
       <div className="drawer-footer">
         <button type="button" className="btn btn-ghost" onClick={() => void run("reveal")}>Reveal file</button>
-        <button type="button" className="btn btn-ghost" onClick={() => void run("open")}>Open in associated app</button>
-        <button type="button" className="btn btn-ghost" disabled={copying} onClick={() => void run("copy")}>Copy source file</button>
+        {!prepared && <button type="button" className="btn btn-ghost" onClick={() => void run("open")}>Open in associated app</button>}
+        {!prepared && <button type="button" className="btn btn-ghost" disabled={copying} onClick={() => void run("copy")}>Copy source file</button>}
         {["obj", "gltf", "glb"].includes(asset.tags[0]) && <button type="button" className="btn btn-primary" disabled={copying}
           onClick={() => void run("copyPackage")}>Copy with dependencies</button>}
         {copying && <span className="hint" role="status">Copying…</span>}

@@ -1000,7 +1000,7 @@ code {
 }
 
 .asset-meta em {
-  color: var(--orange);
+  color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 11px;
