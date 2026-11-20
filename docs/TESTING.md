@@ -233,7 +233,9 @@ It verifies metadata workers and persistence, resolution sorting, 3D/HDR renderi
 inspector organization, saved root/format searches, batch inspection and project copying.
 It also writes a `presentation.json` sidecar beside a prepared GLB and verifies the card
 job/artist/format metadata, job/artist search, turntable default, primary facts and maps, part
-previews, gallery lightbox, collapsed history and unsafe-path warning.
+previews, gallery lightbox, collapsed provenance and unsafe-path warning. Prepared identity is
+checked in All sources as well as the prepared collection, and List / Compare must retain the
+readable name, studio category and published formats.
 It runs on both operating systems in Quality; Linux CI uses Xvfb and software GL.
 
 Shared asset parity coverage also includes binary FBX offset layouts, bounded decompression,

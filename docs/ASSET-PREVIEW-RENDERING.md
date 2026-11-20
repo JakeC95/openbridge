@@ -73,6 +73,27 @@ Use `ffprobe` to confirm dimensions and frame rate, then run
 72 decoded frames for visible pixels, transparency, and clear edges.
 Pass explicit dimensions and frame count for nonstandard proofs.
 
+### Characters and layered skin
+
+- Keep the full source pose in the shared 16:9 frame. A T/A pose is wider than
+  a prop; do not crop the arms just to make the character look larger.
+- Add a collapsed `Detail` group with a 16:9 face crop from the three-quarter
+  still. Check the head, eyes and skin at 1080p; whole-body thumbnails hide
+  eye and material errors.
+- Separate rig capability from the static viewer. It is valid to list joints
+  and skin clusters in the metadata, but the preview is a geometry snapshot
+  unless the viewer actually supports the rig.
+- Legacy SSS characters often ship overall, epidermal and subdermal color
+  layers rather than ready-made albedo. A blended portable color is an
+  approximation; label it and leave the native reference distinct. Do not
+  imply that displacement or subsurface scattering survived.
+- Use a neutral sclera color rather than a production mask texture. If the
+  sclera has a transparency map, invert it for glTF opacity (white often means
+  transparent in DCC shaders) and verify the iris reads through the opening.
+- Exclude blendshape targets, collision meshes and simulation inputs with an
+  explicit allowlist, then reimport the review export and check part names,
+  face counts and UV layers.
+
 ## Consistent presentation metadata
 
 - Use the generated turntable as the hero and include the same four angles in

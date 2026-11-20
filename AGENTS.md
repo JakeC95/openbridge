@@ -8,8 +8,8 @@ It is an Electron 45 + React 19 + TypeScript
 application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution model.
 
 - Branch: `main`, tracking `origin/main`
-- Release tag: `v1.7.1` (published and verified)
-- Current app version: `1.9.0` (pilot)
+- Latest tag: `v1.9.3` (pushed; verify release assets before calling it published)
+- Current app version: `1.9.3`
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -20,6 +20,28 @@ clears stale ambientCG and OpenHDRI indexing status and shows when Epic sign-in 
 the current session. A cold start and the upgrade from 1.6.3 were verified on Linux. The subsequent
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
+
+## 1.9.3 prepared asset review and native scene evidence
+
+- Prepared card metadata is now per-asset, not per-filter. Readable name, category,
+  published formats, renderer and original size follow the asset into **All sources**
+  and category scopes as well as the prepared collection. Grid rows use the taller
+  metadata footer when prepared assets are present, and List / Compare uses the same
+  per-asset identity. Renderer names keep their authored case.
+- Native-source review is documented in the [asset ingest playbook](docs/ASSET-INGEST-PLAYBOOK.md).
+  Opt-in tools cover Houdini HIP archive inventories, Maya/MAX scene probes, V-Ray
+  text-scene references, V-Ray proxy metadata and full-frame alpha verification.
+  None run during indexing; do not execute untrusted scene scripts. Native DCC
+  renders belong in an `Authored reference` media group, separate from the
+  portable look.
+- Character previews are static snapshots unless the viewer supports the rig.
+  Keep the full source pose in the shared 16:9 frame, add a collapsed `Detail`
+  group for a 1080p face crop, and label layered/skin approximations. See
+  [preview rendering](docs/ASSET-PREVIEW-RENDERING.md).
+- The preview renderer fits the whole turntable orbit, preserves animated or
+  constrained transform channels when reparenting, stages output before replacing
+  existing media, and verifies alpha after encoding. A supported extension is not
+  proof that a publish is self-contained.
 
 ## 1.9.0 curated presentation details
 
@@ -32,7 +54,9 @@ shipping a change to one source, compare it with an equivalent asset from the
 other source and document any intentional differences.
 
 - Prepared presentations can carry an optional `presentation.json` sidecar. Library cards show
-  the cover, name, job, artist, original format, renderer and original model file size. The drawer
+  the cover, readable name, category, job, artist, published formats, renderer and original
+  model file size. That metadata stays with the card in All sources and category views, not
+  only the prepared collection. The drawer
   opens on the turntable when one exists, with four primary specs (original format, model
   file size, renderer, faces), anatomy, primary texture cards and collapsed provenance.
 - The reader is bounded and read-only: 256 KiB manifest cap, relative media paths only,
@@ -746,6 +770,9 @@ must keep passing at narrow widths.
 
 ## Recent completed work
 
+- Released `v1.9.3`: prepared metadata now follows assets across All sources and category views;
+  added native scene/proxy ingest tools, character preview guidance and all-frame alpha verification;
+  documented the [asset ingest playbook](docs/ASSET-INGEST-PLAYBOOK.md).
 - Public-facing README/docs rewrite; removed personal paths, email, hardware details and recovered
   key material.
 - Build-time repository slug injection; hard-coded owner URLs removed from tracked source.
@@ -791,7 +818,7 @@ npm run dist:portable
 npm run catalog:pack:sample
 ```
 
-GitHub CLI is not installed. Use the GitHub REST API with a token from:
+Use `gh` when it is installed on the workstation; otherwise use the GitHub REST API with a token from:
 
 ```powershell
 "protocol=https`nhost=github.com`n`n" | git credential fill
@@ -806,6 +833,10 @@ Do not print the token. Do not store it in the repository.
 - `SECURITY.md` - private vulnerability reporting
 - `docs/BUILD.md` - build, packaging, configuration and release process
 - `docs/TESTING.md` - automated and manual verification
+- `docs/SHARED-LIBRARY.md` - shared roots, prepared presentations and native-source evidence
+- `docs/PRESENTATION-DETAILS.md` - presentation sidecar, card metadata and media groups
+- `docs/ASSET-PREVIEW-RENDERING.md` - shared turntable/still pipeline and fidelity review
+- `docs/ASSET-INGEST-PLAYBOOK.md` - studio discovery, native DCC/V-Ray inspection and verification
 - `docs/PROTOCOL.md` - local API and export protocol
 - `docs/REVERSE-ENGINEERING.md` - original-app research notes
 - `docs/POLIIGON.md` - Poliigon addon research, protocol and provider integration plan

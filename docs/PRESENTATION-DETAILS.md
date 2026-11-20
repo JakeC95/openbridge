@@ -69,7 +69,10 @@ This is built for an artist hunting a known asset in a large local library.
 - **Textures & masks** cards for the primary channels, with resolution, format,
   version and per-tile thumbnails. Other maps sit behind a closed disclosure.
 - **Media** for authored stills, a contact sheet, a reference frame and detail
-  crops, with fullscreen navigation.
+  crops, with fullscreen navigation. Use collapsed groups for optional imagery:
+  `Authored lookdev` for source stills/reels, `Authored reference` for native DCC
+  renders that are not the portable look, and `Detail` for close-ups such as a
+  character face or a mechanism. Do not let these crowd the four angle views.
 - **Production sources & notes** behind a closed disclosure. Version timeline
   metadata is retained in the sidecar but is not shown as a dropdown.
 - A collapsed list of skipped media or map entries.

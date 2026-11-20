@@ -26,7 +26,10 @@ the profile is on a network mount. Version 1.8.0 adds shared material-resource b
 binary FBX source facts, generated geometry/HDR thumbnails and inspection of the full matching file scope.
 Version 1.9.0 adds optional curated presentation details for prepared assets: job/artist and
 original-format cards, a turntable-first inspector, renderer and model file size, anatomy, primary
-texture cards and collapsed provenance.
+texture cards and collapsed provenance. Version 1.9.1–1.9.2 harden the Blender preview pipeline
+and carry published formats into the comparison view. Version 1.9.3 keeps prepared metadata with
+each asset across All sources and category views, adds opt-in native-scene ingest tools and
+documents character/skin preview verification.
 
 Settings, saved sessions and local state live outside the portable folder. Windows uses
 `%APPDATA%\openbridge`. Linux uses `${XDG_CONFIG_HOME:-$HOME/.config}/OpenBridge`; SQLite databases move to persistent

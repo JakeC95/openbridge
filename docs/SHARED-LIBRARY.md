@@ -97,12 +97,15 @@ Use the strongest evidence available when preparing a presentation:
 | Approved self-contained GLB and cover | Use the existing presentation directly. |
 | ASS or USD with explicit geometry, shader and texture bindings | Follow the authored bindings, record the chosen versions and translate or bake the materials for portable viewing. |
 | Saved Houdini lookdev scene | Identify the referenced geometry and texture publishes, even when a newer file exists. Old paths need a verified remap into the same asset package. External renderer shaders may need baking. |
+| Native Max or Maya scene with renderer evidence | Inspect a scratch copy, compare it with exchange exports, and record which look details were translated. See the [asset ingest playbook](ASSET-INGEST-PLAYBOOK.md). |
+| V-Ray scene or proxy | Inventory declared nodes, materials, bitmap references and proxy metadata with the vendor tools. Shader assignments come from the host scene; a proxy alone is not the complete look. |
 | Package manifest or a documented folder layout | Match explicit asset IDs, versions, material slots and tile numbers within the package. |
 | Filenames and nearby folders alone | Keep possible matches available for review. Unverified combinations do not become prepared presentations. |
 
-Prepared indexing reads the exported files. Automatic ASS and Houdini scene analysis
-is outside this indexing pass. The pilot extracted saved references as data and did
-not run the source scene or its scripts.
+Prepared indexing reads the exported files. Automatic ASS, Houdini, Max, Maya and
+V-Ray analysis is outside this indexing pass. Opt-in workers and archive inventories
+live in the [asset ingest playbook](ASSET-INGEST-PLAYBOOK.md); they do not run during
+indexing and must not execute untrusted scene scripts.
 
 A prepared folder can also include an optional `presentation.json` sidecar beside
 the GLB and cover. The sidecar supplies curated context that the GLB cannot carry:
