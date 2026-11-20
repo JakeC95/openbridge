@@ -8,8 +8,8 @@ It is an Electron 45 + React 19 + TypeScript
 application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution model.
 
 - Branch: `main`, tracking `origin/main`
-- Latest tag: `v1.9.3` (pushed; verify release assets before calling it published)
-- Current app version: `1.9.3`
+- Latest tag: `v1.9.4` (pushed; verify release assets before calling it published)
+- Current app version: `1.9.4`
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -20,6 +20,12 @@ clears stale ambientCG and OpenHDRI indexing status and shows when Epic sign-in 
 the current session. A cold start and the upgrade from 1.6.3 were verified on Linux. The subsequent
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
+
+## 1.9.4 additive build
+
+- v1.9.4 rebuilds the current `main` for the portable executable. Runtime behavior is the same
+  as v1.9.3; it packages the prepared-metadata fix with the native-scene ingest tools and
+  documentation added after the v1.9.3 tag. Previous versioned builds remain in `dist/`.
 
 ## 1.9.3 prepared asset review and native scene evidence
 

@@ -29,7 +29,8 @@ original-format cards, a turntable-first inspector, renderer and model file size
 texture cards and collapsed provenance. Version 1.9.1–1.9.2 harden the Blender preview pipeline
 and carry published formats into the comparison view. Version 1.9.3 keeps prepared metadata with
 each asset across All sources and category views, adds opt-in native-scene ingest tools and
-documents character/skin preview verification.
+documents character/skin preview verification. Version 1.9.4 rebuilds the current `main` as an
+additive portable release; runtime behavior is the same as 1.9.3.
 
 Settings, saved sessions and local state live outside the portable folder. Windows uses
 `%APPDATA%\openbridge`. Linux uses `${XDG_CONFIG_HOME:-$HOME/.config}/OpenBridge`; SQLite databases move to persistent
