@@ -252,6 +252,10 @@ try {
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${presentation.id}"] img')?.naturalWidth)`),"Prepared asset cover did not load");
   await until(()=>evaluate(`document.querySelector('.shared-card-meta')?.textContent.includes('Fixture job')`),"Prepared card metadata did not load");
   await until(()=>evaluate(`document.querySelector('.shared-card-formats')?.textContent.includes('Source: Maya .mb · Alembic .abc')`),"Published model formats did not load on the card");
+  await choose("Local asset source","All sources");
+  await until(()=>evaluate(`document.querySelector('[data-asset-id="${presentation.id}"] .shared-card-meta')?.textContent.includes('Fixture job')`),"Prepared card metadata disappeared in All sources");
+  await choose("Local asset source","Shared folders");
+  await until(()=>evaluate(`document.querySelector('button[aria-label="Shared library folder"]')?.textContent.includes('Prepared assets')`),"Shared folders did not return to the prepared collection");
   await evaluate(`(()=>{
     window.uploadedEmbeddedFixture=false;
     const proto=WebGL2RenderingContext.prototype;

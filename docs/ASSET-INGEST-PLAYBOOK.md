@@ -35,6 +35,35 @@ artwork and evidence logs in local handoffs, not in this public repository.
 
 ## Native scene adapters
 
+- **Maya characters (`.ma`, `.mb`):** Separate stock ingest, shot work,
+  exchange exports, and rig publishes. A shared folder name does not prove
+  that a stock skin texture set matches a later clothed character's UVs.
+  For ASCII scenes, inventory plugin requirements, units and declared file
+  nodes without running the scene. Resolve historical paths against the
+  asset root, then verify shader connections, UVs and deformation separately.
+  Preserve authored subsurface, gloss and displacement semantics; do not
+  label them as portable base color, roughness or normals without a verified
+  conversion. For binary scenes, use a restricted Maya worker with script
+  nodes disabled and references unloaded on the first inspection. Report
+  unavailable plugins and unloaded references as limits on the result.
+  For a static preview, inspect parent visibility and display layers as
+  well as intermediate shape flags. Exclude blendshape targets, collision
+  meshes and simulation inputs from the review export. Keep the native
+  rig and its controls distinct from the static viewer copy.
+  Do not trust a successful FBX export alone: reimport it and check the
+  expected part names, face counts and UV layers. If rig visibility or export
+  rules omit an intended part, explicitly snapshot evaluated geometry and
+  UVs for the approved meshes in a scratch scene. Document which shader
+  channels were translated versus left out.
+  For stock characters, separate the base ingest, rig publish, shot scene and
+  clothed exchange variant. A shot scene may contain set geometry and a single
+  shared material, so it is not evidence of the character's look. Check the
+  rendered face at full resolution: eyes and layered skin errors disappear in
+  a whole-body thumbnail. Legacy SSS maps (overall, epidermal, subdermal) are
+  layers, not ready-made albedo; a blended preview must be labeled as an
+  approximation. A sclera transparency map may use white for transparent;
+  invert it for glTF opacity and verify that the iris reads through the opening.
+
 - **Houdini (`.hip`, `.hiplc`, `.hipnc`):** Prefer published lookdev and
   assembly scenes for assignments, and model publishes for geometry. Compare the
   published scene with the work scene rather than assuming they match. Start

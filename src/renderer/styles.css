@@ -1020,13 +1020,14 @@ code {
   line-height: 1.3;
   text-transform: none;
 }
-.asset-meta .shared-card-specs > span {
+.asset-meta .shared-card-specs > span,
+.asset-meta .shared-card-specs span {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: inherit;
   letter-spacing: inherit;
   line-height: inherit;
-  text-transform: inherit;
+  text-transform: none;
 }
 .asset-meta .shared-card-specs > .shared-card-formats {
   white-space: normal;

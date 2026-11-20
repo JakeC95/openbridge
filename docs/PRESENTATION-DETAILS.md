@@ -46,10 +46,14 @@ detached badge or an opaque logo tile.
 
 This is built for an artist hunting a known asset in a large local library.
 
-- **Library card**: cover, pipeline-style PascalCase name, job, artist, every
-  available model format, renderer and primary model size. The long shared ID, source badge and file-facts line
-  stay out of the grid. Hovering the card still exposes the full technical
-  facts, and the inspector has everything.
+- **Library card**: cover, pipeline-style PascalCase name, category, job, artist,
+  every available model format, renderer and primary model size. The long shared
+  ID, source badge and file-facts line stay out of the grid. Hovering the card
+  still exposes the full technical facts, and the inspector has everything.
+  Prepared metadata is per-asset: it must follow the card into **All sources**
+  and category scopes, not only the prepared collection filter. Grid rows use
+  the taller metadata footer whenever prepared assets are present; List / Compare
+  uses the same per-asset name, category and published formats.
 - **Search by job and artist**: the scanner adds job, artist, renderer and
   original format to the indexed search text, so a search for a show, a person
   or “Arnold” can find the asset. Rescan after editing a manifest while the app

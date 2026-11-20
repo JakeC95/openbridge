@@ -107,6 +107,13 @@ export function LibraryView() {
   const toast = useStore(state => state.toast);
   const preparedCollection = localProvider === "shared" &&
     settings?.sharedLibraryRoots?.some(root => root.id === sharedRoot && root.kind === "presentations");
+  const presentationRootIds = (settings?.sharedLibraryRoots ?? [])
+    .filter(root => root.kind === "presentations" && root.id)
+    .map(root => root.id);
+  // Prepared metadata should follow the asset into All sources and category views,
+  // not disappear when the prepared collection itself is no longer the filter.
+  const isPreparedAsset = (asset: AssetRecord) => asset.repo === "shared" &&
+    presentationRootIds.some(id => asset.id.startsWith(`shared:${id}:`));
 
   const [selectMode, setSelectMode] = useState(false);
   const [listView, setListView] = useState(false);
@@ -745,28 +752,32 @@ export function LibraryView() {
           selectedKeys={selectMode ? new Set(assets.filter(asset => selectedIds.has(asset.id)).map(asset => asset.path)) : undefined}
           totalSelected={selectMode ? selectedIds.size : undefined} initialCompare={selectMode && selectedIds.size >= 2}
           onToggle={selectMode ? path => { const asset = assets.find(item => item.path === path); if (asset) toggleSelected(asset.id); } : undefined}
-          items={assets.map(asset => ({
-           key: asset.path, id: preparedCollection ? undefined : asset.id,
-           name: preparedCollection ? assetDisplayName(asset.name) : asset.name, type: typeLabel(asset.type),
-           typeDetail: preparedCollection ? <PublishedAssetType asset={asset} fallback={typeLabel(asset.type)} /> : undefined,
-           sourceDetail: preparedCollection ? <PublishedFormats asset={asset} /> : undefined,
-           dimensions: asset.technical?.dimensions,
-          previewFallback: asset.repo === "shared" ? <SharedAssetThumbnail asset={asset} /> : undefined,
-          image: asset.preview ? window.openbridge.toFileUrl(asset.preview) : null, technical: asset.technical,
-           category: preparedCollection ? undefined : asset.categories?.slice(0, 2).join(" / "), facts: readinessBadges(asset.technical),
-          resolution: asset.technical?.local?.image ? `${asset.technical.local.image.width} × ${asset.technical.local.image.height}`
-            : asset.technical?.resolution ? `${asset.technical.resolution / 1024}K` : null,
-           status: preparedCollection ? "Local library" : asset.repo, onOpen: () => void openLocal(asset)
-        }))} />}
+          items={assets.map(asset => {
+            const prepared = isPreparedAsset(asset);
+            return {
+              key: asset.path, id: prepared ? undefined : asset.id,
+              name: prepared ? assetDisplayName(asset.name) : asset.name, type: typeLabel(asset.type),
+              typeDetail: prepared ? <PublishedAssetType asset={asset} fallback={typeLabel(asset.type)} /> : undefined,
+              sourceDetail: prepared ? <PublishedFormats asset={asset} /> : undefined,
+              dimensions: asset.technical?.dimensions,
+              previewFallback: asset.repo === "shared" ? <SharedAssetThumbnail asset={asset} /> : undefined,
+              image: asset.preview ? window.openbridge.toFileUrl(asset.preview) : null, technical: asset.technical,
+              category: prepared ? undefined : asset.categories?.slice(0, 2).join(" / "), facts: readinessBadges(asset.technical),
+              resolution: asset.technical?.local?.image ? `${asset.technical.local.image.width} × ${asset.technical.local.image.height}`
+                : asset.technical?.resolution ? `${asset.technical.resolution / 1024}K` : null,
+              status: prepared ? "Local library" : asset.repo, onOpen: () => void openLocal(asset)
+            };
+          })} />}
         {assets.length > 0 && !listView && (
           <VirtualGrid
-            footerHeight={preparedCollection ? 106 : 0}
+            footerHeight={assets.some(asset => isPreparedAsset(asset)) ? 106 : 0}
             items={assets}
             minItemWidth={density === "compact" ? 160 : density === "large" ? 320 : 220}
             gap={28}
             renderItem={asset => {
               const selected = selectedIds.has(asset.id);
               const hoverFacts = localFacts(asset);
+              const prepared = isPreparedAsset(asset);
               return (
                 <div
                   role="button"
@@ -846,10 +857,10 @@ export function LibraryView() {
                       </button>
                     )}
                   </div>
-                  <div className={preparedCollection && asset.repo === "shared" ? "asset-meta prepared-card-meta" : "asset-meta"}>
-                    <strong>{preparedCollection && asset.repo === "shared" ? assetDisplayName(asset.name) : asset.name}</strong>
-                    {preparedCollection && asset.repo === "shared" && <SharedCardMeta asset={asset} />}
-                    {localProvider === "all" && <em>{isPublicProviderId(asset.provider) ? publicProviderLabel(asset.provider) : asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>}
+                  <div className={prepared ? "asset-meta prepared-card-meta" : "asset-meta"}>
+                    <strong>{prepared ? assetDisplayName(asset.name) : asset.name}</strong>
+                    {prepared && <SharedCardMeta asset={asset} />}
+                    {localProvider === "all" && !prepared && <em>{isPublicProviderId(asset.provider) ? publicProviderLabel(asset.provider) : asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>}
                   </div>
                 </div>
               );
