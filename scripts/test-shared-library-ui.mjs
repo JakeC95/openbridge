@@ -74,16 +74,20 @@ await writeFile(join(sample, "presentation.json"), JSON.stringify({
   title: "Prepared prop presentation",
   subtitle: "Curated fixture details",
   summary: "Curated details render beside measured source facts.",
-  status: { label: "Approved", tone: "approved" },
-  tags: ["fixture", "prepared"],
   hero: { kind: "image", src: "Prepared prop.png", label: "Prepared prop cover" },
   media: [
     { kind: "image", src: "Prepared prop.png", label: "Beauty still", caption: "Fixture gallery image." },
     { kind: "image", src: "../outside.png", label: "Unsafe media" }
   ],
-  facts: [{ label: "Parts", value: "1" }, { label: "Maps", value: "1" }],
+  facts: [
+    { label: "Parts", value: "1", primary: true },
+    { label: "Maps", value: "1" }
+  ],
   parts: [{ name: "Triangle", label: "Triangle", faces: 1, vertices: 3, material: "Paint", tile: 1001, color: "#ff0000", preview: "Prepared prop.png" }],
-  maps: [{ channel: "basecolor", label: "Base color", tiles: [1001], resolution: "7 × 5", format: "PNG", version: "v001", preview: "Prepared prop.png" }],
+  maps: [
+    { channel: "basecolor", label: "Base color", primary: true, tiles: [1001], resolution: "7 × 5", format: "PNG", version: "v001", preview: "Prepared prop.png" },
+    { channel: "normal", label: "Normal", tiles: [1001], resolution: "7 × 5", format: "PNG", version: "v001", preview: "Prepared prop.png" }
+  ],
   versions: [{ label: "v001", kind: "Presentation", date: "2026-01-01", current: true, note: "Fixture version." }],
   links: [{ label: "Fixture source", value: "Prepared assets" }],
   credits: [{ role: "Artist", name: "Fixture" }],
@@ -255,10 +259,13 @@ try {
   const curated = await evaluate(`(()=>{
     const panel=document.querySelector('[aria-label="Asset details"]');
     const drawer=document.querySelector('.drawer');
+    const summaries=[...panel.querySelectorAll('summary')].map(node=>node.textContent);
     return {
       summary: drawer.textContent.includes("Curated details render beside measured source facts."),
-      status: drawer.textContent.includes("Approved"),
-      sections: ["At a glance","Anatomy","Texture set","Version history","Curator notes"].every(label=>panel.textContent.includes(label)),
+      noStatus: !drawer.querySelector('.shared-presentation-status'),
+      sections: ["Specs","Anatomy","Textures","Version history","Source & credits"].every(label=>panel.textContent.includes(label)),
+      moreFacts: summaries.some(text=>text.includes("More specifications")),
+      moreMaps: summaries.some(text=>text.includes("Additional channels")),
       part: panel.textContent.includes("Triangle")&&panel.textContent.includes("Paint"),
       map: panel.textContent.includes("Base color")&&panel.textContent.includes("7 × 5"),
       version: panel.textContent.includes("v001")&&panel.textContent.includes("Current"),
@@ -267,7 +274,7 @@ try {
       partPreview: panel.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7
     };
   })()`);
-  assert.deepEqual(curated,{summary:true,status:true,sections:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
+  assert.deepEqual(curated,{summary:true,noStatus:true,sections:true,moreFacts:true,moreMaps:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
   await evaluate(`document.querySelector('.shared-presentation-gallery-card').click()`);
   await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer'))`),"Curated gallery did not open fullscreen");
   await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);

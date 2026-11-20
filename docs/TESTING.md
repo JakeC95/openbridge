@@ -231,8 +231,9 @@ The real-backend shared Library fixture (`npm run test:shared-library:ui`, after
 uses a disposable profile and synthetic Unicode/space-containing model and HDR roots.
 It verifies metadata workers and persistence, resolution sorting, 3D/HDR rendering,
 inspector organization, saved root/format searches, batch inspection and project copying.
-It also writes a `presentation.json` sidecar beside a prepared GLB and verifies the curated
-headline, facts, part and map previews, gallery lightbox, timeline and unsafe-path warning.
+It also writes a `presentation.json` sidecar beside a prepared GLB and verifies the concise
+headline, primary facts and maps, part previews, gallery lightbox, collapsed history and
+unsafe-path warning.
 It runs on both operating systems in Quality; Linux CI uses Xvfb and software GL.
 
 Shared asset parity coverage also includes binary FBX offset layouts, bounded decompression,

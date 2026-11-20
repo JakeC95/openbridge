@@ -75,6 +75,7 @@ export interface SharedPresentationFact {
   label: string;
   value: string;
   detail?: string;
+  primary?: boolean;
 }
 
 export interface SharedPresentationPart {
@@ -92,6 +93,7 @@ export interface SharedPresentationPart {
 export interface SharedPresentationMap {
   channel: string;
   label: string;
+  primary?: boolean;
   part?: string;
   material?: string;
   tiles?: number[];
@@ -128,8 +130,6 @@ export interface SharedPresentation {
   title?: string;
   subtitle?: string;
   summary?: string;
-  status?: { label: string; tone: "approved" | "review" | "draft" | "final" };
-  tags: string[];
   hero?: SharedPresentationMedia;
   media: SharedPresentationMedia[];
   facts: SharedPresentationFact[];

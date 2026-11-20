@@ -229,15 +229,10 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
       </div>
       <div className="drawer-scroll">
         <h2 className="drawer-title">{presentation?.title ?? asset.name}</h2>
-        <p className="drawer-id">{asset.categories.join(" / ")}</p>
-        {presentation && <div className="shared-presentation-headline">
-          {presentation.status && <span className={`shared-presentation-status ${presentation.status.tone}`}>{presentation.status.label}</span>}
-          {presentation.subtitle && <p className="shared-presentation-subtitle">{presentation.subtitle}</p>}
-          {presentation.summary && <p className="shared-presentation-summary">{presentation.summary}</p>}
-          {presentation.tags.length > 0 && <div className="shared-presentation-tags">
-            {presentation.tags.map(tag => <span key={tag}>{tag}</span>)}
-          </div>}
-        </div>}
+        {presentation?.subtitle
+          ? <p className="shared-presentation-subtitle">{presentation.subtitle}</p>
+          : <p className="drawer-id">{asset.categories.join(" / ")}</p>}
+        {presentation?.summary && <p className="shared-presentation-summary">{presentation.summary}</p>}
         {presentationError && <p className="hint" role="status">Presentation details could not be read: {presentationError}</p>}
         {!hdrAsset && <div className="button-row horizontal shared-preview-modes" role="group" aria-label="Local asset preview">
           <button type="button" className={view === "model" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "model"} onClick={() => setView("model")}>3D</button>
@@ -305,45 +300,12 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
           {hdr && <div><span>Dimensions</span><strong>{hdr.width} × {hdr.height}</strong></div>}
           <div><span>Modified</span><strong>{new Date(asset.mtime).toLocaleDateString()}</strong></div>
         </div>
-        {facts && <section className="shared-organization">
-          <div className="shared-section-heading"><h3>Measured source facts</h3>
-            <button type="button" className="text-btn" disabled={factsLoading} onClick={() => setInspectionRequest(value => value + 1)}>{factsLoading ? "Inspecting…" : "Refresh facts"}</button>
-          </div>
-          <p className="hint">Read from the source file · {new Date(facts.inspectedAt).toLocaleString()}
-            {facts.model?.status === "limited" ? " · Partial inspection" : facts.model?.status === "unsupported" ? " · Format inspection unavailable" : ""}</p>
-          <div className="technical-grid">
-            {facts.image && <>
-              <div><span>Pixel dimensions</span><strong>{facts.image.width} × {facts.image.height}</strong></div>
-              <div><span>Projection hint</span><strong>{facts.image.projectionHint === "equirectangular" ? "2:1 panorama candidate" : "Flat / other aspect"}</strong></div>
-              <div><span>Pixel type</span><strong>{facts.image.format === "hdr" ? "RGBE shared exponent" : [...new Set(facts.image.channels.map(channel => channel.type.toUpperCase()))].join(", ") || "Unknown"}</strong></div>
-              {facts.image.compression && <div><span>Compression</span><strong>{facts.image.compression}</strong></div>}
-              {facts.image.views.length > 0 && <div><span>Views</span><strong>{facts.image.views.join(", ")}</strong></div>}
-            </>}
-            {facts.model && <>
-              {facts.model.geometryCount !== undefined && <div><span>Stored mesh geometries</span><strong>{facts.model.geometryCount.toLocaleString()}</strong></div>}
-              {facts.model.sourceUnits && <div><span>Metres per source unit</span><strong>{facts.model.sourceUnits.metresPerUnit.toLocaleString(undefined, { maximumSignificantDigits: 8 })}</strong></div>}
-              {facts.model.vertices !== null && <div><span>Stored vertices</span><strong>{facts.model.vertices.toLocaleString()}</strong></div>}
-              {facts.model.triangles !== null && <div><span>Stored triangles</span><strong>{facts.model.triangles.toLocaleString()}</strong></div>}
-              {facts.model.materials !== null && <div><span>Materials</span><strong>{facts.model.materials.toLocaleString()}</strong></div>}
-              {facts.model.textureImages !== null && <div><span>Image sources</span><strong>{facts.model.textureImages.toLocaleString()}</strong></div>}
-              {facts.model.normals !== null && <div><span>Stored normals</span><strong>{facts.model.normals.toLocaleString()}</strong></div>}
-              {facts.model.uvCoordinates !== null && <div><span>UV coordinates</span><strong>{facts.model.uvCoordinates.toLocaleString()}</strong></div>}
-              {facts.model.bounds && <div><span>Mesh-local size</span><strong>{facts.model.bounds.max.map((max, axis) =>
-                (max - facts.model!.bounds!.min[axis]).toLocaleString(undefined, { maximumFractionDigits: 3 })).join(" × ")}
-                {facts.model.bounds.unit === "metres" ? " m" : " source units"}</strong></div>}
-            </>}
-            {facts.lod !== undefined && <div><span>Filename LOD</span><strong>LOD{facts.lod}</strong></div>}
-            {facts.version && <div><span>Filename version</span><strong>v{facts.version}</strong></div>}
-          </div>
-          {facts.model?.mapTypes.length ? <div><span className="hint">Declared map channels</span><p>{facts.model.mapTypes.map(type => mapNames[type] ?? type).join(", ")}</p></div> : null}
-          {facts.model?.materialLibraries.length ? <details><summary>{facts.model.materialLibraries.length} referenced material libraries</summary>
-            <ul className="shared-resource-list">{facts.model.materialLibraries.map((name, index) => <li key={`${name}-${index}`}><span>{name}</span></li>)}</ul>
-          </details> : null}
-          {facts.image?.channels.length ? <details><summary>{facts.image.channels.length} image channels</summary>
-            <p className="hint">{facts.image.channels.map(channel => `${channel.name} (${channel.type})`).join(", ")}</p>
-          </details> : null}
-          {facts.notes.map((note, index) => <p className="hint" key={index}>{note}</p>)}
-        </section>}
+        {facts && (prepared
+          ? <details className="shared-technical-disclosure">
+            <summary>Technical details</summary>
+            <SourceFactsSection facts={facts} loading={factsLoading} onRefresh={() => setInspectionRequest(value => value + 1)} />
+          </details>
+          : <SourceFactsSection facts={facts} loading={factsLoading} onRefresh={() => setInspectionRequest(value => value + 1)} />)}
         {!facts && factsLoading && <p className="hint" role="status">Inspecting source file…</p>}
         {factsError && <div className="shared-inline-error" role="status"><p className="hint">{factsError}</p>
           <button type="button" className="text-btn" disabled={factsLoading} onClick={() => setInspectionRequest(value => value + 1)}>Retry inspection</button></div>}
@@ -362,16 +324,18 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
           {visibleVariants.length > 100 && <p className="hint">Showing 100 of {visibleVariants.length}. Narrow the variant search to see other files.</p>}
         </section>}
         {variantsError && <p className="hint" role="status">Could not load nearby variants: {variantsError}</p>}
-        {organizationReady && <form className="shared-organization" onSubmit={event => { event.preventDefault(); void saveOrganization(); }}>
-          <h3>Organize</h3>
-          <label>Tags <input value={organization.tags} placeholder="Comma-separated tags" maxLength={2400}
-            onChange={event => setOrganization({ ...organization, tags: event.target.value })} /></label>
-          <label>Collections <input value={organization.collections} placeholder="Comma-separated collections" maxLength={2400}
-            onChange={event => setOrganization({ ...organization, collections: event.target.value })} /></label>
-          <label>Notes <textarea value={organization.notes} maxLength={4000} rows={4}
-            onChange={event => setOrganization({ ...organization, notes: event.target.value })} /></label>
-          <button type="submit" className="btn btn-ghost" disabled={organizationBusy}>{organizationBusy ? "Saving…" : "Save organization"}</button>
-        </form>}
+        {organizationReady && <details className="shared-organize-disclosure">
+          <summary>Organize</summary>
+          <form className="shared-organization" onSubmit={event => { event.preventDefault(); void saveOrganization(); }}>
+            <label>Tags <input value={organization.tags} placeholder="Comma-separated tags" maxLength={2400}
+              onChange={event => setOrganization({ ...organization, tags: event.target.value })} /></label>
+            <label>Collections <input value={organization.collections} placeholder="Comma-separated collections" maxLength={2400}
+              onChange={event => setOrganization({ ...organization, collections: event.target.value })} /></label>
+            <label>Notes <textarea value={organization.notes} maxLength={4000} rows={4}
+              onChange={event => setOrganization({ ...organization, notes: event.target.value })} /></label>
+            <button type="submit" className="btn btn-ghost" disabled={organizationBusy}>{organizationBusy ? "Saving…" : "Save organization"}</button>
+          </form>
+        </details>}
       </div>
       <div className="drawer-footer">
         <button type="button" className="btn btn-ghost" onClick={() => void run("reveal")}>Reveal file</button>
@@ -384,4 +348,50 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     </aside>
     {viewerItems.length > 0 && <ImageViewer items={viewerItems} index={viewerIndex} onIndex={setViewerIndex} onClose={() => setViewerItems([])} loadHdrSource={loadHdrSource} />}
   </>;
+}
+
+function SourceFactsSection({ facts, loading, onRefresh }: {
+  facts: SharedFileFacts;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return <section className="shared-organization">
+    <div className="shared-section-heading"><h3>Measured source facts</h3>
+      <button type="button" className="text-btn" disabled={loading} onClick={onRefresh}>{loading ? "Inspecting…" : "Refresh facts"}</button>
+    </div>
+    <p className="hint">Read from the source file · {new Date(facts.inspectedAt).toLocaleString()}
+      {facts.model?.status === "limited" ? " · Partial inspection" : facts.model?.status === "unsupported" ? " · Format inspection unavailable" : ""}</p>
+    <div className="technical-grid">
+      {facts.image && <>
+        <div><span>Pixel dimensions</span><strong>{facts.image.width} × {facts.image.height}</strong></div>
+        <div><span>Projection hint</span><strong>{facts.image.projectionHint === "equirectangular" ? "2:1 panorama candidate" : "Flat / other aspect"}</strong></div>
+        <div><span>Pixel type</span><strong>{facts.image.format === "hdr" ? "RGBE shared exponent" : [...new Set(facts.image.channels.map(channel => channel.type.toUpperCase()))].join(", ") || "Unknown"}</strong></div>
+        {facts.image.compression && <div><span>Compression</span><strong>{facts.image.compression}</strong></div>}
+        {facts.image.views.length > 0 && <div><span>Views</span><strong>{facts.image.views.join(", ")}</strong></div>}
+      </>}
+      {facts.model && <>
+        {facts.model.geometryCount !== undefined && <div><span>Stored mesh geometries</span><strong>{facts.model.geometryCount.toLocaleString()}</strong></div>}
+        {facts.model.sourceUnits && <div><span>Metres per source unit</span><strong>{facts.model.sourceUnits.metresPerUnit.toLocaleString(undefined, { maximumSignificantDigits: 8 })}</strong></div>}
+        {facts.model.vertices !== null && <div><span>Stored vertices</span><strong>{facts.model.vertices.toLocaleString()}</strong></div>}
+        {facts.model.triangles !== null && <div><span>Stored triangles</span><strong>{facts.model.triangles.toLocaleString()}</strong></div>}
+        {facts.model.materials !== null && <div><span>Materials</span><strong>{facts.model.materials.toLocaleString()}</strong></div>}
+        {facts.model.textureImages !== null && <div><span>Image sources</span><strong>{facts.model.textureImages.toLocaleString()}</strong></div>}
+        {facts.model.normals !== null && <div><span>Stored normals</span><strong>{facts.model.normals.toLocaleString()}</strong></div>}
+        {facts.model.uvCoordinates !== null && <div><span>UV coordinates</span><strong>{facts.model.uvCoordinates.toLocaleString()}</strong></div>}
+        {facts.model.bounds && <div><span>Mesh-local size</span><strong>{facts.model.bounds.max.map((max, axis) =>
+          (max - facts.model!.bounds!.min[axis]).toLocaleString(undefined, { maximumFractionDigits: 3 })).join(" × ")}
+          {facts.model.bounds.unit === "metres" ? " m" : " source units"}</strong></div>}
+      </>}
+      {facts.lod !== undefined && <div><span>Filename LOD</span><strong>LOD{facts.lod}</strong></div>}
+      {facts.version && <div><span>Filename version</span><strong>v{facts.version}</strong></div>}
+    </div>
+    {facts.model?.mapTypes.length ? <div><span className="hint">Declared map channels</span><p>{facts.model.mapTypes.map(type => mapNames[type] ?? type).join(", ")}</p></div> : null}
+    {facts.model?.materialLibraries.length ? <details><summary>{facts.model.materialLibraries.length} referenced material libraries</summary>
+      <ul className="shared-resource-list">{facts.model.materialLibraries.map((name, index) => <li key={`${name}-${index}`}><span>{name}</span></li>)}</ul>
+    </details> : null}
+    {facts.image?.channels.length ? <details><summary>{facts.image.channels.length} image channels</summary>
+      <p className="hint">{facts.image.channels.map(channel => `${channel.name} (${channel.type})`).join(", ")}</p>
+    </details> : null}
+    {facts.notes.map((note, index) => <p className="hint" key={index}>{note}</p>)}
+  </section>;
 }

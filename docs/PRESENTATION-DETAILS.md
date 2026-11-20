@@ -32,21 +32,27 @@ ignores the manifest, media and other supporting files.
 
 ## What it enables
 
-- A status headline, subtitle, summary and tags above the preview.
+- A concise identity line and short description above the preview. There is no
+  approval badge, review workflow or tag cloud in the artist-facing view.
 - A **Turntable** view when `hero` is a video, beside 3D, Render and Resources.
-- **At a glance** facts for identity, source counts, dimensions, publish
-  versions and review state.
-- **Media** for authored stills, contact sheets, reference frames and detail
-  crops, with fullscreen navigation.
+- **Specs**: four high-value facts chosen by the manifest author, with the rest
+  behind a closed **More specifications** disclosure.
 - **Anatomy** for named parts, face/vertex counts, material slots, UDIM tiles
-  and per-part review notes.
-- **Texture set** cards with channel, tile list, resolution, format, version,
-  preview image and per-tile thumbnails.
-- **Version history** for source, model, texture, lookdev and presentation
-  milestones, with a current marker.
-- **Sources** and **credits** for provenance, plus curator notes.
+  and part thumbnails. Notes stay in the row tooltip instead of adding a
+  paragraph to every part.
+- **Textures** cards for the primary channels, with resolution, format, version
+  and per-tile thumbnails. Secondary channels sit behind a closed disclosure.
+- **Media** for authored stills, a contact sheet, a reference frame and detail
+  crops, with fullscreen navigation.
+- **Version history**, **Source & credits** and **notes** behind closed
+  disclosures. They are available for provenance work without competing with
+  the asset.
 - A collapsed list of skipped media or map entries, so a broken relative path is
   visible without hiding the rest of the page.
+
+The rule is selection, not omission. The manifest can carry more than the page
+shows; `primary: true` marks the facts and maps that deserve the first screen.
+The rest remains one click away.
 
 ## Safety and portability
 
@@ -76,15 +82,13 @@ All fields are optional except `schemaVersion`. Unknown fields are ignored.
 | --- | --- | --- |
 | `schemaVersion` | number | Must be `1`. |
 | `title` | string | Optional display title. The drawer falls back to the indexed asset name. |
-| `subtitle` | string | One line below the title; useful for variant, finish and review version. |
-| `summary` | string | Short paragraph. Plain text only. |
-| `status` | object | `{ "label": string, "tone": "approved" \| "review" \| "draft" \| "final" }`. |
-| `tags` | string[] | Up to 16 short tags, deduplicated. |
+| `subtitle` | string | One line below the title; useful for variant or finish. |
+| `summary` | string | Short description, clamped to two lines in the drawer. Plain text only. |
 | `hero` | media | Image or video. A video adds the **Turntable** view. |
 | `media` | media[] | Up to 24 image or video entries; images appear in the Media gallery. |
-| `facts` | fact[] | Up to 24 `{ label, value, detail? }` entries. |
-| `parts` | part[] | Up to 64 named parts. `faces`, `vertices`, `material`, `tile`, `color`, `preview` and `note` are optional. |
-| `maps` | map[] | Up to 64 texture channels. `tiles`, `resolution`, `format`, `version`, `preview`, `tilePreviews` and `note` are optional. |
+| `facts` | fact[] | Up to 24 `{ label, value, detail?, primary? }` entries. `primary` marks the first-screen specs. |
+| `parts` | part[] | Up to 64 named parts. `faces`, `vertices`, `material`, `tile`, `color`, `preview` and `note` are optional. `note` is shown as a tooltip. |
+| `maps` | map[] | Up to 64 texture channels. `primary` marks the visible cards; `tiles`, `resolution`, `format`, `version`, `preview`, `tilePreviews` and `note` are optional. |
 | `versions` | version[] | Up to 24 `{ label, kind?, date?, note?, current? }` milestones. |
 | `links` | link[] | Up to 16 `{ label, value?, href?, note? }` source notes. `href` must be HTTPS. |
 | `credits` | credit[] | Up to 12 `{ role, name }` entries. |
@@ -113,12 +117,24 @@ optional; if omitted, the first gallery image becomes the poster. Width, height
 and duration are display metadata; OpenBridge does not decode the file to
 verify them.
 
+### Choosing the first screen
+
+Mark at most four facts and roughly four to six maps as `primary`. The drawer
+shows those first. If a manifest has no primary marks, it falls back to the
+first four facts and the full map list, so small hand-authored sidecars still
+work. Keep the primary values short enough to scan in one pass: counts, physical
+size, texture set, real-time cost. Primary facts render as compact label/value
+stats, so keep them to one line; `detail` text is only shown for secondary
+facts. Put project codes, source applications, publish dates and review history
+in the secondary facts or the closed disclosures.
+
 ### Map entry
 
 ```json
 {
   "channel": "basecolor",
-  "label": "Base color (DIF)",
+  "label": "Base color",
+  "primary": true,
   "part": "All parts",
   "tiles": [1001, 1002, 1003, 1004, 1005, 1006],
   "resolution": "4096 × 4096",
@@ -145,10 +161,8 @@ other auxiliary maps can use a free-form channel such as `brand`.
 {
   "schemaVersion": 1,
   "title": "Studio prop",
-  "subtitle": "Hero variant · lookdev v003",
-  "summary": "Prepared review copy with named parts, a published UDIM set and an approved turntable.",
-  "status": { "label": "Approved", "tone": "approved" },
-  "tags": ["prop", "hero", "studio"],
+  "subtitle": "Hero variant",
+  "summary": "Prepared review copy with named parts and a published UDIM texture set.",
   "hero": {
     "kind": "video",
     "src": "media/turntable.mp4",
@@ -161,9 +175,9 @@ other auxiliary maps can use a free-form channel such as `brand`.
     { "kind": "image", "src": "media/stills/detail.jpg", "label": "Detail crop" }
   ],
   "facts": [
-    { "label": "Geometry", "value": "6 parts · 50,740 source faces", "detail": "Real-time GLB count is listed separately" },
-    { "label": "Dimensions", "value": "27.8 × 68.1 × 3.3 cm", "detail": "Y-up · centimetres" },
-    { "label": "Texture set", "value": "7 channels · 6 UDIM tiles", "detail": "4096 × 4096 · 16-bit EXR" }
+    { "label": "Geometry", "value": "6 parts · 50,740 faces", "primary": true },
+    { "label": "Size", "value": "27.8 × 68.1 × 3.3 cm", "primary": true },
+    { "label": "Textures", "value": "7 × 6 UDIM · 4K", "primary": true }
   ],
   "parts": [
     { "name": "frame", "label": "Frame", "faces": 1840, "vertices": 918, "material": "phong1", "tile": 1005, "color": "#e05a8a", "preview": "media/anatomy/frame.png", "note": "Outer frame." },
@@ -172,7 +186,8 @@ other auxiliary maps can use a free-form channel such as `brand`.
   "maps": [
     {
       "channel": "basecolor",
-      "label": "Base color (DIF)",
+      "label": "Base color",
+      "primary": true,
       "part": "All parts",
       "tiles": [1001, 1002],
       "resolution": "4096 × 4096",
@@ -202,6 +217,8 @@ other auxiliary maps can use a free-form channel such as `brand`.
 ## Preparing useful media
 
 - Use the authored cover as the visual anchor, not a generic screenshot.
+- Keep the visible set small: four primary facts, five primary texture channels,
+  and one row of media. Move the rest behind disclosures.
 - Export the turntable as H.264 MP4 at 1080p with `-movflags +faststart` and a
   matching poster frame. A four-second 1080p reel can stay below 1 MiB for a
   mostly static studio scene.
@@ -228,14 +245,15 @@ Use the strongest available evidence and label its source:
 | Authored comp or turntable | Hero video, cover, stills, contact sheet. |
 | Published model version | Anatomy counts, material slots, source units, bounds. |
 | Published texture manifests | Channel list, UDIM tiles, resolution, bit depth, version. |
-| Saved lookdev or render scene | Lookdev credit, frame size, colour space, review date. |
+| Saved lookdev or render scene | Frame size, colour space, source task. |
 | Publish metadata | Authoring application, source task, publish date, hashes. |
 | Nearby files or names alone | Keep as an unverified note, not a fact. |
 
 Do not turn a filename match into a material assignment, and do not claim a
 physical size that the model does not declare. When the real-time GLB is
 modified for review (for example a subdivided grip for baked displacement), say
-so in the relevant part note and keep the source count visible.
+so in the relevant part note (shown as a tooltip) and keep the source count
+visible.
 
 ## Testing
 

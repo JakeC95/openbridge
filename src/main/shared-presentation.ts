@@ -19,9 +19,7 @@ const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 512 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"]);
 const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".m4v"]);
-const STATUS_TONES = new Set<string>(["approved", "review", "draft", "final"]);
 const LIMITS = {
-  tags: 16,
   media: 24,
   facts: 24,
   parts: 64,
@@ -214,6 +212,7 @@ async function parseMap(
   return {
     channel,
     label,
+    primary: entry.primary === true,
     part: cleanText(entry.part, 120),
     material: cleanText(entry.material, 120),
     tiles: tiles.length ? tiles : undefined,
@@ -234,7 +233,7 @@ function parseFacts(value: unknown): SharedPresentationFact[] {
     const label = entry ? cleanText(entry.label, 80) : undefined;
     const factValue = entry ? cleanText(entry.value, 600) : undefined;
     if (!label || !factValue) continue;
-    facts.push({ label, value: factValue, detail: cleanText(entry!.detail, 600) });
+    facts.push({ label, value: factValue, detail: cleanText(entry!.detail, 600), primary: entry!.primary === true });
   }
   return facts;
 }
@@ -374,19 +373,11 @@ export async function readSharedPresentation(assetPath: string): Promise<SharedP
   }
   const parts = await parseParts(manifest.parts, folder, folder, warnings);
 
-  const status = record(manifest.status);
-  const statusLabel = status ? cleanText(status.label, 80) : undefined;
-  const statusTone = status && typeof status.tone === "string" && STATUS_TONES.has(status.tone)
-    ? status.tone as "approved" | "review" | "draft" | "final"
-    : "draft";
-
   const presentation: SharedPresentation = {
     schemaVersion: 1,
     title: cleanText(manifest.title, 120),
     subtitle: cleanText(manifest.subtitle, 200),
     summary: cleanText(manifest.summary, 1600),
-    status: statusLabel ? { label: statusLabel, tone: statusTone } : undefined,
-    tags: cleanStringList(manifest.tags, LIMITS.tags, 40),
     hero: hero ?? undefined,
     media,
     facts: parseFacts(manifest.facts),
@@ -400,7 +391,7 @@ export async function readSharedPresentation(assetPath: string): Promise<SharedP
   };
 
   const hasContent = Boolean(presentation.title || presentation.subtitle || presentation.summary ||
-    presentation.status || presentation.tags.length || presentation.hero || presentation.media.length ||
+    presentation.hero || presentation.media.length ||
     presentation.facts.length || presentation.parts.length || presentation.maps.length ||
     presentation.versions.length || presentation.links.length || presentation.credits.length ||
     presentation.notes.length);

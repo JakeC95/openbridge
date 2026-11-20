@@ -23,10 +23,10 @@ for how to register existing model and HDRI roots, test the shared workflows and
 
 ## 1.9.0 curated presentation details
 
-- Prepared presentations can carry an optional `presentation.json` sidecar. It adds a review
-  status, subtitle/summary/tags, authored stills and a turntable video, named parts with source
-  counts, texture channel cards with previews and UDIM tiles, version history, source notes and
-  credits.
+- Prepared presentations can carry an optional `presentation.json` sidecar. It adds a concise
+  subtitle and description, authored stills and a turntable video, four primary specs, named
+  parts with source counts, primary texture cards with previews and UDIM tiles, and collapsed
+  version, source and credit disclosures.
 - The reader is bounded and read-only: 256 KiB manifest cap, relative media paths only,
   symlink-aware containment inside the presentation folder, image/video size limits, HTTPS-only
   external links and no HTML. Missing or unsafe entries become collapsed warnings instead of

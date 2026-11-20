@@ -24,8 +24,8 @@ to Library with resumable indexing, previews, local organization and batch copy.
 adds bounded source metadata inspection and keeps Linux SQLite state on local storage when
 the profile is on a network mount. Version 1.8.0 adds shared material-resource browsing,
 binary FBX source facts, generated geometry/HDR thumbnails and inspection of the full matching file scope.
-Version 1.9.0 adds optional curated presentation details for prepared assets: review status,
-turntable video, anatomy, texture cards, version history and provenance.
+Version 1.9.0 adds optional curated presentation details for prepared assets: concise specs,
+turntable video, anatomy, primary texture cards and collapsed provenance.
 
 Settings, saved sessions and local state live outside the portable folder. Windows uses
 `%APPDATA%\openbridge`. Linux uses `${XDG_CONFIG_HOME:-$HOME/.config}/OpenBridge`; SQLite databases move to persistent

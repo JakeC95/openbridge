@@ -106,10 +106,11 @@ not run the source scene or its scripts.
 
 A prepared folder can also include an optional `presentation.json` sidecar beside
 the GLB and cover. The sidecar supplies curated context that the GLB cannot carry:
-a review status, authored stills and turntable video, named mesh parts, texture
-channel cards, version history, provenance and credits. It is read-only, uses
-only relative media inside the presentation folder and never replaces measured
-source facts or dependency inspection. See
+a concise subtitle and description, authored stills and turntable video, named
+mesh parts, primary texture channel cards, and collapsed version, source and
+credit disclosures. It is read-only, uses only relative media inside the
+presentation folder and never replaces measured source facts or dependency
+inspection. See
 [prepared presentation details](PRESENTATION-DETAILS.md) for the schema, safety
 rules and media guidance.
 
