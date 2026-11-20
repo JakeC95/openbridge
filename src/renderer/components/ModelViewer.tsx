@@ -1461,10 +1461,15 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         });
         for (const material of replacedMaterials) if (!retainedMaterials.has(material)) material.dispose();
         const channelSet = new Set<ModelMapType>(manifest.textures.map(texture => texture.mapType));
+        const embedded = manifest.provider === "shared" && !manifest.availableQualities.length;
+        const decodedTextures = new Set(sidecars);
         for (const entry of state.inspectionEntries) {
           for (const slot of entry.slots) {
             for (const channel of MAP_CHANNELS) {
-              if (channelTextureFor(slot, channel.type)) channelSet.add(channel.type);
+              const texture = channelTextureFor(slot, channel.type);
+              if (!texture) continue;
+              channelSet.add(channel.type);
+              if (embedded) decodedTextures.add(texture.texture);
             }
           }
         }
@@ -1472,8 +1477,8 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
           .filter(channel => channelSet.has(channel.type))
           .map(channel => channel.type);
         setAvailableChannels(orderedChannels);
-        if (surface) {
-          const sizes = [...sidecars].map(texture => {
+        if (surface || embedded) {
+          const sizes = [...decodedTextures].map(texture => {
             const image = texture.image as { width?: number; height?: number } | null;
             return Math.max(image?.width ?? 0, image?.height ?? 0);
           })
@@ -1667,7 +1672,9 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
   }, [loading, manifest.surface, surfaceNormalDetail]);
 
   const environmentDegrees = Math.round((((environmentAngle * 180) / Math.PI) % 360 + 360) % 360);
-  const qualityLabel = useMemo(() => modelQualityLabel(quality), [quality]);
+  const fixedTextureQuality = manifest.provider === "shared" && !manifest.availableQualities.length;
+  const qualityLabel = fixedTextureQuality ? "" : modelQualityLabel(quality);
+  const displayedQuality = manifest.surface || fixedTextureQuality ? decodedSizes : qualityLabel;
   const meshLabel = useMemo(() => {
     if (manifest.surface) return "Sphere";
     const mesh = chooseMesh(manifest, lod);
@@ -1698,11 +1705,11 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
         onKeyDown={event => { if (onExpand && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onExpand(); } }}
         title={onExpand ? "Open full-screen 3D viewer" : undefined}
       />
-      {loading && <div className="model-viewer-status"><span className="spinner" /><strong>Loading {qualityLabel} textures…</strong><span>{meshLabel}</span></div>}
+      {loading && <div className="model-viewer-status"><span className="spinner" /><strong>{qualityLabel ? `Loading ${qualityLabel} textures…` : "Loading 3D preview…"}</strong><span>{meshLabel}</span></div>}
       {!loading && pendingLabel && <div className="model-viewer-status switch" role="status" aria-live="polite"><span className="spinner" /><strong>{pendingLabel}</strong><span>Downloading and preparing the selected files…</span></div>}
       {error && <div className="model-viewer-status error" role="alert"><strong>3D preview unavailable</strong><span>{error}</span><button type="button" className="text-btn" onClick={() => { setError(""); setLoading(true); if (stateRef.current) setReloadKey(value => value + 1); else { setGraphicsRetry(value => value + 1); setReloadKey(value => value + 1); } }}>Retry</button></div>}
       {fullscreen && <div className="model-viewer-chrome">
-        <div className="model-viewer-chrome-head"><div><strong>{manifest.name}</strong><span>{meshLabel} · {manifest.surface ? decodedSizes || "Texture preview" : qualityLabel}</span></div><button type="button" className="icon-btn model-viewer-close" aria-label="Close 3D viewer" data-modal-autofocus onClick={onClose}><CloseIcon /></button></div>
+        <div className="model-viewer-chrome-head"><div><strong>{manifest.name}</strong><span>{[meshLabel, displayedQuality].filter(Boolean).join(" · ")}</span></div><button type="button" className="icon-btn model-viewer-close" aria-label="Close 3D viewer" data-modal-autofocus onClick={onClose}><CloseIcon /></button></div>
         <div className="model-viewer-chrome-footer">
         {footerControls}
         <div className="model-viewer-toolbar">
@@ -2051,7 +2058,7 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
 
   const qualities = manifest?.availableQualities.length ? manifest.availableQualities : [];
   const lods = manifest?.availableLods ?? [];
-  const qualityOptions = qualities.length ? qualities : [1024];
+  const qualityOptions = qualities.length || provider === "shared" ? qualities : [1024];
 
   const openFullscreen = useCallback((): void => {
     if (!manifest || loading) return;
@@ -2110,7 +2117,7 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
             pendingLabel={pendingSwitch?.target === "inline" && pendingSwitch.visible ? pendingSwitch.label : ""}
           />
           <div className="model-preview-controls">
-            <label>Textures <select className="native-select" value={switchError?.target === "inline" ? quality : qualityChoice} onChange={event => { const value = Number(event.target.value); setQualityChoice(value); void request(value, lod, "inline", textureSwitchLabel(value)); }}>{qualityOptions.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
+            {qualityOptions.length > 0 && <label>Textures <select className="native-select" value={switchError?.target === "inline" ? quality : qualityChoice} onChange={event => { const value = Number(event.target.value); setQualityChoice(value); void request(value, lod, "inline", textureSwitchLabel(value)); }}>{qualityOptions.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>}
             {lods.length > 1 && <label>Mesh <select className="native-select" value={String(switchError?.target === "inline" ? lod : lodChoice)} onChange={event => { const raw = event.target.value; const value: ModelLodMode = raw === "lowest" || raw === "highest" ? raw : Number(raw); setLodChoice(value); void request(quality, value, "inline", meshSwitchLabel(value)); }}><option value="lowest">Lowest</option><option value="highest">Highest</option>{lods.map(value => <option key={value} value={String(value)}>{modelLodLabel(value)}</option>)}</select></label>}
             <button type="button" className="text-btn" disabled={loading} onClick={openFullscreen}>Full screen</button>
           </div>
@@ -2125,13 +2132,13 @@ export function ModelPreviewPanel({ assetId, provider, name, path, type, isPlant
       {fullscreen && createPortal(
         <div ref={fullscreenDialog} tabIndex={-1} className="model-viewer-overlay" role="dialog" aria-modal="true" aria-label={`${name} 3D viewer`}>
           <div className="model-viewer-fullscreen-card">
-            {fullscreenManifest ? <ModelViewer fullscreen manifest={fullscreenManifest} quality={fullscreenQuality} lod={fullscreenLod} onClose={() => closeFullscreen()} pendingLabel={pendingSwitch?.target === "fullscreen" && pendingSwitch.visible ? pendingSwitch.label : ""} footerControls={<div className="model-viewer-quality-bar">
+            {fullscreenManifest ? <ModelViewer fullscreen manifest={fullscreenManifest} quality={fullscreenQuality} lod={fullscreenLod} onClose={() => closeFullscreen()} pendingLabel={pendingSwitch?.target === "fullscreen" && pendingSwitch.visible ? pendingSwitch.label : ""} footerControls={(onMode || qualityOptions.length > 0 || lods.length > 1 || autoQualityNote || switchError?.target === "fullscreen") && <div className="model-viewer-quality-bar">
               {onMode && <div className="preview-mode-switch" role="group" aria-label="Preview mode">
                 <button type="button" onClick={() => { closeFullscreen(false); onMode("render"); }}>Render</button>
                 <button type="button" onClick={() => { closeFullscreen(false); onMode("maps"); }}>Maps</button>
                 <button type="button" className="active" aria-pressed="true">3D</button>
               </div>}
-              <label>Textures <select className="native-select" value={switchError?.target === "fullscreen" ? fullscreenQuality : fullscreenQualityChoice} onChange={event => { const value = Number(event.target.value); setAutoQualityNote(""); setFullscreenQualityChoice(value); void request(value, fullscreenLod, "fullscreen", textureSwitchLabel(value)); }}>{qualityOptions.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>
+              {qualityOptions.length > 0 && <label>Textures <select className="native-select" value={switchError?.target === "fullscreen" ? fullscreenQuality : fullscreenQualityChoice} onChange={event => { const value = Number(event.target.value); setAutoQualityNote(""); setFullscreenQualityChoice(value); void request(value, fullscreenLod, "fullscreen", textureSwitchLabel(value)); }}>{qualityOptions.map(value => <option key={value} value={value}>{modelQualityLabel(value)}</option>)}</select></label>}
               {lods.length > 1 && <label>Mesh <select className="native-select" value={String(switchError?.target === "fullscreen" ? fullscreenLod : fullscreenLodChoice)} onChange={event => { const raw = event.target.value; const value: ModelLodMode = raw === "lowest" || raw === "highest" ? raw : Number(raw); setFullscreenLodChoice(value); void request(fullscreenQuality, value, "fullscreen", meshSwitchLabel(value)); }}><option value="lowest">Lowest</option><option value="highest">Highest</option>{lods.map(value => <option key={value} value={String(value)}>{modelLodLabel(value)}</option>)}</select></label>}
               {autoQualityNote && <span className="model-viewer-quality-note">{autoQualityNote}</span>}
               {renderSwitchError("fullscreen")}

@@ -265,8 +265,19 @@ blender --background --factory-startup --disable-autoexec --python-exit-code 3 \
 Review the recipe against the lookdev shader bindings before baking. Keep the recipe local
 because it records source paths. The Blender tool requires the Alembic importer and glTF
 exporter. It checks the primary UV layer of each mesh, rejects faces that cross tile borders
-and packs referenced tiles into padded textures. It translates the reviewed diffuse,
-roughness, metalness, tangent normal, opacity and emission maps to portable material inputs.
-It uses Blender’s source color interpretation. It does not reproduce renderer shaders,
-separate bump layers, subdivision or animation. Save the GLB and an authored cover in a
-prepared collection, then compare them with the original lookdev render.
+and translates the reviewed diffuse, roughness, metalness, tangent normal, opacity and
+emission maps to portable material inputs.
+
+The default packs the tiles into padded, reduced-resolution textures. For close-up review,
+pass `--native-tiles` after the positional arguments. This retains matching square source
+tiles up to 4096 pixels per side as 8-bit PNG textures and creates a separate material for
+each tile. Check the GLB against the viewer’s 96 MiB limit before publishing it.
+
+Add `--displace OBJECT HEIGHT_METRES` with `--native-tiles` when the reviewed lookdev
+connects a zero-based height map to a specific single-tile mesh. This applies three
+Catmull–Clark subdivision levels and bakes the verified BMP map into the mesh. Use the
+exact imported object name and the displacement height converted to metres.
+
+The preview uses Blender’s source color interpretation and glTF lighting. Save the GLB
+and an authored cover in a prepared collection, then compare them with the original
+lookdev render.

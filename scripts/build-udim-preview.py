@@ -3,6 +3,7 @@
 Run in Blender background mode with --factory-startup --disable-autoexec.
 Arguments after --: recipe.json output.glb metres-per-unit normal-strength.
 """
+import argparse
 import hashlib
 import json
 import math
@@ -37,22 +38,33 @@ def file_hash(path):
     return digest.hexdigest()
 
 
-def load_tile(record, side, color=False):
+def verified_tile_path(record):
     path = Path(record["path"])
     if path.stat().st_size != record["bytes"]:
         raise ValueError(f"Tile size changed after inspection: {path.name}")
     if "sha256" in record and file_hash(path) != record["sha256"]:
         raise ValueError(f"Tile digest changed after inspection: {path.name}")
+    return path
+
+
+def load_tile(record, side, color=False, *, native=False):
+    path = verified_tile_path(record)
     image = bpy.data.images.load(str(path), check_existing=False)
     if not color:
         image.colorspace_settings.name = "Non-Color"
     width, height = image.size
     if min(width, height) < 1 or max(width, height) > 8192 or width * height > 32 * 1024 * 1024:
         raise ValueError(f"Image exceeds the preview budget: {path.name}")
+    if native and (width != height or width > 4096 or (side is not None and width != side)):
+        raise ValueError(f"Unsupported native tile dimensions: {path.name} ({width} × {height})")
     pixels = np.empty(width * height * 4, dtype=np.float32)
     image.pixels.foreach_get(pixels)
     bpy.data.images.remove(image)
     pixels = pixels.reshape(height, width, 4)
+    if native or (width == side and height == side):
+        np.nan_to_num(pixels, copy=False)
+        np.clip(pixels, 0, 1, out=pixels)
+        return pixels
     x = ((np.arange(side) + 0.5) * width / side - 0.5).clip(0, width - 1)
     y = ((np.arange(side) + 0.5) * height / side - 0.5).clip(0, height - 1)
     x0, y0 = x.astype(int), y.astype(int)
@@ -90,7 +102,7 @@ def discover_uvs(objects):
     return faces, sorted(tiles)
 
 
-def make_preview(recipe, output, scale, normal_strength):
+def make_preview(recipe, output, scale, normal_strength, native_tiles=False, displacement=None):
     root = Path(recipe["root"]).resolve(strict=True)
     output = output.resolve()
     if output.suffix.lower() != ".glb" or output.is_relative_to(root):
@@ -112,7 +124,7 @@ def make_preview(recipe, output, scale, normal_strength):
     maps = {}
     for texture in recipe["textures"]:
         tag = texture.get("mapTag")
-        if tag not in {"DIF", "MET", "RGH", "NRM", "EM", "OP"}:
+        if tag not in {"DIF", "MET", "RGH", "NRM", "EM", "OP"} and not (tag == "BMP" and displacement):
             continue
         if tag in maps:
             raise ValueError(f"More than one publish is referenced for {tag}.")
@@ -120,6 +132,11 @@ def make_preview(recipe, output, scale, normal_strength):
     if "DIF" not in maps or any(tile not in files for files in maps.values() for tile in tiles):
         raise ValueError("The material bindings do not cover the geometry's tiles.")
 
+    if native_tiles:
+        export_native_tiles(output, objects, faces, tiles, maps, normal_strength, displacement)
+        return
+    if displacement:
+        raise ValueError("Reviewed displacement is available with --native-tiles.")
     columns = math.ceil(math.sqrt(len(tiles)))
     rows = math.ceil(len(tiles) / columns)
     side, padding = (1024 if len(tiles) <= 9 else 768), 12
@@ -207,7 +224,144 @@ def make_preview(recipe, output, scale, normal_strength):
     print(f"Exported review GLB: {output.stat().st_size} bytes", flush=True)
 
 
-recipe_path, output_path, units, normal = sys.argv[sys.argv.index("--") + 1:]
-with open(recipe_path, encoding="utf8") as recipe_file:
+def export_native_tiles(output, objects, faces, tiles, maps, normal_strength, displacement):
+    """Use one material per tile to preserve source-resolution textures."""
+    materials = {}
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="openbridge-tiles-") as directory:
+        temporary = Path(directory)
+        for tile in tiles:
+            material = bpy.data.materials.new(f"Lookdev tile {tile}")
+            material.use_nodes = True
+            nodes, links = material.node_tree.nodes, material.node_tree.links
+            shader = nodes.get("Principled BSDF")
+
+            def make_image(name, array, data=False):
+                path = temporary / f"{name}-{tile}.png"
+                save_png(path, array)
+                image = bpy.data.images.load(str(path))
+                image.colorspace_settings.name = "Non-Color" if data else "sRGB"
+                return image
+
+            def link_image(image):
+                node = nodes.new("ShaderNodeTexImage")
+                node.image = image
+                return node
+
+            def rgb8(array, transfer=False):
+                if transfer:
+                    array = srgb(array)
+                return np.rint(array * 255).astype(np.uint8)
+
+            # The native variant retains the base-color source dimensions and
+            # refuses unexpected mixed image sizes instead of silently resizing.
+            base = rgb8(load_tile(maps["DIF"][tile], None, color=True, native=True)[:, :, :3], transfer=True)
+            height, width, _ = base.shape
+            alpha = rgb8(load_tile(maps["OP"][tile], width, native=True)[:, :, :1]) if "OP" in maps else None
+            with_alpha = alpha is not None and alpha.min() < 255
+            if with_alpha:
+                base = np.concatenate([base, alpha], axis=2)
+            color_node = link_image(make_image("Base", base))
+            links.new(color_node.outputs["Color"], shader.inputs["Base Color"])
+            if with_alpha:
+                links.new(color_node.outputs["Alpha"], shader.inputs["Alpha"])
+
+            packed = np.full((width, width, 3), 255, dtype=np.uint8)
+            for tag, channel, socket, default in [
+                ("RGH", 1, "Roughness", 0.5), ("MET", 2, "Metallic", 0.0)
+            ]:
+                if tag in maps:
+                    packed[:, :, channel] = rgb8(load_tile(maps[tag][tile], width, native=True)[:, :, 0])
+                else:
+                    packed[:, :, channel] = round(default * 255)
+                shader.inputs[socket].default_value = float(packed[0, 0, channel]) / 255
+            varying = [packed[:, :, channel].min() != packed[:, :, channel].max() for channel in (1, 2)]
+            if any(varying):
+                material_node = link_image(make_image("Material", packed, data=True))
+                channels = nodes.new("ShaderNodeSeparateColor")
+                links.new(material_node.outputs["Color"], channels.inputs["Color"])
+                for varies, channel, socket in zip(varying, ("Green", "Blue"), ("Roughness", "Metallic")):
+                    if varies:
+                        links.new(channels.outputs[channel], shader.inputs[socket])
+
+            if "NRM" in maps:
+                normal_pixels = rgb8(load_tile(maps["NRM"][tile], width, native=True)[:, :, :3])
+                normal = nodes.new("ShaderNodeNormalMap")
+                normal.inputs["Strength"].default_value = normal_strength
+                links.new(link_image(make_image("Normal", normal_pixels, data=True)).outputs["Color"], normal.inputs["Color"])
+                links.new(normal.outputs["Normal"], shader.inputs["Normal"])
+            if "EM" in maps:
+                emission = rgb8(load_tile(maps["EM"][tile], width, color=True, native=True)[:, :, :3], transfer=True)
+                if emission.any():
+                    links.new(link_image(make_image("Emission", emission)).outputs["Color"], shader.inputs["Emission Color"])
+                    shader.inputs["Emission Strength"].default_value = 1.0
+
+            materials[tile] = material
+            print(f"Prepared native tile {tile} at {width} × {height}", flush=True)
+
+        tile_by_polygon = [face[3] for face in faces]
+        offset = 0
+        selected_displacement = False
+        for obj in objects:
+            uv = obj.data.uv_layers.active
+            used_tiles = tile_by_polygon[offset:offset + len(obj.data.polygons)]
+            offset += len(used_tiles)
+            obj.data.materials.clear()
+            slots = sorted(set(used_tiles))
+            for tile in slots:
+                obj.data.materials.append(materials[tile])
+            for poly, tile in zip(obj.data.polygons, used_tiles):
+                poly.material_index = slots.index(tile)
+                for loop_index in poly.loop_indices:
+                    coord = uv.data[loop_index].uv
+                    coord.x = min(1, max(0, coord.x - (tile - 1001) % 10))
+                    coord.y = min(1, max(0, coord.y - (tile - 1001) // 10))
+
+            if displacement and obj.name == displacement[0]:
+                if len(slots) != 1 or "BMP" not in maps:
+                    raise ValueError("The reviewed displacement mesh needs one tile and a BMP publish.")
+                bpy.context.view_layer.objects.active = obj
+                tile = slots[0]
+                # Use the original float EXR as the height field.
+                height_image = bpy.data.images.load(str(verified_tile_path(maps["BMP"][tile])))
+                height_image.colorspace_settings.name = "Non-Color"
+                height_texture = bpy.data.textures.new("Reviewed displacement", type="IMAGE")
+                height_texture.image = height_image
+                height_texture.extension = "EXTEND"
+                subdiv = obj.modifiers.new("Review subdivision", "SUBSURF")
+                subdiv.levels = 3
+                subdiv.render_levels = 3
+                bpy.ops.object.modifier_apply(modifier=subdiv.name)
+                relief = obj.modifiers.new("Review displacement", "DISPLACE")
+                relief.texture = height_texture
+                relief.texture_coords = "UV"
+                relief.uv_layer = obj.data.uv_layers.active.name
+                relief.mid_level = 0.0
+                bpy.context.view_layer.update()
+                relief.strength = float(displacement[1]) / obj.matrix_world.to_scale().x
+                bpy.ops.object.modifier_apply(modifier=relief.name)
+                selected_displacement = True
+                print(f"Baked displacement on {obj.name}", flush=True)
+            obj.select_set(True)
+        if displacement and not selected_displacement:
+            raise ValueError("The reviewed displacement mesh was not found.")
+        bpy.ops.export_scene.gltf(filepath=str(output), export_format="GLB",
+                                  export_image_format="AUTO",
+                                  export_animations=False, export_cameras=False, export_lights=False,
+                                  export_tangents="NRM" in maps, use_selection=True)
+    print(f"Exported native review GLB: {output.stat().st_size} bytes", flush=True)
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("recipe")
+parser.add_argument("output", type=Path)
+parser.add_argument("metres_per_unit", type=float)
+parser.add_argument("normal_strength", type=float)
+parser.add_argument("--native-tiles", action="store_true")
+parser.add_argument("--displace", nargs=2, metavar=("OBJECT", "HEIGHT_METRES"))
+args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:])
+if args.displace and not (math.isfinite(float(args.displace[1])) and 0 < float(args.displace[1]) <= 0.05):
+    parser.error("Reviewed displacement must be between 0 and 0.05 metres.")
+with open(args.recipe, encoding="utf8") as recipe_file:
     recipe = json.load(recipe_file)
-make_preview(recipe, Path(output_path), float(units), float(normal))
+make_preview(recipe, args.output, args.metres_per_unit, args.normal_strength, args.native_tiles, args.displace)
