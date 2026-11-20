@@ -38,7 +38,9 @@ on demand, so a manifest edit updates the card and drawer immediately.
 When a renderer has a bundled product mark, the card and its primary spec show
 that mark beside the renderer name. Unknown renderers remain text-only rather
 than receiving a guessed logo. Renderer artwork and source attribution live in
-`src/renderer/renderers/`.
+`src/renderer/renderers/`. The Arnold SVG keeps its transparent canvas and the
+card uses the Autodesk Arnold symbol inline beside the renderer name, avoiding a
+detached badge or an opaque logo tile.
 
 ## What it enables
 

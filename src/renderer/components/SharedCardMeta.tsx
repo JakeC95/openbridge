@@ -10,12 +10,15 @@ export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
   if (!byline && !specs) return null;
   return <span className="shared-card-meta">
     {byline && <span title={byline}>{byline}</span>}
-    {specs && <span title={specs}>{specs}</span>}
+    {specs && <span className="shared-card-specs" title={specs}>
+      {card.originalFormat && <span>{card.originalFormat}</span>}
+      {card.originalFormat && (card.renderer || card.originalSize) && <span className="shared-card-separator">·</span>}
+      {card.renderer && <span className="shared-card-renderer">
+        <RendererMark renderer={card.renderer} />
+        {card.renderer}
+      </span>}
+      {card.renderer && card.originalSize && <span className="shared-card-separator">·</span>}
+      {card.originalSize && <span>{card.originalSize}</span>}
+    </span>}
   </span>;
-}
-
-export function SharedRendererBadge({ asset }: { asset: AssetRecord }) {
-  const card = usePresentationCard(asset);
-  if (!card?.renderer) return null;
-  return <RendererMark renderer={card.renderer} className="shared-renderer-badge" />;
 }

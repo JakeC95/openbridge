@@ -1,5 +1,5 @@
 import { SharedAssetThumbnail } from "../components/SharedAssetThumbnail";
-import { SharedCardMeta, SharedRendererBadge } from "../components/SharedCardMeta";
+import { SharedCardMeta } from "../components/SharedCardMeta";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { assetCountLabel, readinessBadges, typeLabel } from "../catalog-utils";
@@ -806,7 +806,6 @@ export function LibraryView() {
                       <span className="asset-placeholder">{typeLabel(asset.type)}</span>
                     )}
                     {!preparedCollection && <span className={`asset-type ${assetTypeClass(typeLabel(asset.type))}`}>{typeLabel(asset.type)}</span>}
-                    {preparedCollection && asset.repo === "shared" && <SharedRendererBadge asset={asset} />}
                     {!selectMode && asset.repo !== "shared" && (
                       <ProviderLogo
                         provider={asset.provider ?? "megascans"}
