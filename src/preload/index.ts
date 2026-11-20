@@ -66,6 +66,7 @@ const api: OpenBridgeApi = {
     },
     inspectFile: id => ipcRenderer.invoke("shared:inspectFile", id),
     dependencies: id => ipcRenderer.invoke("shared:dependencies", id),
+    presentation: id => ipcRenderer.invoke("shared:presentation", id),
     thumbnail: (id, requestId) => ipcRenderer.invoke("shared:thumbnail", id, requestId),
     cancelThumbnail: requestId => ipcRenderer.invoke("shared:cancelThumbnail", requestId),
     stopScanning: () => ipcRenderer.invoke("shared:stopScanning"),

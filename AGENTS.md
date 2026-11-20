@@ -21,6 +21,23 @@ the current session. A cold start and the upgrade from 1.6.3 were verified on Li
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
 
+## 1.9.0 curated presentation details
+
+- Prepared presentations can carry an optional `presentation.json` sidecar. It adds a review
+  status, subtitle/summary/tags, authored stills and a turntable video, named parts with source
+  counts, texture channel cards with previews and UDIM tiles, version history, source notes and
+  credits.
+- The reader is bounded and read-only: 256 KiB manifest cap, relative media paths only,
+  symlink-aware containment inside the presentation folder, image/video size limits, HTTPS-only
+  external links and no HTML. Missing or unsafe entries become collapsed warnings instead of
+  hiding the rest of the page.
+- The shared drawer keeps the 3D viewer first, adds a Turntable view when the hero is a video,
+  and places curated details below the preview. Measured source facts and the Resources view
+  remain authoritative. See [prepared presentation details](docs/PRESENTATION-DETAILS.md).
+- The shared UI fixture writes a presentation manifest beside a prepared GLB and verifies the
+  headline, facts, gallery lightbox, anatomy, map preview, timeline, warnings and fullscreen
+  navigation.
+
 ## 1.8.0 local asset parity work
 
 - Shared Resources view exposes explicit OBJ/MTL and glTF material-map references, safe map

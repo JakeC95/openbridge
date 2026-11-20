@@ -69,6 +69,26 @@ binaryHeader.write("BIN", 4);
 await writeFile(join(sample, "Prepared prop.glb"), Buffer.concat([header, paddedJson, binaryHeader, binary]));
 await writeFile(join(sample, "Prepared prop.png"), embeddedImage);
 await writeFile(join(sample, "Alternate.obj"), "v 0 0 0");
+await writeFile(join(sample, "presentation.json"), JSON.stringify({
+  schemaVersion: 1,
+  title: "Prepared prop presentation",
+  subtitle: "Curated fixture details",
+  summary: "Curated details render beside measured source facts.",
+  status: { label: "Approved", tone: "approved" },
+  tags: ["fixture", "prepared"],
+  hero: { kind: "image", src: "Prepared prop.png", label: "Prepared prop cover" },
+  media: [
+    { kind: "image", src: "Prepared prop.png", label: "Beauty still", caption: "Fixture gallery image." },
+    { kind: "image", src: "../outside.png", label: "Unsafe media" }
+  ],
+  facts: [{ label: "Parts", value: "1" }, { label: "Maps", value: "1" }],
+  parts: [{ name: "Triangle", label: "Triangle", faces: 1, vertices: 3, material: "Paint", tile: 1001, color: "#ff0000", preview: "Prepared prop.png" }],
+  maps: [{ channel: "basecolor", label: "Base color", tiles: [1001], resolution: "7 × 5", format: "PNG", version: "v001", preview: "Prepared prop.png" }],
+  versions: [{ label: "v001", kind: "Presentation", date: "2026-01-01", current: true, note: "Fixture version." }],
+  links: [{ label: "Fixture source", value: "Prepared assets" }],
+  credits: [{ role: "Artist", name: "Fixture" }],
+  notes: ["Curated fixture note."]
+}));
 const sharedLibraryRoots = [
   { id: "prepared", name: "Prepared assets", path: prepared, kind: "presentations" },
   { id: "fixture-models", name: "Fixture models", path: models, kind: "models" },
@@ -229,8 +249,31 @@ try {
   await until(()=>evaluate(`[...document.querySelectorAll('.drawer button')].some(button=>button.textContent==='3D')`),"Prepared model drawer did not open");
   await evaluate(`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent==='3D').click()`);
   await until(()=>evaluate(`window.uploadedEmbeddedFixture`),"The GLB embedded image was not uploaded to WebGL");
+  await until(()=>evaluate(`Boolean(document.querySelector('[aria-label="Asset details"]'))`),"Curated presentation details did not load");
+  await until(()=>evaluate(`document.querySelector('.shared-presentation-map-image img')?.naturalWidth===7`),"Curated map preview did not decode");
+  await until(()=>evaluate(`document.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7`),"Curated part preview did not decode");
+  const curated = await evaluate(`(()=>{
+    const panel=document.querySelector('[aria-label="Asset details"]');
+    const drawer=document.querySelector('.drawer');
+    return {
+      summary: drawer.textContent.includes("Curated details render beside measured source facts."),
+      status: drawer.textContent.includes("Approved"),
+      sections: ["At a glance","Anatomy","Texture set","Version history","Curator notes"].every(label=>panel.textContent.includes(label)),
+      part: panel.textContent.includes("Triangle")&&panel.textContent.includes("Paint"),
+      map: panel.textContent.includes("Base color")&&panel.textContent.includes("7 × 5"),
+      version: panel.textContent.includes("v001")&&panel.textContent.includes("Current"),
+      warning: panel.querySelector('.shared-presentation-warnings summary')?.textContent.includes("Skipped presentation details"),
+      mapImage: panel.querySelector('.shared-presentation-map-image img')?.naturalWidth===7,
+      partPreview: panel.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7
+    };
+  })()`);
+  assert.deepEqual(curated,{summary:true,status:true,sections:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
+  await evaluate(`document.querySelector('.shared-presentation-gallery-card').click()`);
+  await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer'))`),"Curated gallery did not open fullscreen");
+  await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);
+  await until(()=>evaluate(`!document.querySelector('.image-viewer')`),"Curated gallery fullscreen did not close");
   await evaluate(`document.querySelector('.drawer button[title=Close]').click()`);
-  console.log("Prepared collection presents one card and renders its embedded GLB texture");
+  console.log("Prepared collection presents one card, renders its embedded GLB texture and curated details");
   await choose("Shared library folder","Fixture HDRIs");
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img')?.naturalWidth)`),"Shared HDRI card thumbnail did not decode");
   const thumbnail=await evaluate(`(()=>{const image=document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img'); return [image.naturalWidth,image.naturalHeight];})()`);

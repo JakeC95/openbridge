@@ -1,0 +1,255 @@
+# Prepared presentation details
+
+A prepared asset already answers “what file is this?” with a portable GLB and a
+cover. A studio asset usually has a much longer story: named mesh parts, a
+published texture set, lookdev reels, version history, source tasks and review
+notes. The optional `presentation.json` sidecar carries that story next to the
+model and lets OpenBridge present it without reading the production tree.
+
+The manifest is curated context, not measured evidence. The existing **Measured
+source facts** and **Resources** views remain authoritative for file sizes,
+declared geometry, material references and dependency completeness.
+
+## Where the file goes
+
+```
+Prepared assets/
+  Tennis racket/
+    Tennis racket.glb
+    Tennis racket.jpg
+    presentation.json
+    media/
+      turntable.mp4
+      turntable-poster.jpg
+      stills/
+      maps/
+```
+
+OpenBridge looks for `presentation.json`, then `<model stem>.presentation.json`,
+in the same folder as the prepared GLB. A folder without a manifest behaves
+exactly as before. The scanner still indexes one presentation per folder and
+ignores the manifest, media and other supporting files.
+
+## What it enables
+
+- A status headline, subtitle, summary and tags above the preview.
+- A **Turntable** view when `hero` is a video, beside 3D, Render and Resources.
+- **At a glance** facts for identity, source counts, dimensions, publish
+  versions and review state.
+- **Media** for authored stills, contact sheets, reference frames and detail
+  crops, with fullscreen navigation.
+- **Anatomy** for named parts, face/vertex counts, material slots, UDIM tiles
+  and per-part review notes.
+- **Texture set** cards with channel, tile list, resolution, format, version,
+  preview image and per-tile thumbnails.
+- **Version history** for source, model, texture, lookdev and presentation
+  milestones, with a current marker.
+- **Sources** and **credits** for provenance, plus curator notes.
+- A collapsed list of skipped media or map entries, so a broken relative path is
+  visible without hiding the rest of the page.
+
+## Safety and portability
+
+The sidecar is read-only and is validated before anything is returned to the
+renderer:
+
+- The manifest must be at most 256 KiB and declare `"schemaVersion": 1`.
+- Media and map paths must be relative, must not contain `..`, must resolve
+  inside the presentation folder, and must be regular files after symlink
+  resolution.
+- Images are limited to 64 MiB and videos to 512 MiB.
+- Supported image extensions are PNG, JPEG, WebP, AVIF and GIF. Supported video
+  extensions are MP4, WebM and M4V.
+- Absolute paths, `file:` URLs and remote media are rejected. Only `https:`
+  links are exposed as external actions.
+- Text fields and array lengths are capped. No HTML is rendered.
+
+Keep the presentation folder portable: use forward slashes, keep media beside
+the GLB, and do not point at a production share. The source package stays local;
+the presentation is the review copy that can be copied to another workstation.
+
+## Schema
+
+All fields are optional except `schemaVersion`. Unknown fields are ignored.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `schemaVersion` | number | Must be `1`. |
+| `title` | string | Optional display title. The drawer falls back to the indexed asset name. |
+| `subtitle` | string | One line below the title; useful for variant, finish and review version. |
+| `summary` | string | Short paragraph. Plain text only. |
+| `status` | object | `{ "label": string, "tone": "approved" \| "review" \| "draft" \| "final" }`. |
+| `tags` | string[] | Up to 16 short tags, deduplicated. |
+| `hero` | media | Image or video. A video adds the **Turntable** view. |
+| `media` | media[] | Up to 24 image or video entries; images appear in the Media gallery. |
+| `facts` | fact[] | Up to 24 `{ label, value, detail? }` entries. |
+| `parts` | part[] | Up to 64 named parts. `faces`, `vertices`, `material`, `tile`, `color`, `preview` and `note` are optional. |
+| `maps` | map[] | Up to 64 texture channels. `tiles`, `resolution`, `format`, `version`, `preview`, `tilePreviews` and `note` are optional. |
+| `versions` | version[] | Up to 24 `{ label, kind?, date?, note?, current? }` milestones. |
+| `links` | link[] | Up to 16 `{ label, value?, href?, note? }` source notes. `href` must be HTTPS. |
+| `credits` | credit[] | Up to 12 `{ role, name }` entries. |
+| `notes` | string[] | Up to 12 curator notes. |
+| `warnings` | — | Output only. The reader adds skipped-entry warnings; do not author this field. |
+
+### Media entry
+
+```json
+{
+  "kind": "video",
+  "src": "media/turntable.mp4",
+  "poster": "media/turntable-poster.jpg",
+  "label": "Lookdev turntable",
+  "caption": "100 frames · 1920 × 1080 · 23.976 fps",
+  "mimeType": "video/mp4",
+  "width": 1920,
+  "height": 1080,
+  "durationSeconds": 4.2,
+  "alt": "Turntable of the prop in a lit set"
+}
+```
+
+`kind` may be omitted and inferred from the extension. Video posters are
+optional; if omitted, the first gallery image becomes the poster. Width, height
+and duration are display metadata; OpenBridge does not decode the file to
+verify them.
+
+### Map entry
+
+```json
+{
+  "channel": "basecolor",
+  "label": "Base color (DIF)",
+  "part": "All parts",
+  "tiles": [1001, 1002, 1003, 1004, 1005, 1006],
+  "resolution": "4096 × 4096",
+  "format": "EXR 16f",
+  "version": "v002",
+  "preview": "media/maps/DIF_1001.jpg",
+  "note": "The later publish updates the grip and guide tiles.",
+  "tilePreviews": [
+    { "tile": 1001, "src": "media/maps/DIF_1001.jpg" },
+    { "tile": 1002, "src": "media/maps/DIF_1002.jpg" }
+  ]
+}
+```
+
+Generate browser-friendly previews for EXR or other formats the browser cannot
+display. Keep the channel names aligned with the viewer inspector where
+possible: `basecolor`, `normal`, `roughness`, `metalness`, `opacity`, `emissive`,
+`ao`, `orm`, `gloss`, `displacement`, `specular`, `translucency`. Brand masks and
+other auxiliary maps can use a free-form channel such as `brand`.
+
+## A complete small example
+
+```json
+{
+  "schemaVersion": 1,
+  "title": "Studio prop",
+  "subtitle": "Hero variant · lookdev v003",
+  "summary": "Prepared review copy with named parts, a published UDIM set and an approved turntable.",
+  "status": { "label": "Approved", "tone": "approved" },
+  "tags": ["prop", "hero", "studio"],
+  "hero": {
+    "kind": "video",
+    "src": "media/turntable.mp4",
+    "poster": "media/turntable-poster.jpg",
+    "label": "Lookdev turntable",
+    "caption": "100 frames · 1920 × 1080"
+  },
+  "media": [
+    { "kind": "image", "src": "media/stills/beauty.jpg", "label": "Beauty still" },
+    { "kind": "image", "src": "media/stills/detail.jpg", "label": "Detail crop" }
+  ],
+  "facts": [
+    { "label": "Geometry", "value": "6 parts · 50,740 source faces", "detail": "Real-time GLB count is listed separately" },
+    { "label": "Dimensions", "value": "27.8 × 68.1 × 3.3 cm", "detail": "Y-up · centimetres" },
+    { "label": "Texture set", "value": "7 channels · 6 UDIM tiles", "detail": "4096 × 4096 · 16-bit EXR" }
+  ],
+  "parts": [
+    { "name": "frame", "label": "Frame", "faces": 1840, "vertices": 918, "material": "phong1", "tile": 1005, "color": "#e05a8a", "preview": "media/anatomy/frame.png", "note": "Outer frame." },
+    { "name": "handle", "label": "Handle", "faces": 792, "vertices": 416, "material": "lambert3", "tile": 1001, "color": "#9b8cff", "preview": "media/anatomy/handle.png", "note": "Grip is subdivided in the review GLB." }
+  ],
+  "maps": [
+    {
+      "channel": "basecolor",
+      "label": "Base color (DIF)",
+      "part": "All parts",
+      "tiles": [1001, 1002],
+      "resolution": "4096 × 4096",
+      "format": "EXR 16f",
+      "version": "v002",
+      "preview": "media/maps/DIF_1001.jpg",
+      "tilePreviews": [{ "tile": 1001, "src": "media/maps/DIF_1001.jpg" }]
+    }
+  ],
+  "versions": [
+    { "label": "Model v004", "kind": "Geometry", "date": "22 Oct 2026", "note": "Lookdev reference." },
+    { "label": "Texture publish v002", "kind": "Texture", "date": "23 Oct 2026", "current": true, "note": "Current UDIM publish." }
+  ],
+  "links": [
+    { "label": "Texture publish", "value": "Substance 3D Painter · UDIM", "note": "Production media stays on the studio share." }
+  ],
+  "credits": [
+    { "role": "Geometry and texture", "name": "Studio asset team" }
+  ],
+  "notes": [
+    "Preview uses portable PBR inputs baked from the published UDIM set.",
+    "Source face counts stay in the anatomy list; the GLB count is noted where it differs."
+  ]
+}
+```
+
+## Preparing useful media
+
+- Use the authored cover as the visual anchor, not a generic screenshot.
+- Export the turntable as H.264 MP4 at 1080p with `-movflags +faststart` and a
+  matching poster frame. A four-second 1080p reel can stay below 1 MiB for a
+  mostly static studio scene.
+- Prefer a 10 × 10 contact sheet for a 100-frame turntable. It shows the whole
+  rotation at a glance and gives reviewers a single image to share.
+- Crop detail stills around the parts and marks that matter. Label them with the
+  frame or source comp.
+- Convert EXR, TX or other non-browser maps to small PNG/JPEG previews. Keep the
+  original publish version and tile list in the map entry; the Resources view
+  still lists the actual files.
+- Anatomy renders can be generated from the same GLB. Assign one colour per
+  part, render a front overview for the gallery, then one framed image per part.
+  Transparent part images work well as small list thumbnails; the part list and
+  the images then use the same names and colours.
+- Keep the folder lightweight. The GLB is the payload; media is review context.
+  Link to production sources instead of copying a 14 GB asset tree.
+
+## What to show, and what not to claim
+
+Use the strongest available evidence and label its source:
+
+| Evidence | Good use |
+| --- | --- |
+| Authored comp or turntable | Hero video, cover, stills, contact sheet. |
+| Published model version | Anatomy counts, material slots, source units, bounds. |
+| Published texture manifests | Channel list, UDIM tiles, resolution, bit depth, version. |
+| Saved lookdev or render scene | Lookdev credit, frame size, colour space, review date. |
+| Publish metadata | Authoring application, source task, publish date, hashes. |
+| Nearby files or names alone | Keep as an unverified note, not a fact. |
+
+Do not turn a filename match into a material assignment, and do not claim a
+physical size that the model does not declare. When the real-time GLB is
+modified for review (for example a subdivided grip for baked displacement), say
+so in the relevant part note and keep the source count visible.
+
+## Testing
+
+The shared-library UI fixture writes a presentation manifest beside a prepared
+GLB and verifies the headline, facts, media gallery, anatomy, map preview,
+timeline, skipped-entry warning and fullscreen navigation:
+
+```sh
+npm run build
+npm run test:shared-library:ui
+```
+
+For a local studio presentation, launch the app with a profile that registers
+the prepared collection, open the asset, and check the 3D and Turntable views,
+the media lightbox, the map previews and the version timeline. The manifest is
+read on demand; adding or changing it does not require re-indexing the prepared
+folder.

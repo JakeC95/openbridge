@@ -104,6 +104,15 @@ Prepared indexing reads the exported files. Automatic ASS and Houdini scene anal
 is outside this indexing pass. The pilot extracted saved references as data and did
 not run the source scene or its scripts.
 
+A prepared folder can also include an optional `presentation.json` sidecar beside
+the GLB and cover. The sidecar supplies curated context that the GLB cannot carry:
+a review status, authored stills and turntable video, named mesh parts, texture
+channel cards, version history, provenance and credits. It is read-only, uses
+only relative media inside the presentation folder and never replaces measured
+source facts or dependency inspection. See
+[prepared presentation details](PRESENTATION-DETAILS.md) for the schema, safety
+rules and media guidance.
+
 ## Authored covers in model collections
 
 OpenBridge looks for a matching image in a collection’s `preview` or `previews` folder.

@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AssetRecord, MapPreview, SharedHdrInfo, SharedFileFacts, SharedAssetDependencies } from "../../shared/types";
+import type {
+  AssetRecord,
+  MapPreview,
+  SharedHdrInfo,
+  SharedFileFacts,
+  SharedAssetDependencies,
+  SharedPresentation
+} from "../../shared/types";
 import { CloseIcon } from "../icons";
 import { useStore } from "../store";
 import { ImageViewer } from "./ImageViewer";
 import { ModelPreviewPanel } from "./ModelViewer";
+import { SharedPresentationPanel } from "./SharedPresentationPanel";
 
 const mapNames: Record<string, string> = {
   basecolor: "Base color", albedo: "Base color", normal: "Normal", roughness: "Roughness",
@@ -36,7 +44,9 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const [inspectionRequest, setInspectionRequest] = useState(0);
   const [hdr, setHdr] = useState<SharedHdrInfo | null>(null);
   const [problem, setProblem] = useState("");
-  const [view, setView] = useState<"render" | "model" | "resources">(asset.preview && !prepared ? "render" : "model");
+  const [presentation, setPresentation] = useState<SharedPresentation | null>(null);
+  const [presentationError, setPresentationError] = useState("");
+  const [view, setView] = useState<"render" | "model" | "resources" | "turntable">(asset.preview && !prepared ? "render" : "model");
   const [viewerItems, setViewerItems] = useState<MapPreview[]>([]);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [resources, setResources] = useState<SharedAssetDependencies | null>(null);
@@ -49,7 +59,8 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const [variantsError, setVariantsError] = useState("");
   const currentAsset = useRef(asset.id);
   currentAsset.current = asset.id;
-  const showImage = (preview: MapPreview) => { setViewerIndex(0); setViewerItems([preview]); };
+  const openImageItems = (items: MapPreview[], index: number) => { setViewerIndex(index); setViewerItems(items); };
+  const showImage = (preview: MapPreview) => openImageItems([preview], 0);
   const [copying, setCopying] = useState(false);
   const [variants, setVariants] = useState<AssetRecord[]>([]);
   const [organization, setOrganization] = useState({ tags: "", collections: "", notes: "" });
@@ -72,6 +83,8 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     setResourceQuery("");
     setResourcesError("");
     setProblem("");
+    setPresentation(null);
+    setPresentationError("");
     setImage(null);
     setHdr(null);
     void window.openbridge.localPreviews(asset.id, asset.path).then(result => {
@@ -94,6 +107,19 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     }
     return () => { current = false; };
   }, [asset.id, asset.path, hdrAsset, prepared, toast]);
+
+  useEffect(() => {
+    let current = true;
+    if (!prepared) return () => { current = false; };
+    void window.openbridge.sharedLibrary.presentation(asset.id).then(result => {
+      if (!current) return;
+      setPresentation(result.presentation);
+      setPresentationError(result.error ?? "");
+    }).catch(error => {
+      if (current) setPresentationError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { current = false; };
+  }, [asset.id, prepared]);
 
   useEffect(() => {
     let current = true;
@@ -202,15 +228,29 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         <button type="button" className="icon-btn" title="Close" onClick={close}><CloseIcon /></button>
       </div>
       <div className="drawer-scroll">
-        <h2 className="drawer-title">{asset.name}</h2>
+        <h2 className="drawer-title">{presentation?.title ?? asset.name}</h2>
         <p className="drawer-id">{asset.categories.join(" / ")}</p>
+        {presentation && <div className="shared-presentation-headline">
+          {presentation.status && <span className={`shared-presentation-status ${presentation.status.tone}`}>{presentation.status.label}</span>}
+          {presentation.subtitle && <p className="shared-presentation-subtitle">{presentation.subtitle}</p>}
+          {presentation.summary && <p className="shared-presentation-summary">{presentation.summary}</p>}
+          {presentation.tags.length > 0 && <div className="shared-presentation-tags">
+            {presentation.tags.map(tag => <span key={tag}>{tag}</span>)}
+          </div>}
+        </div>}
+        {presentationError && <p className="hint" role="status">Presentation details could not be read: {presentationError}</p>}
         {!hdrAsset && <div className="button-row horizontal shared-preview-modes" role="group" aria-label="Local asset preview">
-          {image && <button type="button" aria-pressed={view === "render"} className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("render")}>Render</button>}
           <button type="button" className={view === "model" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "model"} onClick={() => setView("model")}>3D</button>
+          {presentation?.hero?.kind === "video" && <button type="button" className={view === "turntable" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "turntable"} onClick={() => setView("turntable")}>Turntable</button>}
+          {image && <button type="button" aria-pressed={view === "render"} className={view === "render" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("render")}>Render</button>}
           <button type="button" aria-pressed={view === "resources"} className={view === "resources" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setView("resources")}>Resources</button>
         </div>}
-        {((!hdrAsset && view === "model") || (image && (hdrAsset || view === "render"))) && <div className="drawer-preview">
+        {((!hdrAsset && (view === "model" || view === "turntable")) || (image && (hdrAsset || view === "render"))) && <div className={`drawer-preview${view === "turntable" ? " shared-presentation-video" : ""}${prepared ? " shared-presentation-preview" : ""}`}>
           {!hdrAsset && view === "model" && <ModelPreviewPanel assetId={asset.id} provider="shared" name={asset.name} type={asset.type} />}
+          {!hdrAsset && view === "turntable" && presentation?.hero?.kind === "video" && <video key={presentation.hero.url} controls playsInline preload="metadata" loop
+            poster={presentation.hero.poster} aria-label={presentation.hero.label}>
+            <source src={presentation.hero.url} type={presentation.hero.mimeType} />
+          </video>}
           {image && (hdrAsset || view === "render") && <button type="button" className="expand-preview" onClick={() => showImage(image)}>
             <img src={image.url} alt={asset.name} onError={() => {
               setImage(null);
@@ -218,6 +258,8 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
             }} />
           </button>}
         </div>}
+        {!hdrAsset && view === "turntable" && presentation?.hero?.caption && <p className="hint">{presentation.hero.caption}</p>}
+        {!hdrAsset && presentation && view !== "resources" && <SharedPresentationPanel presentation={presentation} onOpenImage={openImageItems} />}
         {hdrAsset && hdr?.previewAvailable && <button type="button" className="btn btn-primary" onClick={() => showImage({
           type: "HDR", label: `${asset.name} · ${hdr.width} × ${hdr.height}`, url: image?.url ?? "",
           exposure: { assetId: asset.id, mapType: "HDR" }, panorama: hdr.panorama
@@ -264,7 +306,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
           <div><span>Modified</span><strong>{new Date(asset.mtime).toLocaleDateString()}</strong></div>
         </div>
         {facts && <section className="shared-organization">
-          <div className="shared-section-heading"><h3>Source facts</h3>
+          <div className="shared-section-heading"><h3>Measured source facts</h3>
             <button type="button" className="text-btn" disabled={factsLoading} onClick={() => setInspectionRequest(value => value + 1)}>{factsLoading ? "Inspecting…" : "Refresh facts"}</button>
           </div>
           <p className="hint">Read from the source file · {new Date(facts.inspectedAt).toLocaleString()}

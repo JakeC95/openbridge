@@ -58,6 +58,95 @@ export interface SharedAssetDependencies {
   complete: boolean;
 }
 
+export interface SharedPresentationMedia {
+  kind: "image" | "video";
+  label: string;
+  caption?: string;
+  url: string;
+  poster?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  durationSeconds?: number;
+  alt?: string;
+}
+
+export interface SharedPresentationFact {
+  label: string;
+  value: string;
+  detail?: string;
+}
+
+export interface SharedPresentationPart {
+  name: string;
+  label?: string;
+  faces?: number;
+  vertices?: number;
+  material?: string;
+  tile?: number;
+  color?: string;
+  note?: string;
+  preview?: string;
+}
+
+export interface SharedPresentationMap {
+  channel: string;
+  label: string;
+  part?: string;
+  material?: string;
+  tiles?: number[];
+  resolution?: string;
+  format?: string;
+  version?: string;
+  note?: string;
+  preview?: string;
+  tilePreviews?: Array<{ tile: number; url: string }>;
+}
+
+export interface SharedPresentationVersion {
+  label: string;
+  kind?: string;
+  date?: string;
+  note?: string;
+  current?: boolean;
+}
+
+export interface SharedPresentationLink {
+  label: string;
+  value?: string;
+  href?: string;
+  note?: string;
+}
+
+export interface SharedPresentationCredit {
+  role: string;
+  name: string;
+}
+
+export interface SharedPresentation {
+  schemaVersion: number;
+  title?: string;
+  subtitle?: string;
+  summary?: string;
+  status?: { label: string; tone: "approved" | "review" | "draft" | "final" };
+  tags: string[];
+  hero?: SharedPresentationMedia;
+  media: SharedPresentationMedia[];
+  facts: SharedPresentationFact[];
+  parts: SharedPresentationPart[];
+  maps: SharedPresentationMap[];
+  versions: SharedPresentationVersion[];
+  links: SharedPresentationLink[];
+  credits: SharedPresentationCredit[];
+  notes: string[];
+  warnings: string[];
+}
+
+export interface SharedPresentationResult {
+  presentation: SharedPresentation | null;
+  error?: string;
+}
+
 export interface SharedFileFacts {
   revision: number;
   inspectedAt: number;
@@ -1095,6 +1184,7 @@ export interface OpenBridgeApi {
     onInspectionProgress(callback: (progress: SharedCopyProgress) => void): () => void;
     inspectFile(id: string): Promise<SharedFileFacts>;
     dependencies(id: string): Promise<SharedAssetDependencies>;
+    presentation(id: string): Promise<SharedPresentationResult>;
     thumbnail(id: string, requestId: string): Promise<SharedAssetThumbnail>;
     cancelThumbnail(requestId: string): Promise<void>;
     stopScanning(): Promise<void>;
