@@ -1,7 +1,7 @@
 """Render transparent, consistently lit asset previews with Blender.
 
 Run with:
-  blender --background --python scripts/render-shared-preview.py -- \
+  blender --background --factory-startup --disable-autoexec --python-exit-code 1 --python scripts/render-shared-preview.py -- \
     --input asset.glb --output /path/to/preview --hdri src/renderer/assets/monochrome_studio_02_1k.hdr
 
 The source file is read-only. Renders include transparent PNG stills and a VP9
@@ -30,7 +30,7 @@ def arguments():
     # directories containing spaces remain usable.
     value_options = {
         "--input", "--output", "--hdri", "--frames", "--fps",
-        "--width", "--height", "--samples", "--crf",
+        "--width", "--height", "--samples", "--crf", "--source-frame", "--margin", "--elevation", "--azimuth",
     }
     joined = []
     index = 0
@@ -60,6 +60,10 @@ def arguments():
     parser.add_argument("--height", type=int, default=1080)
     parser.add_argument("--samples", type=int, default=12)
     parser.add_argument("--crf", type=int, default=30)
+    parser.add_argument("--source-frame", type=int, default=0, help="Sample animated inputs at this frame for the entire turntable.")
+    parser.add_argument("--margin", type=float, default=0.12, help="Extra framing space as a fraction of fitted span.")
+    parser.add_argument("--elevation", type=float, default=27)
+    parser.add_argument("--azimuth", type=float, default=-54)
     parser.add_argument("--stills", action="store_true", help="Also render four transparent angle stills.")
     return parser.parse_args(joined)
 
@@ -100,9 +104,11 @@ def bounds(meshes, depsgraph):
     points = []
     for obj in meshes:
         evaluated = obj.evaluated_get(depsgraph)
+        if obj.hide_render or not evaluated.data.polygons:
+            continue
         points.extend(evaluated.matrix_world @ Vector(corner) for corner in evaluated.bound_box)
-    if not points:
-        raise RuntimeError("Could not calculate mesh bounds.")
+    if not points or not all(math.isfinite(value) for point in points for value in point):
+        raise RuntimeError("Expected finite bounds from at least one renderable mesh with faces.")
     low = Vector(tuple(min(p[i] for p in points) for i in range(3)))
     high = Vector(tuple(max(p[i] for p in points) for i in range(3)))
     return low, high, (low + high) * 0.5
@@ -146,9 +152,11 @@ def set_studio(scene, center, radius):
     area_light(scene, "Viewer rim", center, (0.1, 0.9, 0.65), radius, 60, 2.4, (1, 1, 1))
 
 
-def setup_camera(scene, center, low, high, width, height):
-    aspect = width / height
-    direction = Vector((0.72, -1.0, 0.63)).normalized()
+def setup_camera(scene, center, low, high, args):
+    aspect = args.width / args.height
+    elevation, azimuth = map(math.radians, (args.elevation, args.azimuth))
+    direction = Vector((math.cos(elevation) * math.cos(azimuth),
+                        math.cos(elevation) * math.sin(azimuth), math.sin(elevation)))
     rotation = (-direction).to_track_quat("-Z", "Y")
     right = rotation @ Vector((1, 0, 0))
     up = rotation @ Vector((0, 1, 0))
@@ -157,12 +165,17 @@ def setup_camera(scene, center, low, high, width, height):
                for y in (low.y, high.y)
                for z in (low.z, high.z)]
     projected = [corner - center for corner in corners]
-    half_width = max(abs(p.dot(right)) for p in projected)
-    half_height = max(abs(p.dot(up)) for p in projected)
-    # Blender orthographic scale is the horizontal span. Include a fixed 12%
-    # breathing margin and derive it from the projected bounds, not source units.
-    span = max(half_width * 2, half_height * 2 * aspect) * 1.12
-    distance = max((high - low).length * 2.5, 1.0)
+    # A point rotating around Z traces a circle. Its maximum projection on
+    # either camera axis is its XY radius times that axis's XY length plus
+    # its fixed vertical contribution. Fit the entire orbit, not frame zero.
+    def extent(axis):
+        return max(math.hypot(p.x, p.y) * math.hypot(axis.x, axis.y) + abs(p.z * axis.z)
+                   for p in projected)
+
+    # Blender's orthographic scale is the span of the longer image axis.
+    span = 2 * max(extent(right) * max(1, 1 / aspect),
+                   extent(up) * max(1, aspect)) * (1 + args.margin)
+    distance = max((high - low).length * 2.5, 0.001)
     data = bpy.data.cameras.new("OpenBridge · fitted orthographic camera")
     data.type = "ORTHO"
     data.ortho_scale = max(span, 0.001)
@@ -190,7 +203,7 @@ def add_turntable_parent(scene, imported, center):
     return pivot
 
 
-def assert_rgba_png(path, require_transparency=False):
+def assert_rgba_png(path, require_transparency=False, require_clear_edges=False):
     with path.open("rb") as image:
         raw = image.read()
     if len(raw) < 26 or raw[:8] != b"\x89PNG\r\n\x1a\n":
@@ -223,7 +236,7 @@ def assert_rgba_png(path, require_transparency=False):
         return a if pa <= pb and pa <= pc else b if pb <= pc else c
 
     cursor = 0
-    for _ in range(height):
+    for y in range(height):
         filter_type = data[cursor]
         cursor += 1
         row = bytearray(data[cursor:cursor + stride])
@@ -242,17 +255,20 @@ def assert_rgba_png(path, require_transparency=False):
                 row[index] = (row[index] + paeth(left, above, upper_left)) & 255
             elif filter_type != 0:
                 raise RuntimeError(f"Unsupported PNG filter {filter_type}: {path}")
-        for index in range(3, stride, 4):
-            alpha_zero |= row[index] == 0
-            alpha_visible |= row[index] > 0
+        alpha = row[3::4]
+        alpha_zero |= 0 in alpha
+        alpha_visible |= any(alpha)
+        if require_clear_edges:
+            edge = alpha if y in (0, height - 1) else (alpha[0], alpha[-1])
+            if any(edge):
+                raise RuntimeError(f"Asset touches the image edge: {path}. Increase --margin.")
         previous = row
     if not alpha_zero or not alpha_visible:
-        raise RuntimeError(f"Render has no transparent background pixels: {path}")
+        raise RuntimeError(f"Render needs both visible and transparent pixels: {path}")
 
 
-def render_frame(scene, pivot, frame, path):
-    scene.frame_set(frame)
-    pivot.rotation_euler.z = 2 * math.pi * frame / scene.frame_end
+def render_frame(scene, pivot, angle, path):
+    pivot.rotation_euler.z = angle
     scene.render.filepath = str(path)
     bpy.ops.render.render(write_still=True)
     assert_rgba_png(path)
@@ -266,23 +282,33 @@ def main():
         raise FileNotFoundError(source)
     if args.frames < 4 or args.width < 64 or args.height < 64 or args.samples < 1:
         raise ValueError("frames must be >=4, dimensions >=64, and samples >=1.")
+    if args.width % 2 or args.height % 2 or not 1 <= args.fps <= 240 or not 0 <= args.crf <= 63:
+        raise ValueError("Use even dimensions, FPS in [1, 240], and CRF in [0, 63].")
+    if not 0 <= args.margin <= 2 or not -89 <= args.elevation <= 89 or not math.isfinite(args.azimuth):
+        raise ValueError("Use margin in [0, 2], elevation in [-89, 89], and a finite azimuth.")
     hdri = args.hdri.expanduser().resolve() if args.hdri else (
         Path(__file__).resolve().parents[1] / "src/renderer/assets/monochrome_studio_02_1k.hdr"
     )
     ffmpeg = shutil.which(os.environ.get("FFMPEG_BIN", "ffmpeg"))
     if not ffmpeg:
         raise RuntimeError("ffmpeg is required to encode the alpha turntable WebM.")
+    if not hdri.is_file():
+        raise FileNotFoundError(f"Shared viewer HDRI not found: {hdri}")
+    encoders = subprocess.run([ffmpeg, "-hide_banner", "-encoders"], check=True, capture_output=True, text=True).stdout
+    if not any("libvpx-vp9" in line.split() for line in encoders.splitlines()):
+        raise RuntimeError("ffmpeg must include the libvpx-vp9 encoder.")
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     imported, meshes = import_asset(source)
     scene = bpy.context.scene
+    scene.frame_set(args.source_frame)
     depsgraph = bpy.context.evaluated_depsgraph_get()
     low, high, center = bounds(meshes, depsgraph)
     radius = max((high - low).length * 0.5, 0.001)
 
     load_environment(scene, hdri)
     set_studio(scene, center, radius)
-    setup_camera(scene, center, low, high, args.width, args.height)
+    setup_camera(scene, center, low, high, args)
     pivot = add_turntable_parent(scene, imported, center)
 
     scene.render.engine = "CYCLES"
@@ -301,36 +327,29 @@ def main():
     scene.view_settings.look = "AgX - Medium High Contrast"
     scene.view_settings.exposure = -0.5
     scene.view_settings.gamma = 1
-    scene.frame_start = 0
-    scene.frame_end = args.frames
     output.mkdir(parents=True, exist_ok=True)
 
-    still_dir = output / "media" / "stills"
-    if args.stills:
-        still_dir.mkdir(parents=True, exist_ok=True)
     still_frames = {
         0: "three-quarter",
         args.frames // 4: "profile",
         args.frames // 2: "rear-three-quarter",
         (args.frames * 3) // 4: "opposite-profile",
     }
-    with tempfile.TemporaryDirectory(prefix="openbridge-preview-") as temp:
+    with tempfile.TemporaryDirectory(prefix=".openbridge-preview-", dir=output) as temp:
         frames_dir = Path(temp)
+        publish = {}
         for frame in range(args.frames):
             frame_path = frames_dir / f"frame_{frame:04d}.png"
-            render_frame(scene, pivot, frame, frame_path)
+            render_frame(scene, pivot, math.tau * frame / args.frames, frame_path)
             if args.stills and frame in still_frames:
-                target = still_dir / f"{still_frames[frame]}.png"
-                shutil.copy2(frame_path, target)
+                publish[output / "media" / "stills" / f"{still_frames[frame]}.png"] = frame_path
             if frame == 0:
-                poster = output / "media" / "turntable-poster.png"
-                poster.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(frame_path, poster)
-                shutil.copy2(frame_path, output / f"{source.stem}.png")
-                assert_rgba_png(poster, require_transparency=True)
+                publish[output / "media" / "turntable-poster.png"] = frame_path
+                publish[output / f"{source.stem}.png"] = frame_path
+            if frame in still_frames:
+                assert_rgba_png(frame_path, require_transparency=True, require_clear_edges=args.margin >= 0.05)
 
-        video = output / "media" / "turntable.webm"
-        video.parent.mkdir(parents=True, exist_ok=True)
+        video = frames_dir / "turntable.webm"
         command = [
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
             "-framerate", str(args.fps), "-i", str(frames_dir / "frame_%04d.png"),
@@ -349,8 +368,14 @@ def main():
             "-frames:v", "1", "-pix_fmt", "rgba", str(decoded),
         ], check=True)
         assert_rgba_png(decoded, require_transparency=True)
+        publish[output / "media" / video.name] = video
+        for index, (target, staged) in enumerate(publish.items()):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            replacement = frames_dir / f"publish-{index}"
+            shutil.copyfile(staged, replacement)
+            replacement.replace(target)
 
-    print(f"Rendered {args.frames} alpha frames with {hdri.name}: {video}")
+    print(f"Rendered {args.frames} alpha frames with {hdri.name}: {output / 'media' / video.name}")
 
 
 if __name__ == "__main__":

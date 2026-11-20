@@ -5,7 +5,8 @@ transparent stills from a supported mesh publish. The script is read-only with
 respect to its input.
 
 ```sh
-blender --background --python scripts/render-shared-preview.py -- \
+blender --background --factory-startup --disable-autoexec --python-exit-code 1 \
+  --python scripts/render-shared-preview.py -- \
   --input "/path/to/model.glb" \
   --output "/path/to/prepared-asset" \
   --stills
@@ -24,13 +25,16 @@ specific review calls for it.
   the app's `ModelViewer`.
 - World yaw is zero. The environment lights the model; `film_transparent`
   keeps it out of the camera background.
-- Cycles with denoising and AgX is used for deterministic offline renders.
+- Cycles with denoising and AgX is used for repeatable offline renders. Pin
+  Blender and FFmpeg versions across workers; output is not guaranteed to be
+  bit-identical across versions and hardware.
   Neutral white key/fill/rim lights supplement the HDRI to approximate the
   viewer's light balance.
 - There is no floor, backdrop, turntable disk, or other presentation geometry.
-- The orthographic camera frames evaluated mesh bounds with a fixed breathing
-  margin. Imported object hierarchies and materials are retained; only a
-  temporary parent is used to rotate the asset around its bounds center.
+- The orthographic camera fits the whole rotation in portrait or landscape.
+  Use `--margin`, `--elevation`, and `--azimuth` to tune framing. Imported
+  hierarchies and materials are retained. `--source-frame` selects a single
+  evaluated pose (default: 0); the turntable does not advance source animation.
 - Default delivery is a 72-frame, 1920 × 1080, 24 fps VP9 WebM turntable with
   alpha, an RGBA PNG poster, and—when `--stills` is set—four matching RGBA
   PNG angles. Temporary frame sequences are removed after encoding.
@@ -38,6 +42,12 @@ specific review calls for it.
   validating transparent as well as visible pixels. FFmpeg's native VP9
   decoder may discard the alpha plane, so do not use it to verify a transparent
   WebM.
+- Previews are staged in the output directory and validated before replacing
+  existing files. Replacements are atomic per file, not as a batch; run one
+  render job per output directory.
+- A supported extension does not guarantee that a particular publish is
+  self-contained. Missing textures, unsupported shaders, procedural scenes,
+  and non-mesh assets still need format-specific ingest checks.
 
 The shared HDRI, white lighting, neutral color management, transparent output,
 and automatic framing provide a common starting point across assets. Blender's
@@ -52,10 +62,8 @@ technical previews in the presentation metadata.
   this order: three-quarter, profile, rear three-quarter, opposite profile.
 - Use the shared labels `Blender technical turntable` and
   `Three-quarter · Blender preview` (likewise for the other angle names).
-- Keep the four primary facts consistent and in this order: prepared GLB size,
-  preview renderer, preview geometry, and model parts. Put source-publish facts
-  in the expanded specifications and identify source files that are not
-  included in the prepared folder.
+- Put published formats and other source-publish facts first. Keep generated
+  preview settings out of the artist-facing metadata.
 - Put optional authored/production imagery in a named `group` (for example,
   `Authored lookdev`) so it stays available without crowding the shared
   technical-preview gallery.
