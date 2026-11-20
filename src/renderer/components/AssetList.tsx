@@ -19,6 +19,8 @@ export interface AssetListItem {
   resolution?: string | null;
   status?: string;
   category?: string;
+  typeDetail?: ReactNode;
+  sourceDetail?: ReactNode;
   facts?: string[];
   onOpen(): void;
 }
@@ -57,9 +59,10 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
           return <article className="comparison-card" key={item.key}>
             <div className="comparison-preview">{item.image ? <SmartThumbImage source={item.image} crop={item.crop} direct={item.direct} alt="" fallbackContent={item.previewFallback} /> : item.previewFallback ?? <span>No preview available</span>}
               <span className="comparison-status">{item.status || "Unknown status"}</span></div>
-            <div className="comparison-card-body"><div className="comparison-title"><div><span>{item.type || "Asset"}</span><h3 title={item.name}>{item.name}</h3></div>
+            <div className="comparison-card-body"><div className="comparison-title"><div><span>{item.typeDetail ?? (item.type || "Asset")}</span><h3 title={item.name}>{item.name}</h3></div>
               <button type="button" className="icon-btn" onClick={() => toggle(item.key)} aria-label={`Remove ${item.name} from comparison`}>×</button></div>
               {item.category && <p className="comparison-category">{item.category}</p>}
+              {item.sourceDetail}
               {item.id && <p className="comparison-id">Asset ID: {item.id}</p>}
               <div className="comparison-metrics">
                 <div><span>Dimensions</span><strong>{item.dimensions ? formatMeasurementText(item.dimensions) : "Not available"}</strong></div>
@@ -89,8 +92,8 @@ export function AssetList({ items, selectedKeys, onToggle, totalSelected, initia
     <div className="asset-list-scroll"><table className="asset-list"><thead><tr><th>Select</th><th>Asset</th><th>Type</th><th>Dimensions</th><th>Resolution</th><th>Status</th></tr></thead>
       <tbody>{items.map(item => <tr key={item.key} onClick={item.onOpen}>
         <td onClick={event => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${item.name} for comparison`} checked={selected.has(item.key)} onChange={() => toggle(item.key)} /></td>
-        <td><button type="button" className="text-btn asset-list-name" title={item.name} onClick={event => { event.stopPropagation(); item.onOpen(); }}>{item.name}</button></td>
-        <td>{item.type || "Unknown"}</td><td>{item.dimensions ? formatMeasurementText(item.dimensions) : "—"}</td><td>{item.resolution || "—"}</td><td>{item.status || "—"}</td>
+        <td><button type="button" className="text-btn asset-list-name" title={item.name} onClick={event => { event.stopPropagation(); item.onOpen(); }}>{item.name}</button>{item.sourceDetail}</td>
+        <td>{item.typeDetail ?? (item.type || "Unknown")}</td><td>{item.dimensions ? formatMeasurementText(item.dimensions) : "—"}</td><td>{item.resolution || "—"}</td><td>{item.status || "—"}</td>
       </tr>)}</tbody></table></div>
     <p className="hint">Only loaded assets appear in this list. Comparison uses existing metadata; additional details may require opening an asset.</p>
   </div>;

@@ -23,6 +23,14 @@ for how to register existing model and HDRI roots, test the shared workflows and
 
 ## 1.9.0 curated presentation details
 
+For studio asset discovery and preparation, follow the [asset ingest playbook](docs/ASSET-INGEST-PLAYBOOK.md).
+After each asset, add reusable lessons there and keep private evidence in local handoff notes.
+
+Treat local and online assets as two sources in one browser. Reuse shared UI
+components and interaction patterns wherever behavior is equivalent. Before
+shipping a change to one source, compare it with an equivalent asset from the
+other source and document any intentional differences.
+
 - Prepared presentations can carry an optional `presentation.json` sidecar. Library cards show
   the cover, name, job, artist, original format, renderer and original model file size. The drawer
   opens on the turntable when one exists, with four primary specs (original format, model

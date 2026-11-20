@@ -318,6 +318,15 @@ try {
   await until(()=>evaluate(`!document.querySelector('.image-viewer')`),"Curated gallery fullscreen did not close");
   await evaluate(`document.querySelector('.drawer button[title=Close]').click()`);
   console.log("Prepared collection presents one card, renders its embedded GLB texture and curated details");
+  await evaluate(`[...document.querySelectorAll('.view.library button')].find(button=>button.textContent==='List / compare view').click()`);
+  await until(()=>evaluate(`(() => {
+    const row=document.querySelector('.asset-list tbody tr');
+    return row?.querySelector('.asset-list-name')?.textContent==='Prepared Prop' &&
+      row.cells[2]?.textContent==='Prop' &&
+      row.querySelector('.asset-list-published-formats')?.textContent==='Source: Maya .mb · Alembic .abc' &&
+      row.cells[5]?.textContent==='Local library';
+  })()`),"Prepared list row lost its browsing identity or published formats");
+  await evaluate(`[...document.querySelectorAll('.view.library button')].find(button=>button.textContent==='Grid view').click()`);
   await choose("Shared library folder","Fixture HDRIs");
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img')?.naturalWidth)`),"Shared HDRI card thumbnail did not decode");
   const thumbnail=await evaluate(`(()=>{const image=document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img'); return [image.naturalWidth,image.naturalHeight];})()`);

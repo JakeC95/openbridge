@@ -1,5 +1,5 @@
 import { SharedAssetThumbnail } from "../components/SharedAssetThumbnail";
-import { SharedCardMeta } from "../components/SharedCardMeta";
+import { PublishedAssetType, PublishedFormats, SharedCardMeta } from "../components/SharedCardMeta";
 import { assetDisplayName } from "../asset-display-name";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
@@ -746,13 +746,17 @@ export function LibraryView() {
           totalSelected={selectMode ? selectedIds.size : undefined} initialCompare={selectMode && selectedIds.size >= 2}
           onToggle={selectMode ? path => { const asset = assets.find(item => item.path === path); if (asset) toggleSelected(asset.id); } : undefined}
           items={assets.map(asset => ({
-          key: asset.path, id: asset.id, name: asset.name, type: typeLabel(asset.type), dimensions: asset.technical?.dimensions,
+           key: asset.path, id: preparedCollection ? undefined : asset.id,
+           name: preparedCollection ? assetDisplayName(asset.name) : asset.name, type: typeLabel(asset.type),
+           typeDetail: preparedCollection ? <PublishedAssetType asset={asset} fallback={typeLabel(asset.type)} /> : undefined,
+           sourceDetail: preparedCollection ? <PublishedFormats asset={asset} /> : undefined,
+           dimensions: asset.technical?.dimensions,
           previewFallback: asset.repo === "shared" ? <SharedAssetThumbnail asset={asset} /> : undefined,
           image: asset.preview ? window.openbridge.toFileUrl(asset.preview) : null, technical: asset.technical,
-          category: asset.categories?.slice(0, 2).join(" / "), facts: readinessBadges(asset.technical),
+           category: preparedCollection ? undefined : asset.categories?.slice(0, 2).join(" / "), facts: readinessBadges(asset.technical),
           resolution: asset.technical?.local?.image ? `${asset.technical.local.image.width} × ${asset.technical.local.image.height}`
             : asset.technical?.resolution ? `${asset.technical.resolution / 1024}K` : null,
-          status: asset.repo, onOpen: () => void openLocal(asset)
+           status: preparedCollection ? "Local library" : asset.repo, onOpen: () => void openLocal(asset)
         }))} />}
         {assets.length > 0 && !listView && (
           <VirtualGrid

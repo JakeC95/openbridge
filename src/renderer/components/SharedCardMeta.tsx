@@ -2,6 +2,16 @@ import type { AssetRecord } from "../../shared/types";
 import { RendererMark } from "./RendererMark";
 import { usePresentationCard } from "./use-presentation-card";
 
+export function PublishedAssetType({ asset, fallback }: { asset: AssetRecord; fallback: string }) {
+  return usePresentationCard(asset)?.category || fallback;
+}
+
+export function PublishedFormats({ asset }: { asset: AssetRecord }) {
+  const card = usePresentationCard(asset);
+  const formats = card?.originalFormats?.length ? card.originalFormats : [card?.originalFormat].filter(Boolean);
+  return formats.length ? <div className="hint asset-list-published-formats">Source: {formats.join(" · ")}</div> : null;
+}
+
 export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
   const card = usePresentationCard(asset);
   if (!card) return null;

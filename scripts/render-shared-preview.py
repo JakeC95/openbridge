@@ -196,10 +196,12 @@ def add_turntable_parent(scene, imported, center):
     # Parent only top-level imported roots so imported hierarchies and armatures
     # remain intact, while the complete asset still rotates as one unit.
     roots = [obj for obj in imported if obj.parent is None and obj.type not in {"CAMERA", "LIGHT"}]
+    parent_inverse = pivot.matrix_world.inverted()
     for obj in roots:
-        world_matrix = obj.matrix_world.copy()
         obj.parent = pivot
-        obj.matrix_world = world_matrix
+        # Preserve the imported local transform channels, including any
+        # animation. Rewriting matrix_world can be undone on evaluation.
+        obj.matrix_parent_inverse = parent_inverse
     return pivot
 
 
