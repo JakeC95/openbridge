@@ -247,3 +247,26 @@ path validation, audit and conflict handling are defined.
   `src/renderer/components/PanoramaCanvas.tsx` provide the existing decode and viewing paths.
 - `src/renderer/views/LibraryView.tsx` and `src/main/exporter.ts` are the starting points for
   local browsing and file operations. Add shared source capabilities before exposing actions.
+
+## Inspect a Houdini lookdev publish
+
+The offline recipe tool can inspect readable parameters in a saved HIP without opening the
+scene. It accepts one unambiguous Alembic reference and explicit `<UDIM>` image paths
+inside the given asset root. It resolves version links inside that root and checks file
+sizes and digests against recognized publish manifests. Binary or procedural references
+that do not resolve this way require review in their authoring application.
+
+```sh
+node scripts/study-houdini-preview.mjs "$ASSET_ROOT" "$LOOKDEV_HIP" > "$RECIPE"
+blender --background --factory-startup --disable-autoexec --python-exit-code 3 \
+  --python scripts/build-udim-preview.py -- "$RECIPE" "$PREVIEW_GLB" "$METRES_PER_UNIT" "$NORMAL_STRENGTH"
+```
+
+Review the recipe against the lookdev shader bindings before baking. Keep the recipe local
+because it records source paths. The Blender tool requires the Alembic importer and glTF
+exporter. It checks the primary UV layer of each mesh, rejects faces that cross tile borders
+and packs referenced tiles into padded textures. It translates the reviewed diffuse,
+roughness, metalness, tangent normal, opacity and emission maps to portable material inputs.
+It uses Blender’s source color interpretation. It does not reproduce renderer shaders,
+separate bump layers, subdivision or animation. Save the GLB and an authored cover in a
+prepared collection, then compare them with the original lookdev render.

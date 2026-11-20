@@ -33,6 +33,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run check:public
       - run: npm run test:browsing
+      - run: npm run test:lookdev
       - run: npm run test:local-state
       - run: npm run test:shared-facts
       - if: runner.os == 'Windows'

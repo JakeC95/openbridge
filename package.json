@@ -30,7 +30,8 @@
     "catalog:pack:sample": "npm run build && electron . --build-catalog-pack=dist/catalog-metadata-sample.json.gz --catalog-limit=50",
     "catalog:import": "electron . --import-catalog-pack=dist/catalog-metadata-sample.json.gz",
     "test:shared-library:ui": "node scripts/test-shared-library-ui.mjs",
-    "test:model-thumbnail:ui": "node scripts/test-model-thumbnail.mjs"
+    "test:model-thumbnail:ui": "node scripts/test-model-thumbnail.mjs",
+    "test:lookdev": "node scripts/test-study-houdini-preview.mjs"
   },
   "dependencies": {
     "@bb-studio/exr": "^0.2.0",
