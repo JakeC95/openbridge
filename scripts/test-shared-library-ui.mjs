@@ -28,7 +28,49 @@ function chunk(type, payload) {
 const pngHead=Buffer.alloc(13); pngHead.writeUInt32BE(1); pngHead.writeUInt32BE(1,4); pngHead[8]=8; pngHead[9]=6;
 await writeFile(join(models,"Paint color.png"),Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk("IHDR",pngHead),chunk("IDAT",deflateSync(Buffer.from([0,200,120,60,255]))),chunk("IEND",Buffer.alloc(0))]));
 await writeFile(join(models,"Chair.mtl"),"newmtl Paint\nmap_Kd Paint color.png\n");
+const prepared = join(fixtures, "Prepared");
+const sample = join(prepared, "Prepared prop");
+await mkdir(sample, { recursive: true });
+const textureHeader = Buffer.from(pngHead);
+textureHeader.writeUInt32BE(7);
+textureHeader.writeUInt32BE(5, 4);
+const pixels = Buffer.alloc(5 * (7 * 4 + 1));
+for (let y = 0; y < 5; y++) for (let x = 0; x < 7; x++) {
+  const offset = y * 29 + 1 + x * 4;
+  pixels.set([230, 95, 25, 255], offset);
+}
+const embeddedImage = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),
+  chunk("IHDR", textureHeader), chunk("IDAT", deflateSync(pixels)), chunk("IEND", Buffer.alloc(0))]);
+const geometry = Buffer.alloc(60);
+[-1,-1,0, 1,-1,0, 0,1,0, 0,0, 1,0, 0.5,1].forEach((value, i) => geometry.writeFloatLE(value, i * 4));
+const binary = Buffer.concat([geometry, embeddedImage, Buffer.alloc((4 - embeddedImage.length % 4) % 4)]);
+const gltf = {
+  asset: { version: "2.0" }, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+  meshes: [{ primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0 }] }],
+  accessors: [{ bufferView:0, componentType:5126, count:3, type:"VEC3", min:[-1,-1,0], max:[1,1,0] },
+    { bufferView:1, componentType:5126, count:3, type:"VEC2" }],
+  buffers: [{ byteLength: binary.length }],
+  bufferViews: [{ buffer:0, byteOffset:0, byteLength:36 }, { buffer:0, byteOffset:36, byteLength:24 },
+    { buffer:0, byteOffset:60, byteLength:embeddedImage.length }],
+  images: [{ bufferView:2, mimeType:"image/png" }], textures: [{ source:0 }],
+  materials: [{ doubleSided:true, pbrMetallicRoughness:{ baseColorTexture:{index:0}, metallicFactor:0 } }]
+};
+const json = Buffer.from(JSON.stringify(gltf));
+const paddedJson = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 32)]);
+const header = Buffer.alloc(20);
+header.write("glTF");
+header.writeUInt32LE(2, 4);
+header.writeUInt32LE(28 + paddedJson.length + binary.length, 8);
+header.writeUInt32LE(paddedJson.length, 12);
+header.write("JSON", 16);
+const binaryHeader = Buffer.alloc(8);
+binaryHeader.writeUInt32LE(binary.length);
+binaryHeader.write("BIN", 4);
+await writeFile(join(sample, "Prepared prop.glb"), Buffer.concat([header, paddedJson, binaryHeader, binary]));
+await writeFile(join(sample, "Prepared prop.png"), embeddedImage);
+await writeFile(join(sample, "Alternate.obj"), "v 0 0 0");
 const sharedLibraryRoots = [
+  { id: "prepared", name: "Prepared assets", path: prepared, kind: "presentations" },
   { id: "fixture-models", name: "Fixture models", path: models, kind: "models" },
   { id: "fixture-hdris", name: "Fixture HDRIs", path: hdris, kind: "hdris" }
 ];
@@ -89,8 +131,8 @@ try {
   });
   await until(async()=>{
     const states=await evaluate(`window.openbridge.librarySnapshot().then(snapshot => snapshot.sharedLibraries)`);
-    return states.length===2 && states.every(root=>root.state==="ready");
-  },"The two fixture roots did not finish indexing");
+    return states.length===3 && states.every(root=>root.state==="ready");
+  },"The fixture roots did not finish indexing");
   await until(()=>evaluate(`[...document.querySelectorAll(".nav-item")].some(n=>n.textContent.includes("Library"))`),"Library navigation did not mount");
   const fixture=await evaluate(`(async()=>{
     const api=window.openbridge;
@@ -102,6 +144,7 @@ try {
     [...document.querySelectorAll('.nav-item')].find(n=>n.textContent.includes("Library")).click();
     return {chair:chair.id,sky:sky.id};
   })()`);
+  await choose("Local asset source","All sources");
   const metadata = await evaluate(`(async()=>{
     const api=window.openbridge;
     const chair=await api.sharedLibrary.inspectFile("${fixture.chair}");
@@ -167,6 +210,27 @@ try {
     await evaluate(`[...document.querySelectorAll('[role=option]')].find(x=>x.textContent.trim()==="${option}").click()`);
   }
   await choose("Local asset source","Shared folders");
+  await until(()=>evaluate(`document.querySelector('button[aria-label="Shared library folder"]')?.textContent.includes('Prepared assets')`),"Shared folders did not default to the prepared collection");
+  const presentation = await evaluate(`window.openbridge.queryLibrary({provider:'shared',sharedRoot:'prepared'}).then(result=>({total:result.total,id:result.assets[0]?.id}))`);
+  assert.equal(presentation.total,1);
+  await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${presentation.id}"] img')?.naturalWidth)`),"Prepared asset cover did not load");
+  await evaluate(`(()=>{
+    window.uploadedEmbeddedFixture=false;
+    const proto=WebGL2RenderingContext.prototype;
+    for(const name of ['texImage2D','texSubImage2D']){
+      const original=proto[name];
+      proto[name]=function(...args){
+        if(args.some(arg=>arg instanceof ImageBitmap&&arg.width===7&&arg.height===5)) window.uploadedEmbeddedFixture=true;
+        return original.apply(this,args);
+      };
+    }
+    document.querySelector('[data-asset-id="${presentation.id}"]').click();
+  })()`);
+  await until(()=>evaluate(`[...document.querySelectorAll('.drawer button')].some(button=>button.textContent==='3D')`),"Prepared model drawer did not open");
+  await evaluate(`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent==='3D').click()`);
+  await until(()=>evaluate(`window.uploadedEmbeddedFixture`),"The GLB embedded image was not uploaded to WebGL");
+  await evaluate(`document.querySelector('.drawer button[title=Close]').click()`);
+  console.log("Prepared collection presents one card and renders its embedded GLB texture");
   await choose("Shared library folder","Fixture HDRIs");
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img')?.naturalWidth)`),"Shared HDRI card thumbnail did not decode");
   const thumbnail=await evaluate(`(()=>{const image=document.querySelector('[data-asset-id="${fixture.sky}"] .shared-thumbnail img'); return [image.naturalWidth,image.naturalHeight];})()`);

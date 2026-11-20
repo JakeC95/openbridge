@@ -27,7 +27,7 @@ export interface SharedLibraryRoot {
   id: string;
   name: string;
   path: string;
-  kind: "models" | "hdris";
+  kind: "models" | "hdris" | "presentations";
 }
 
 export interface SharedAssetOrganization {

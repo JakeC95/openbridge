@@ -764,6 +764,30 @@ try {
     assert.ok(manifest.allowedFileUrls.includes(manifest.textureAliases[0][1]));
   });
 
+  const presentations = join(directory, "Prepared assets");
+  const character = join(presentations, "Character");
+  const work = join(character, "work");
+  const incomplete = join(presentations, "Incomplete");
+  await Promise.all([work, incomplete].map(folder => mkdir(folder, { recursive: true })));
+  await Promise.all([
+    writeFile(join(character, "Character.glb"), "approved preview mesh"),
+    writeFile(join(character, "Character.png"), "approved cover"),
+    writeFile(join(character, "Alternate.glb"), "unused export"),
+    writeFile(join(work, "Intermediate.fbx"), "working model"),
+    writeFile(join(incomplete, "Incomplete.glb"), "no cover")
+  ]);
+  const approved = [];
+  await api.scanSharedRoot({ id: "presentations", name: "Prepared assets", path: presentations, kind: "presentations" }, {
+    cancelled: () => false, loadCheckpoint: () => null, checkpoint: () => {},
+    publish: assets => approved.push(...assets)
+  });
+  check("presentation folders index only the chosen model and cover, without walking work folders", () => {
+    assert.equal(approved.length, 1);
+    assert.equal(approved[0].name, "Character");
+    assert.deepEqual(approved[0].categories, ["Prepared assets"]);
+    assert.equal(approved[0].preview, join(character, "Character.png"));
+  });
+
   const factsRoot = join(directory, "Metadata source");
   await mkdir(factsRoot);
   const factsImageRoot = join(directory, "Metadata images");

@@ -55,7 +55,7 @@ export function normalizeSharedRoots(input: unknown): SharedLibraryRoot[] {
     const { id, name, kind } = value as SharedLibraryRoot;
     const path = typeof value.path === "string" ? value.path.trim() : "";
     if (typeof id !== "string" || !/^[a-z0-9-]{1,64}$/i.test(id) || typeof name !== "string" ||
-        !name.trim() || !isAbsolute(path) || !["models", "hdris"].includes(kind)) continue;
+        !name.trim() || !isAbsolute(path) || !["models", "hdris", "presentations"].includes(kind)) continue;
     const target = resolve(path);
     if (roots.some(root => root.id === id || root.name.toLowerCase() === name.trim().slice(0, 80).toLowerCase() || isInside(root.path, target) || isInside(target, root.path))) continue;
     roots.push({ id, name: name.trim().slice(0, 80), path: target, kind });
@@ -84,6 +84,7 @@ export function variantFamily(name: string): string {
 function matchingAsset(kind: SharedLibraryRoot["kind"], name: string): boolean {
   const extension = extname(name).toLowerCase();
   if (kind === "hdris") return HDR_EXTENSIONS.has(extension);
+  if (kind === "presentations") return extension === ".glb";
   return Boolean(modelFormatFromExtension(extension)) || extension === ".hip" || extension === ".hiplc" || extension === ".hipnc";
 }
 
@@ -126,11 +127,13 @@ export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptio
       for await (const entry of entries) {
         if (cancelled()) break;
         if (entry.name.startsWith(".") || entry.isSymbolicLink()) continue;
-        if (entry.isDirectory() && !SKIP_FOLDERS.has(entry.name.toLowerCase())) {
+        if (entry.isDirectory() && !SKIP_FOLDERS.has(entry.name.toLowerCase()) &&
+            (root.kind !== "presentations" || !locator)) {
           folders.push(join(locator, entry.name));
         } else if (entry.isFile()) {
           const extension = extname(entry.name);
-          if (matchingAsset(root.kind, entry.name)) candidateNames.push(entry.name);
+          if (matchingAsset(root.kind, entry.name) && (root.kind !== "presentations" ||
+            (locator && basename(entry.name, extension) === basename(folder)))) candidateNames.push(entry.name);
           else if (RENDER_EXTENSIONS.has(extension.toLowerCase())) {
             renders.set(basename(entry.name, extension).toLowerCase(), entry.name);
           }
@@ -139,7 +142,7 @@ export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptio
     } catch {
       return { folders: [], assets: [] as AssetRecord[], partial: true, offline: !locator };
     }
-    const categories = [root.name, ...locator.split(sep).filter(Boolean)];
+    const categories = root.kind === "presentations" ? [root.name] : [root.name, ...locator.split(sep).filter(Boolean)];
     const assets: AssetRecord[] = [];
     let partial = false;
     let covers = new Map<string, string | null>();
@@ -149,6 +152,10 @@ export async function scanSharedRoot(root: SharedLibraryRoot, options: ScanOptio
       const canonicalPackage = inModelFolder ? dirname(canonicalFolder) : canonicalFolder;
       covers = await packageCovers(packageFolder, canonicalPackage, cancelled);
     }
+    // A presentation starts with an artist-selected cover and contains one
+    // named portable mesh. Ambiguous or incomplete folders stay out of the grid.
+    if (root.kind === "presentations" && (candidateNames.length !== 1 ||
+        !renders.has(basename(folder).toLowerCase()))) return { folders, assets, partial, offline: false };
     for (let offset = 0; offset < candidateNames.length && !cancelled(); offset += 8) {
       const files = await Promise.all(candidateNames.slice(offset, offset + 8).map(async file => {
         const path = join(folder, file);

@@ -164,7 +164,7 @@ export function SettingsView() {
   async function addSharedRoot(kind: SharedLibraryRoot["kind"]) {
     const folder = await window.openbridge.chooseDirectory();
     if (!folder) return;
-    const name = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? (kind === "models" ? "Shared models" : "Shared HDRIs");
+    const name = folder.split(/[\\/]/).filter(Boolean).at(-1) ?? (kind === "presentations" ? "Prepared assets" : kind === "models" ? "Shared models" : "Shared HDRIs");
     setDraft(current => current ? {
       ...current,
       sharedLibraryRoots: [...(current.sharedLibraryRoots ?? []), { id: crypto.randomUUID(), name, path: folder, kind }]
@@ -239,9 +239,9 @@ export function SettingsView() {
         </section>
         <section className="settings-section">
           <h2>Shared library folders</h2>
-          <p className="hint">Add existing model or HDRI folders. OpenBridge indexes them in place. Save changes, then choose Shared folders in Library.</p>
+          <p className="hint">Add prepared assets, source models, or HDRIs. Save changes, then choose Shared folders in Library.</p>
           {(draft.sharedLibraryRoots ?? []).map(root => <div className="shared-root-setting" key={root.id}>
-            <div className="form-row"><label htmlFor={`shared-${root.id}`}>{root.kind === "models" ? "Model source name" : "HDRI source name"}</label>
+            <div className="form-row"><label htmlFor={`shared-${root.id}`}>{root.kind === "presentations" ? "Asset presentation name" : root.kind === "models" ? "Model source name" : "HDRI source name"}</label>
               <input id={`shared-${root.id}`} value={root.name} onChange={event => editSharedRoot(root.id, { name: event.target.value })} maxLength={80} />
             </div>
             <p className="hint" title={root.path}>{root.path}</p>
@@ -251,6 +251,7 @@ export function SettingsView() {
             </div>
           </div>)}
           <div className="button-row horizontal">
+            <button type="button" className="btn btn-ghost" onClick={() => void addSharedRoot("presentations")}><FolderIcon /> Add prepared assets…</button>
             <button type="button" className="btn btn-ghost" onClick={() => void addSharedRoot("models")}><FolderIcon /> Add model folder…</button>
             <button type="button" className="btn btn-ghost" onClick={() => void addSharedRoot("hdris")}><FolderIcon /> Add HDRI folder…</button>
           </div>

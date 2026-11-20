@@ -24,6 +24,8 @@ function variantLabel(variant: AssetRecord): string {
 
 export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const close = useStore(state => state.closeSelection);
+  const prepared = useStore(state => state.settings?.sharedLibraryRoots?.some(root =>
+    root.kind === "presentations" && asset.id.startsWith(`shared:${root.id}:`)) ?? false);
   const history = useStore(state => state.selectionHistory.length);
   const favorite = useStore(state => state.sharedFavorites.includes(asset.id));
   const toast = useStore(state => state.toast);
@@ -34,7 +36,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const [inspectionRequest, setInspectionRequest] = useState(0);
   const [hdr, setHdr] = useState<SharedHdrInfo | null>(null);
   const [problem, setProblem] = useState("");
-  const [view, setView] = useState<"render" | "model" | "resources">(asset.preview ? "render" : "model");
+  const [view, setView] = useState<"render" | "model" | "resources">(asset.preview && !prepared ? "render" : "model");
   const [viewerItems, setViewerItems] = useState<MapPreview[]>([]);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [resources, setResources] = useState<SharedAssetDependencies | null>(null);
@@ -60,7 +62,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     setOrganizationReady(false);
     setOrganization({ tags: "", collections: "", notes: "" });
     setOrganizationBusy(false);
-    setView(asset.preview ? "render" : "model");
+    setView(asset.preview && !prepared ? "render" : "model");
     setViewerItems([]);
     setVariants([]);
     setVariantsError("");
@@ -91,7 +93,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
       }).catch(error => { if (current) setProblem(error instanceof Error ? error.message : String(error)); });
     }
     return () => { current = false; };
-  }, [asset.id, asset.path, hdrAsset, toast]);
+  }, [asset.id, asset.path, hdrAsset, prepared, toast]);
 
   useEffect(() => {
     let current = true;
@@ -190,7 +192,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     <aside className="drawer" role="dialog" aria-label={asset.name}>
       <div className="drawer-head">
         <button type="button" className="text-btn" disabled={!history} onClick={() => useStore.getState().backSelection()}>Back</button>
-        <span className="drawer-id">Shared</span>
+        <span className="drawer-id">{prepared ? "Prepared asset" : "Shared"}</span>
         <button type="button" className="icon-btn" aria-label="Previous asset" onClick={() => useStore.getState().stepSelection(-1)}>‹</button>
         <button type="button" className="icon-btn" aria-label="Next asset" onClick={() => useStore.getState().stepSelection(1)}>›</button>
         <button type="button" className={favorite ? "icon-btn active" : "icon-btn"}
@@ -303,7 +305,7 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         {!facts && factsLoading && <p className="hint" role="status">Inspecting source file…</p>}
         {factsError && <div className="shared-inline-error" role="status"><p className="hint">{factsError}</p>
           <button type="button" className="text-btn" disabled={factsLoading} onClick={() => setInspectionRequest(value => value + 1)}>Retry inspection</button></div>}
-        <p className="hint shared-asset-path" title={asset.path}>{asset.path}</p>
+        {(!prepared || view === "resources") && <p className="hint shared-asset-path" title={asset.path}>{asset.path}</p>}
         {variants.length > 0 && <section className="shared-resource-section">
           <h3>Possible variants in this folder <span className="hint">({variants.length})</span></h3>
           <p className="hint">Related filenames; these may be alternate exports or separate assets. LOD and version labels come from filenames.</p>

@@ -103,6 +103,8 @@ export function LibraryView() {
   const refreshLibrary = useStore(state => state.refreshLibrary);
   const settings = useStore(state => state.settings);
   const toast = useStore(state => state.toast);
+  const preparedCollection = localProvider === "shared" &&
+    settings?.sharedLibraryRoots?.some(root => root.id === sharedRoot && root.kind === "presentations");
 
   const [selectMode, setSelectMode] = useState(false);
   const [listView, setListView] = useState(false);
@@ -545,7 +547,7 @@ export function LibraryView() {
               options={[{ value: "", label: "All shared folders" },
                 ...(settings?.sharedLibraryRoots ?? []).map(root => ({ value: root.id, label: root.name }))]} />
           )}
-          {localProvider === "shared" && (organization.formats.length > 0 || sharedFormat) && (
+          {localProvider === "shared" && !preparedCollection && (organization.formats.length > 0 || sharedFormat) && (
             <Dropdown className="filter-select" value={sharedFormat} ariaLabel="Shared file format"
               onChange={value => useStore.getState().setSharedFormat(value)}
               options={[{ value: "", label: "All formats" }, { value: "viewer", label: "3D viewer formats" }, ...organization.formats.map(format => ({ value: format, label: format.toUpperCase() }))]} />
@@ -581,8 +583,8 @@ export function LibraryView() {
           {assets.length > 0 && !selectMode && <button type="button" className="text-btn" onClick={() => setListView(value => !value)}>{listView ? "Grid view" : "List / compare view"}</button>}
           {(localProvider === "all" || localProvider === "megascans") && <PackBrowser packs={localPacks} local />}
           {localProvider === "shared" && <>
-            <button type="button" className={groupSharedVariants ? "chip active" : "chip"} aria-pressed={groupSharedVariants}
-              onClick={() => useStore.getState().setGroupSharedVariants(!groupSharedVariants)}>Group variants</button>
+            {!preparedCollection && <button type="button" className={groupSharedVariants ? "chip active" : "chip"} aria-pressed={groupSharedVariants}
+              onClick={() => useStore.getState().setGroupSharedVariants(!groupSharedVariants)}>Group variants</button>}
             <SharedSavedSearches />
           </>}
           <RecentBrowsing />
@@ -809,7 +811,7 @@ export function LibraryView() {
                         className="asset-provider-mark"
                       />
                     )}
-                    <span className="asset-flag owned">{asset.repo === "shared" ? "SHARED" : "LOCAL"}</span>
+                    {!preparedCollection && <span className="asset-flag owned">{asset.repo === "shared" ? "SHARED" : "LOCAL"}</span>}
                     {!selectMode && asset.repo === "shared" && <button type="button" className={sharedFavorites.includes(asset.id) ? "asset-favorite active" : "asset-favorite"}
                       aria-label={sharedFavorites.includes(asset.id) ? "Remove favorite" : "Add favorite"}
                       onClick={event => { event.stopPropagation(); useStore.getState().toggleSharedFavorite(asset.id); }}>

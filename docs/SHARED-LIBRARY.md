@@ -75,6 +75,35 @@ ownership, licensing, semantic categories, weather or physically measured scale.
 Model previews retain valid OBJ/glTF dependencies when another referenced file is missing and
 show a missing-resource note. Copying a model package still rejects incomplete dependencies.
 
+## Prepared asset presentations
+
+For assets assembled from a studio project, use **Settings → Add prepared assets…**
+to register a folder containing reviewed portable presentations. Put each asset in its own
+folder with a same-named GLB and cover image, for example `Character/Character.glb`
+and `Character/Character.png`. OpenBridge indexes one entry and keeps alternate
+exports and nested work folders out of that presentation. Selecting **Shared folders**
+opens the first registered prepared collection when one exists. The folder selector
+can switch to the original source roots for file-level work.
+
+A portable presentation can bake a studio material into textures and package those
+textures with its mesh. Choose the source publish and material version from project
+evidence. A rendered cover and browser lighting need not reproduce the original DCC
+renderer’s node graph.
+
+Use the strongest evidence available when preparing a presentation:
+
+| Evidence | How to use it |
+| --- | --- |
+| Approved self-contained GLB and cover | Use the existing presentation directly. |
+| ASS or USD with explicit geometry, shader and texture bindings | Follow the authored bindings, record the chosen versions and translate or bake the materials for portable viewing. |
+| Saved Houdini lookdev scene | Identify the referenced geometry and texture publishes, even when a newer file exists. Old paths need a verified remap into the same asset package. External renderer shaders may need baking. |
+| Package manifest or a documented folder layout | Match explicit asset IDs, versions, material slots and tile numbers within the package. |
+| Filenames and nearby folders alone | Keep possible matches available for review. Unverified combinations do not become prepared presentations. |
+
+Prepared indexing reads the exported files. Automatic ASS and Houdini scene analysis
+is outside this indexing pass. The pilot extracted saved references as data and did
+not run the source scene or its scripts.
+
 ## Authored covers in model collections
 
 OpenBridge looks for a matching image in a collection’s `preview` or `previews` folder.

@@ -639,7 +639,10 @@ export const useStore = create<State>((set, get) => ({
   setLocalType(localType) { set({ localType, localCategoryPath: [] }); },
   setLocalProvider(localProvider) {
     if (get().localProvider === localProvider) return;
-    set({ localProvider, localSort: localProvider === "shared" ? "previews" : get().localSort === "previews" ? "recent" : get().localSort, localType: "", localCategoryPath: [], localRepo: "all", localFavoritesOnly: false, localPack: null, localReady: [], localMaxTris: null, localColor: "", localState: "", localInterior: "" });
+    const presentation = localProvider === "shared"
+      ? get().settings?.sharedLibraryRoots?.find(root => root.kind === "presentations")?.id : undefined;
+    set({ ...(presentation ? { sharedRoot: presentation, sharedFormat: "", sharedTag: "", sharedCollection: "" } : {}),
+      localProvider, localSort: localProvider === "shared" ? "previews" : get().localSort === "previews" ? "recent" : get().localSort, localType: "", localCategoryPath: [], localRepo: "all", localFavoritesOnly: false, localPack: null, localReady: [], localMaxTris: null, localColor: "", localState: "", localInterior: "" });
   },
   setLocalCategoryPath(localCategoryPath) { set({ localCategoryPath, localType: "" }); },
   setLocalSort(localSort) { set({ localSort }); writePreference("localSort", localSort); },
@@ -778,7 +781,12 @@ export const useStore = create<State>((set, get) => ({
         window.openbridge.versions(),
         window.openbridge.catalogMetadata().catch(() => null)
       ]);
-      set(readBrowsingRestore(auth.loggedIn));
+      const restored = readBrowsingRestore(auth.loggedIn);
+      const prepared = settings.sharedLibraryRoots?.find(root => root.kind === "presentations");
+      if (prepared && (!restored.view || restored.localProvider === "shared")) {
+        set({ ...restored, view: restored.view ?? "library", localProvider: "shared",
+          sharedRoot: prepared.id, localSort: "previews", localCategoryPath: [], localType: "" });
+      } else set(restored);
       const library = await window.openbridge.librarySnapshot(false);
       const firstPage = await window.openbridge.queryLibrary({
         ...libraryFilterQuery(get()),
