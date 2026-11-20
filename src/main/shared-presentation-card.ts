@@ -53,11 +53,14 @@ export async function readPresentationCard(assetPath: string): Promise<SharedPre
       ? original.formats.map(value => cleanText(value, 60)).filter((value): value is string => Boolean(value)).slice(0, 8)
       : [];
     const card: SharedPresentationCard = {
+      category: cleanText(root.category, 60),
       job: cleanText(root.job, 120),
       artist: cleanText(root.artist, 80),
       renderer: cleanText(root.renderer, 120),
       originalFormat: cleanText(original?.format, 120) ?? (formats.length ? formats.join(" / ") : undefined),
-      originalSize: cleanText(original?.size, 80)
+      originalFormats: formats,
+      originalSize: cleanText(original?.size, 80),
+      originalDetail: cleanText(original?.detail, 240)
     };
     return Object.values(card).some(Boolean) ? card : null;
   }

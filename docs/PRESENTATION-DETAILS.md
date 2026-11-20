@@ -46,8 +46,8 @@ detached badge or an opaque logo tile.
 
 This is built for an artist hunting a known asset in a large local library.
 
-- **Library card**: cover, name, job, artist, original format, renderer and
-  original model size. The long shared ID, source badge and file-facts line
+- **Library card**: cover, pipeline-style PascalCase name, job, artist, every
+  available model format, renderer and primary model size. The long shared ID, source badge and file-facts line
   stay out of the grid. Hovering the card still exposes the full technical
   facts, and the inspector has everything.
 - **Search by job and artist**: the scanner adds job, artist, renderer and
@@ -57,18 +57,17 @@ This is built for an artist hunting a known asset in a large local library.
 - **Turntable first**: when `hero` is a video, the drawer opens on the
   **Turntable** and plays it muted on a loop. 3D and Resources remain one click
   away. Without a video, the drawer opens on 3D and Render is available.
-- **Specs**: original format, model size, renderer and face count. Project
-  codes, publish dates, GLB counts and source applications sit behind **More
-  specifications**.
+- **Specs**: available model formats, published file size, renderer and source
+  face count. The assembled dimensions follow, with the shared human-scale
+  comparison where usable measurements are provided.
 - **Anatomy** for named parts, face/vertex counts, material slots, UDIM tiles
   and part thumbnails. Notes stay in the row tooltip.
-- **Textures** cards for the primary channels, with resolution, format, version
-  and per-tile thumbnails. Secondary channels sit behind a closed disclosure.
+- **Textures & masks** cards for the primary channels, with resolution, format,
+  version and per-tile thumbnails. Other maps sit behind a closed disclosure.
 - **Media** for authored stills, a contact sheet, a reference frame and detail
   crops, with fullscreen navigation.
-- **Version history**, **Source & credits** and **notes** behind closed
-  disclosures. They are available for provenance work without competing with
-  the asset.
+- **Production sources & notes** behind a closed disclosure. Version timeline
+  metadata is retained in the sidecar but is not shown as a dropdown.
 - A collapsed list of skipped media or map entries.
 
 The rule is selection, not omission. The manifest can carry more than the page
@@ -102,19 +101,18 @@ All fields are optional except `schemaVersion`. Unknown fields are ignored.
 | Field | Type | Notes |
 | --- | --- | --- |
 | `schemaVersion` | number | Must be `1`. |
-| `title` | string | Optional display title. The drawer falls back to the indexed asset name. |
-| `subtitle` | string | One line below the title when job/artist are absent; useful for variant or finish. |
-| `summary` | string | Short description, clamped to two lines in the drawer. Plain text only. |
+| `category` | string | Studio asset type, such as `Prop`. Shown on the card and in the drawer when known. |
+| `title`, `subtitle`, `summary` | string | Retained as authored metadata. The library headline uses the indexed asset name with readable word spacing. |
 | `job` | string | Show or job name. Shown on the card and as the drawer byline; indexed for search. |
 | `artist` | string | Artist name. Shown on the card and as the drawer byline; indexed for search. |
 | `renderer` | string | Primary renderer, for example `Arnold`. Shown on the card and specs; indexed for search. |
-| `original` | object | `{ format?, formats?, size?, detail? }` for the original model formats and model file size. Do not use the whole asset root or the preview GLB. |
+| `original` | object | `{ format?, formats?, size?, detail? }` for model file formats only (for example Maya `.mb` and Alembic `.abc`). Do not include texture/project formats such as `.spp` or UDIM images. Additional format names and `detail` appear on the card and under **More specifications**. `size` is the primary model file size, not the whole asset root or preview GLB. |
 | `hero` | media | Image or video. A video makes **Turntable** the default drawer view. |
 | `media` | media[] | Up to 24 image or video entries; images appear in the Media gallery. |
 | `facts` | fact[] | Up to 24 `{ label, value, detail?, primary? }` entries. `primary` marks the first-screen specs. |
 | `parts` | part[] | Up to 64 named parts. `faces`, `vertices`, `material`, `tile`, `color`, `preview` and `note` are optional. `note` is shown as a tooltip. |
 | `maps` | map[] | Up to 64 texture channels. `primary` marks the visible cards; `tiles`, `resolution`, `format`, `version`, `preview`, `tilePreviews` and `note` are optional. |
-| `versions` | version[] | Up to 24 `{ label, kind?, date?, note?, current? }` milestones. |
+| `versions` | version[] | Up to 24 `{ label, kind?, date?, note?, current? }` milestones retained for provenance, but not currently rendered in the asset drawer. |
 | `links` | link[] | Up to 16 `{ label, value?, href?, note? }` source notes. `href` must be HTTPS. |
 | `credits` | credit[] | Up to 12 `{ role, name }` entries. |
 | `notes` | string[] | Up to 12 curator notes. |
@@ -147,9 +145,12 @@ verify them.
 Mark at most four facts and roughly four to six maps as `primary`. The drawer
 shows those first. If a manifest has no primary marks, it falls back to the
 first four facts and the full map list, so small hand-authored sidecars still
-work. For an asset-hunting view, the first four are usually **original format,
-model size, renderer and face count**. The card uses `job`, `artist`,
-`original.format`, `renderer` and `original.size` independently of the facts.
+work. For an asset-hunting view, the first four are usually **model formats,
+model size, renderer and source face count**. The card uses `job`, `artist`,
+`original.format`, `original.formats`, `renderer` and `original.size`
+independently of the facts. `original.formats` should contain every available
+model format (not texture or project formats), and `original.detail` can list
+versioned filenames and per-file sizes.
 
 Keep primary values short enough to scan in one pass; primary facts render as
 compact label/value stats, so `detail` text is only shown for secondary facts.

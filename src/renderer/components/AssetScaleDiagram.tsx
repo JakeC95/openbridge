@@ -1,8 +1,13 @@
 import { useId, useState } from "react";
 import type { AssetTechnicalSummary } from "../../shared/types";
-import { assetBounds, REFERENCE_HUMAN_HEIGHT, scaleDiagramLayout, scaleMeasurement } from "../../shared/asset-scale";
+import { assetBounds, assetBoundsFromDimensions, REFERENCE_HUMAN_HEIGHT, scaleDiagramLayout, scaleMeasurement } from "../../shared/asset-scale";
 
-export function AssetScaleDiagram({ technical, variation }: { technical: AssetTechnicalSummary; variation?: number }) {
+export function AssetScaleDiagram({ technical, dimensions, variation }: {
+  technical?: AssetTechnicalSummary;
+  /** Shared presentation dimensions in depth × width × height order. */
+  dimensions?: string;
+  variation?: number;
+}) {
   const id = useId();
   const [units, setUnits] = useState<"metric" | "imperial">(() => localStorage.getItem("openbridge.scaleUnits") === "imperial" ? "imperial" : "metric");
   const [reference, setReference] = useState(() => {
@@ -10,7 +15,7 @@ export function AssetScaleDiagram({ technical, variation }: { technical: AssetTe
     return [1.5, 1.6, 1.7, 1.78, 1.85, 2].includes(value) ? value : REFERENCE_HUMAN_HEIGHT;
   });
   const format = (value: number) => units === "imperial" ? `${Number((value / 0.0254).toPrecision(4))} in` : scaleMeasurement(value);
-  const bounds = assetBounds(technical, variation);
+  const bounds = technical ? assetBounds(technical, variation) : dimensions ? assetBoundsFromDimensions(dimensions) : null;
   const layout = bounds ? scaleDiagramLayout(bounds, reference) : null;
   return <section className="asset-scale-panel" aria-labelledby={`${id}-heading`}>
     <div className="asset-scale-heading"><h3 id={`${id}-heading`}>Relative size</h3><span>Front orthographic</span></div>
@@ -53,7 +58,7 @@ export function AssetScaleDiagram({ technical, variation }: { technical: AssetTe
         {Math.min(layout.boxWidth, layout.boxHeight, layout.humanHeight) < 1 ? " One or more dimensions are smaller than one diagram pixel; sizes are not exaggerated." : ""}
         {" "}Metadata bounds, not a mesh silhouette; asset orientation may differ from its preview.</p>
     </> : <p className="hint asset-scale-unavailable">Scale comparison unavailable: this asset has no complete, usable width, depth and height
-      {variation !== undefined && technical.variationDimensions.length > 0 ? ` for variation ${variation}` : ""}.
+      {variation !== undefined && technical?.variationDimensions.length ? ` for variation ${variation}` : ""}.
       Scan area alone does not describe a 3D bounding box.</p>}
   </section>;
 }

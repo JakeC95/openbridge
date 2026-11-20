@@ -12,6 +12,7 @@ import { useStore } from "../store";
 import { ImageViewer } from "./ImageViewer";
 import { ModelPreviewPanel } from "./ModelViewer";
 import { SharedPresentationPanel } from "./SharedPresentationPanel";
+import { assetDisplayName } from "../asset-display-name";
 
 const mapNames: Record<string, string> = {
   basecolor: "Base color", albedo: "Base color", normal: "Normal", roughness: "Roughness",
@@ -69,7 +70,11 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const [organizationReady, setOrganizationReady] = useState(false);
   const [organizationBusy, setOrganizationBusy] = useState(false);
   const hdrAsset = asset.type === "hdri";
-  const presentationByline = [presentation?.job, presentation?.artist].filter(Boolean).join(" · ") || presentation?.subtitle;
+  const provenance = [
+    ["Type", presentation?.category],
+    ["Job", presentation?.job],
+    ["Artist", presentation?.artist]
+  ].filter(([, value]) => Boolean(value));
 
   useEffect(() => {
     let current = true;
@@ -237,11 +242,10 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         <button type="button" className="icon-btn" title="Close" onClick={close}><CloseIcon /></button>
       </div>
       <div className="drawer-scroll">
-        <h2 className="drawer-title">{presentation?.title ?? asset.name}</h2>
-        {presentationByline
-          ? <p className="shared-presentation-subtitle">{presentationByline}</p>
-          : <p className="drawer-id">{asset.categories.join(" / ")}</p>}
-        {presentation?.summary && <p className="shared-presentation-summary">{presentation.summary}</p>}
+        <h2 className="drawer-title">{assetDisplayName(asset.name)}</h2>
+        {provenance.length > 0 && <dl className="shared-asset-provenance">
+          {provenance.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+        </dl>}
         {presentationError && <p className="hint" role="status">Presentation details could not be read: {presentationError}</p>}
         {!hdrAsset && <div className="button-row horizontal shared-preview-modes" role="group" aria-label="Local asset preview">
           {presentation?.hero?.kind === "video" && <button type="button" className={view === "turntable" ? "btn btn-primary" : "btn btn-ghost"} aria-pressed={view === "turntable"} onClick={() => chooseView("turntable")}>Turntable</button>}
@@ -262,7 +266,6 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
             }} />
           </button>}
         </div>}
-        {!hdrAsset && view === "turntable" && presentation?.hero?.caption && <p className="hint">{presentation.hero.caption}</p>}
         {!hdrAsset && presentation && view !== "resources" && <SharedPresentationPanel presentation={presentation} onOpenImage={openImageItems} />}
         {hdrAsset && hdr?.previewAvailable && <button type="button" className="btn btn-primary" onClick={() => showImage({
           type: "HDR", label: `${asset.name} · ${hdr.width} × ${hdr.height}`, url: image?.url ?? "",
@@ -303,20 +306,15 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
             {resourceNeedle && !resourceMaps.length && !resourceFiles.length && <p className="hint" role="status">No resources match this filter.</p>}
           </>}
         </section>}
-        <div className="technical-grid">
+        {!prepared && <div className="technical-grid">
           <div><span>Format</span><strong>{(facts?.format ?? asset.tags[0])?.toUpperCase() || "Unknown"}</strong></div>
-          {asset.sizeBytes !== undefined && <div><span>{prepared ? "GLB size" : "Size"}</span><strong>{bytesLabel(asset.sizeBytes)}</strong></div>}
+          {asset.sizeBytes !== undefined && <div><span>Size</span><strong>{bytesLabel(asset.sizeBytes)}</strong></div>}
           {hdr && <div><span>Dimensions</span><strong>{hdr.width} × {hdr.height}</strong></div>}
           <div><span>Modified</span><strong>{new Date(asset.mtime).toLocaleDateString()}</strong></div>
-        </div>
-        {facts && (prepared
-          ? <details className="shared-technical-disclosure">
-            <summary>Technical details</summary>
-            <SourceFactsSection facts={facts} loading={factsLoading} onRefresh={() => setInspectionRequest(value => value + 1)} />
-          </details>
-          : <SourceFactsSection facts={facts} loading={factsLoading} onRefresh={() => setInspectionRequest(value => value + 1)} />)}
-        {!facts && factsLoading && <p className="hint" role="status">Inspecting source file…</p>}
-        {factsError && <div className="shared-inline-error" role="status"><p className="hint">{factsError}</p>
+        </div>}
+        {!prepared && facts && <SourceFactsSection facts={facts} loading={factsLoading} onRefresh={() => setInspectionRequest(value => value + 1)} />}
+        {!prepared && !facts && factsLoading && <p className="hint" role="status">Inspecting source file…</p>}
+        {!prepared && factsError && <div className="shared-inline-error" role="status"><p className="hint">{factsError}</p>
           <button type="button" className="text-btn" disabled={factsLoading} onClick={() => setInspectionRequest(value => value + 1)}>Retry inspection</button></div>}
         {(!prepared || view === "resources") && <p className="hint shared-asset-path" title={asset.path}>{asset.path}</p>}
         {variants.length > 0 && <section className="shared-resource-section">
@@ -359,16 +357,17 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   </>;
 }
 
-function SourceFactsSection({ facts, loading, onRefresh }: {
+function SourceFactsSection({ facts, loading, prepared = false, onRefresh }: {
   facts: SharedFileFacts;
   loading: boolean;
+  prepared?: boolean;
   onRefresh: () => void;
 }) {
   return <section className="shared-organization">
-    <div className="shared-section-heading"><h3>Measured source facts</h3>
+    <div className="shared-section-heading"><h3>{prepared ? "Prepared GLB facts" : "Measured source facts"}</h3>
       <button type="button" className="text-btn" disabled={loading} onClick={onRefresh}>{loading ? "Inspecting…" : "Refresh facts"}</button>
     </div>
-    <p className="hint">Read from the source file · {new Date(facts.inspectedAt).toLocaleString()}
+    <p className="hint">{prepared ? "Measured from the prepared GLB" : "Read from the source file"} · {new Date(facts.inspectedAt).toLocaleString()}
       {facts.model?.status === "limited" ? " · Partial inspection" : facts.model?.status === "unsupported" ? " · Format inspection unavailable" : ""}</p>
     <div className="technical-grid">
       {facts.image && <>
@@ -379,17 +378,17 @@ function SourceFactsSection({ facts, loading, onRefresh }: {
         {facts.image.views.length > 0 && <div><span>Views</span><strong>{facts.image.views.join(", ")}</strong></div>}
       </>}
       {facts.model && <>
-        {facts.model.geometryCount !== undefined && <div><span>Stored mesh geometries</span><strong>{facts.model.geometryCount.toLocaleString()}</strong></div>}
+        {facts.model.geometryCount !== undefined && <div><span>{prepared ? "GLB geometries" : "Stored mesh geometries"}</span><strong>{facts.model.geometryCount.toLocaleString()}</strong></div>}
         {facts.model.sourceUnits && <div><span>Metres per source unit</span><strong>{facts.model.sourceUnits.metresPerUnit.toLocaleString(undefined, { maximumSignificantDigits: 8 })}</strong></div>}
-        {facts.model.vertices !== null && <div><span>Stored vertices</span><strong>{facts.model.vertices.toLocaleString()}</strong></div>}
-        {facts.model.triangles !== null && <div><span>Stored triangles</span><strong>{facts.model.triangles.toLocaleString()}</strong></div>}
-        {facts.model.materials !== null && <div><span>Materials</span><strong>{facts.model.materials.toLocaleString()}</strong></div>}
-        {facts.model.textureImages !== null && <div><span>Image sources</span><strong>{facts.model.textureImages.toLocaleString()}</strong></div>}
-        {facts.model.normals !== null && <div><span>Stored normals</span><strong>{facts.model.normals.toLocaleString()}</strong></div>}
-        {facts.model.uvCoordinates !== null && <div><span>UV coordinates</span><strong>{facts.model.uvCoordinates.toLocaleString()}</strong></div>}
-        {facts.model.bounds && <div><span>Mesh-local size</span><strong>{facts.model.bounds.max.map((max, axis) =>
+        {facts.model.vertices !== null && <div><span>{prepared ? "GLB vertices" : "Stored vertices"}</span><strong>{facts.model.vertices.toLocaleString()}</strong></div>}
+        {facts.model.triangles !== null && <div><span>{prepared ? "GLB triangles" : "Stored triangles"}</span><strong>{facts.model.triangles.toLocaleString()}</strong></div>}
+        {facts.model.materials !== null && <div><span>{prepared ? "GLB materials" : "Materials"}</span><strong>{facts.model.materials.toLocaleString()}</strong></div>}
+        {facts.model.textureImages !== null && <div><span>{prepared ? "GLB image sources" : "Image sources"}</span><strong>{facts.model.textureImages.toLocaleString()}</strong></div>}
+        {facts.model.normals !== null && <div><span>{prepared ? "GLB normals" : "Stored normals"}</span><strong>{facts.model.normals.toLocaleString()}</strong></div>}
+        {facts.model.uvCoordinates !== null && <div><span>{prepared ? "GLB UV values" : "UV coordinates"}</span><strong>{facts.model.uvCoordinates.toLocaleString()}</strong></div>}
+        {facts.model.bounds && <div><span>{prepared ? "Mesh bounds before root scale" : "Mesh-local size"}</span><strong>{facts.model.bounds.max.map((max, axis) =>
           (max - facts.model!.bounds!.min[axis]).toLocaleString(undefined, { maximumFractionDigits: 3 })).join(" × ")}
-          {facts.model.bounds.unit === "metres" ? " m" : " source units"}</strong></div>}
+          {prepared ? " GLB units" : facts.model.bounds.unit === "metres" ? " m" : " source units"}</strong></div>}
       </>}
       {facts.lod !== undefined && <div><span>Filename LOD</span><strong>LOD{facts.lod}</strong></div>}
       {facts.version && <div><span>Filename version</span><strong>v{facts.version}</strong></div>}

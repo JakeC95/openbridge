@@ -1011,9 +1011,8 @@ code {
   min-width: 0;
 }
 .asset-meta .shared-card-specs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  display: grid;
+  gap: 2px;
   min-width: 0;
   color: rgba(255, 255, 255, 0.74);
   font-size: 10px;
@@ -1022,10 +1021,16 @@ code {
   text-transform: none;
 }
 .asset-meta .shared-card-specs > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: inherit;
   letter-spacing: inherit;
   line-height: inherit;
   text-transform: inherit;
+}
+.asset-meta .shared-card-specs > .shared-card-formats {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .shared-card-renderer {
   display: inline-flex;
@@ -1033,9 +1038,7 @@ code {
   align-items: center;
   gap: 3px;
 }
-.shared-card-separator {
-  color: rgba(255, 255, 255, 0.48);
-}
+.shared-card-renderer { vertical-align: middle; }
 .asset-meta .shared-card-meta > span {
   overflow: hidden;
   color: rgba(255, 255, 255, 0.74);
@@ -6251,20 +6254,23 @@ body {
   justify-items: start;
   gap: 4px;
 }
-.shared-presentation-subtitle {
-  margin: 0 0 6px;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 14px;
+.shared-asset-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 4px 0 14px;
 }
-.shared-presentation-summary {
-  display: -webkit-box;
-  overflow: hidden;
-  margin: 0 0 14px;
-  color: rgba(255, 255, 255, 0.62);
+.drawer-title:has(+ .shared-asset-provenance),
+.drawer:has(.shared-presentation) .drawer-title {
+  text-transform: none;
+}
+.shared-asset-provenance dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.shared-asset-provenance dd {
+  margin: 2px 0 0;
   font-size: 13px;
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 .drawer-preview.shared-presentation-preview:not(:has(.model-preview-panel)) {
   height: clamp(240px, 30vh, 310px);
@@ -6274,6 +6280,10 @@ body {
   height: 100%;
   object-fit: contain;
   background: #0b0b0b;
+}
+.drawer-preview.shared-presentation-preview.shared-presentation-video,
+.shared-presentation-preview.shared-presentation-video video {
+  background: transparent;
 }
 .shared-presentation {
   display: grid;
@@ -6386,6 +6396,22 @@ body {
   height: 100%;
   object-fit: contain;
 }
+.renderer-mark img.monochrome {
+  filter: brightness(0) invert(1);
+}
+.shared-inline-software-mark {
+  width: 14px;
+  height: 14px;
+}
+.shared-presentation-stat-value .shared-inline-software-mark {
+  width: 16px;
+  height: 16px;
+}
+.shared-presentation-fact-detail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .asset-meta .shared-card-renderer .renderer-mark {
   width: 13px;
   height: 13px;
@@ -6428,6 +6454,11 @@ body {
   padding-bottom: 4px;
   scrollbar-width: thin;
 }
+.shared-presentation-gallery-primary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+}
 .shared-presentation-gallery-card {
   flex: 0 0 148px;
   display: grid;
@@ -6447,6 +6478,16 @@ body {
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--bg-deep);
+}
+.shared-presentation-gallery-primary .shared-presentation-gallery-card {
+  min-width: 0;
+}
+.shared-presentation-gallery-primary .shared-presentation-gallery-card img {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: transparent;
 }
 .shared-presentation-gallery-card span {
   font-size: 12px;

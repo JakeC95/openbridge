@@ -66,16 +66,20 @@ export interface SharedPresentationOriginal {
 }
 
 export interface SharedPresentationCard {
+  category?: string;
   job?: string;
   artist?: string;
   renderer?: string;
   originalFormat?: string;
+  originalFormats?: string[];
   originalSize?: string;
+  originalDetail?: string;
 }
 
 export interface SharedPresentationMedia {
   kind: "image" | "video";
   label: string;
+  group?: string;
   caption?: string;
   url: string;
   poster?: string;
@@ -141,6 +145,7 @@ export interface SharedPresentationCredit {
 }
 
 export interface SharedPresentation {
+  category?: string;
   schemaVersion: number;
   title?: string;
   subtitle?: string;
@@ -1371,5 +1376,3 @@ export interface OpenBridgeApi {
     install(info: UpdateInfo): Promise<void>;
   };
 }
-
-

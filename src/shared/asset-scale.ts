@@ -18,6 +18,15 @@ export interface AssetBounds {
   variation?: number;
 }
 
+/** Dimensions in the shared-library presentation format: depth × width × height. */
+export function assetBoundsFromDimensions(dimensions: string): AssetBounds | null {
+  const parts = dimensions.trim().split(/\s*[x×]\s*/i);
+  if (parts.length !== 3) return null;
+  const unit = parts[2].match(/(mm|cm|m)\s*$/i)?.[1].toLowerCase() ?? "m";
+  const [depth, width, height] = parts.map(part => measurement(part, unit));
+  return width !== null && height !== null && depth !== null ? { width, height, depth } : null;
+}
+
 export function assetBounds(technical: AssetTechnicalSummary, variation?: number): AssetBounds | null {
   if (technical.variationDimensions.length > 0) {
     const item = variation === undefined ? technical.variationDimensions[0]
@@ -29,11 +38,7 @@ export function assetBounds(technical: AssetTechnicalSummary, variation?: number
     return width !== null && height !== null && depth !== null ? { width, height, depth, variation: item.variation } : null;
   }
   // assetTechnicalFacts serializes named axes in length × width × height order.
-  const parts = technical.dimensions?.trim().split(/\s*[x×]\s*/i);
-  if (!parts || parts.length !== 3) return null;
-  const unit = parts[2].match(/(mm|cm|m)\s*$/i)?.[1].toLowerCase() ?? "m";
-  const [depth, width, height] = parts.map(part => measurement(part, unit));
-  return width !== null && height !== null && depth !== null ? { width, height, depth } : null;
+  return technical.dimensions ? assetBoundsFromDimensions(technical.dimensions) : null;
 }
 
 export function scaleDiagramLayout(bounds: AssetBounds, humanHeight = REFERENCE_HUMAN_HEIGHT) {

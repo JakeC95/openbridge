@@ -1,5 +1,6 @@
 import { SharedAssetThumbnail } from "../components/SharedAssetThumbnail";
 import { SharedCardMeta } from "../components/SharedCardMeta";
+import { assetDisplayName } from "../asset-display-name";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { assetCountLabel, readinessBadges, typeLabel } from "../catalog-utils";
@@ -841,7 +842,7 @@ export function LibraryView() {
                     )}
                   </div>
                   <div className={preparedCollection && asset.repo === "shared" ? "asset-meta prepared-card-meta" : "asset-meta"}>
-                    <strong>{asset.name}</strong>
+                    <strong>{preparedCollection && asset.repo === "shared" ? assetDisplayName(asset.name) : asset.name}</strong>
                     {preparedCollection && asset.repo === "shared" && <SharedCardMeta asset={asset} />}
                     {localProvider === "all" && <em>{isPublicProviderId(asset.provider) ? publicProviderLabel(asset.provider) : asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>}
                   </div>

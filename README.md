@@ -192,6 +192,7 @@ Please report security issues privately as described in [SECURITY.md](SECURITY.m
 - [Roadmap](docs/ROADMAP.md)
 - [Shared asset library design](docs/SHARED-LIBRARY.md)
 - [Prepared presentation details](docs/PRESENTATION-DETAILS.md)
+- [Consistent local asset preview rendering](docs/ASSET-PREVIEW-RENDERING.md)
 - [Local API and export protocol](docs/PROTOCOL.md)
 - [Reverse-engineering notes](docs/REVERSE-ENGINEERING.md)
 - [Poliigon research and integration plan](docs/POLIIGON.md)

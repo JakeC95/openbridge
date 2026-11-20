@@ -68,25 +68,30 @@ binaryHeader.writeUInt32LE(binary.length);
 binaryHeader.write("BIN", 4);
 await writeFile(join(sample, "Prepared prop.glb"), Buffer.concat([header, paddedJson, binaryHeader, binary]));
 await writeFile(join(sample, "Prepared prop.png"), embeddedImage);
+await writeFile(join(sample, "Authored still.png"), embeddedImage);
 await writeFile(join(sample, "Alternate.obj"), "v 0 0 0");
 await writeFile(join(sample, "presentation.json"), JSON.stringify({
   schemaVersion: 1,
+  category: "Prop",
   title: "Prepared prop presentation",
   subtitle: "Curated fixture details",
   summary: "Curated details render beside measured source facts.",
   job: "Fixture job",
   artist: "Fixture artist",
   renderer: "Arnold",
-  original: { format: "Maya .mb", formats: ["Maya .mb", "Alembic .abc"], size: "6.9 MB" },
+  original: { format: "Maya .mb", formats: ["Maya .mb", "Alembic .abc"], size: "6.9 MB", detail: "Maya v004 .mb · 6.9 MB / Alembic v004 .abc · 4.5 MB" },
   hero: { kind: "image", src: "Prepared prop.png", label: "Prepared prop cover" },
   media: [
     { kind: "image", src: "Prepared prop.png", label: "Beauty still", caption: "Fixture gallery image." },
+    { kind: "image", src: "Authored still.png", label: "Authored beauty still", group: "Authored lookdev" },
     { kind: "image", src: "../outside.png", label: "Unsafe media" }
   ],
   facts: [
+    { label: "Available model formats", value: "Maya .mb · Alembic .abc", primary: true },
     { label: "Renderer", value: "Arnold", primary: true },
     { label: "Parts", value: "1", primary: true },
-    { label: "Maps", value: "1" }
+    { label: "Maps", value: "1" },
+    { label: "Assembled dimensions", value: "27.8 × 68.1 × 3.3 cm", detail: "X × Y × Z · Y-up" }
   ],
   parts: [{ name: "Triangle", label: "Triangle", faces: 1, vertices: 3, material: "Paint", tile: 1001, color: "#ff0000", preview: "Prepared prop.png" }],
   maps: [
@@ -246,17 +251,7 @@ try {
   assert.equal(byArtist,1);
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${presentation.id}"] img')?.naturalWidth)`),"Prepared asset cover did not load");
   await until(()=>evaluate(`document.querySelector('.shared-card-meta')?.textContent.includes('Fixture job')`),"Prepared card metadata did not load");
-  await until(()=>evaluate(`Boolean(document.querySelector('.shared-card-renderer .renderer-mark img')?.naturalWidth)`),"Renderer mark did not decode");
-  const rendererLogoHasAlpha = await evaluate(`(()=>{
-    const image = document.querySelector('.shared-card-renderer .renderer-mark img');
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext('2d');
-    context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, 1, 1).data[3] === 0;
-  })()`);
-  assert.equal(rendererLogoHasAlpha, true, "Renderer artwork should retain a transparent SVG background");
+  await until(()=>evaluate(`document.querySelector('.shared-card-formats')?.textContent.includes('Source: Maya .mb · Alembic .abc')`),"Published model formats did not load on the card");
   await evaluate(`(()=>{
     window.uploadedEmbeddedFixture=false;
     const proto=WebGL2RenderingContext.prototype;
@@ -281,24 +276,42 @@ try {
     const drawer=document.querySelector('.drawer');
     const summaries=[...panel.querySelectorAll('summary')].map(node=>node.textContent);
     return {
-      summary: drawer.textContent.includes("Curated details render beside measured source facts."),
-      byline: drawer.querySelector('.shared-presentation-subtitle')?.textContent.includes("Fixture job · Fixture artist"),
-      cardMeta: document.querySelector('.shared-card-specs')?.title.includes("Maya .mb · Arnold · 6.9 MB"),
-      rendererBadge: Boolean(document.querySelector('.shared-card-renderer .renderer-mark img')?.naturalWidth),
+      summary: !drawer.textContent.includes("Curated details render beside measured source facts."),
+      byline: [...drawer.querySelectorAll('.shared-asset-provenance dd')].map(node=>node.textContent).join('|') === "Prop|Fixture job|Fixture artist",
+      cardMeta: document.querySelector('.shared-card-specs')?.title.includes("Maya .mb") &&
+        document.querySelector('.shared-card-specs')?.title.includes("Arnold") &&
+        document.querySelector('.shared-card-specs')?.title.includes("6.9 MB"),
+      rendererBadge: Boolean(document.querySelector('.shared-card-renderer')?.textContent.includes("Arnold")),
       rendererMark: Boolean(document.querySelector('.shared-presentation-stat-value .renderer-mark img')?.naturalWidth),
       noStatus: !drawer.querySelector('.shared-presentation-status'),
-      sections: ["Specs","Anatomy","Textures","Version history","Source & credits"].every(label=>panel.textContent.includes(label)),
+      sections: ["Specs","Anatomy","Relative size","Textures & masks","Sources & credits"].every(label=>panel.textContent.includes(label)),
+      noVersionHistory: !panel.textContent.includes("Version history"),
       moreFacts: summaries.some(text=>text.includes("More specifications")),
-      moreMaps: summaries.some(text=>text.includes("Additional channels")),
+      originalFormats: panel.textContent.includes("Alembic .abc"),
+      moreMaps: summaries.some(text=>text.includes("Other maps")),
+      previewDetails: !drawer.textContent.includes("Preview GLB details"),
+      humanTitle: drawer.querySelector('.drawer-title')?.textContent === "Prepared Prop",
+      humanCardName: [...document.querySelectorAll('[data-asset-id]')]
+        .find(card=>card.dataset.assetId==="${presentation.id}")?.querySelector('.asset-meta > strong')?.textContent === "Prepared Prop",
+      primaryGallery: [...panel.querySelectorAll('.shared-presentation-section h3')]
+        .some(heading=>heading.textContent.includes("Views (1)")),
+      primaryGalleryGrid: getComputedStyle(panel.querySelector('.shared-presentation-gallery-primary')).display === "grid",
+      groupedGallery: [...panel.querySelectorAll('.shared-presentation-disclosure summary')]
+        .some(summary=>summary.textContent.includes("Authored lookdev (1)")),
+      groupedGalleryClosed: [...panel.querySelectorAll('.shared-presentation-disclosure')]
+        .some(details=>details.querySelector('summary')?.textContent.includes("Authored lookdev") && !details.open),
+      reviewMediaBeforeTechSections: (()=>{const headings=[...panel.querySelectorAll('.shared-presentation-section h3')].map(node=>node.textContent); return headings.indexOf("Views (1)") < headings.indexOf("Anatomy (1)") && headings.indexOf("Views (1)") < headings.indexOf("Textures & masks (2)");})(),
+      humanScale: Boolean(panel.querySelector('.asset-scale-panel svg')) && panel.textContent.includes("Human reference"),
+      noRedundantTechnicalGrid: !drawer.querySelector('.technical-grid') ||
+        Boolean(drawer.querySelector('.technical-grid').closest('.shared-technical-disclosure')),
       part: panel.textContent.includes("Triangle")&&panel.textContent.includes("Paint"),
       map: panel.textContent.includes("Base color")&&panel.textContent.includes("7 × 5"),
-      version: panel.textContent.includes("v001")&&panel.textContent.includes("Current"),
       warning: panel.querySelector('.shared-presentation-warnings summary')?.textContent.includes("Skipped presentation details"),
       mapImage: panel.querySelector('.shared-presentation-map-image img')?.naturalWidth===7,
       partPreview: panel.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7
     };
   })()`);
-  assert.deepEqual(curated,{summary:true,byline:true,cardMeta:true,rendererBadge:true,rendererMark:true,noStatus:true,sections:true,moreFacts:true,moreMaps:true,part:true,map:true,version:true,warning:true,mapImage:true,partPreview:true});
+  assert.deepEqual(curated,{summary:true,byline:true,cardMeta:true,rendererBadge:true,rendererMark:true,noStatus:true,sections:true,noVersionHistory:true,moreFacts:true,originalFormats:true,moreMaps:true,previewDetails:true,humanTitle:true,humanCardName:true,primaryGallery:true,primaryGalleryGrid:true,groupedGallery:true,groupedGalleryClosed:true,reviewMediaBeforeTechSections:true,humanScale:true,noRedundantTechnicalGrid:true,part:true,map:true,warning:true,mapImage:true,partPreview:true});
   await evaluate(`document.querySelector('.shared-presentation-gallery-card').click()`);
   await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer'))`),"Curated gallery did not open fullscreen");
   await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);

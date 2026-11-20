@@ -167,6 +167,7 @@ async function parseMedia(
   return {
     kind,
     label,
+    group: cleanText(entry.group, 80),
     caption: cleanText(entry.caption, 800),
     url: resolved.url,
     poster: poster?.url,
@@ -391,6 +392,7 @@ export async function readSharedPresentation(assetPath: string): Promise<SharedP
     schemaVersion: 1,
     title: cleanText(manifest.title, 120),
     subtitle: cleanText(manifest.subtitle, 200),
+    category: cleanText(manifest.category, 60),
     summary: cleanText(manifest.summary, 1600),
     job: cleanText(manifest.job, 120),
     artist: cleanText(manifest.artist, 80),

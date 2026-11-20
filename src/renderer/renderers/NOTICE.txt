@@ -9,3 +9,11 @@ to identify the renderer in the OpenBridge UI.
   Commons at https://commons.wikimedia.org/wiki/File:Autodesk_Arnold_Logo.svg;
   that file identifies Autodesk's Arnold product page as its source:
   https://www.autodesk.com/products/arnold/overview.
+
+The Autodesk Maya, Houdini, and Nuke symbols are single-color Simple Icons
+marks. Simple Icons is CC0-licensed; the marks remain trademarks of their
+respective owners and are used only to identify software in the OpenBridge UI.
+Sources:
+- maya.svg: https://github.com/simple-icons/simple-icons/blob/develop/icons/autodeskmaya.svg
+- houdini.svg: https://github.com/simple-icons/simple-icons/blob/develop/icons/houdini.svg
+- nuke.svg: https://github.com/simple-icons/simple-icons/blob/develop/icons/nuke.svg
