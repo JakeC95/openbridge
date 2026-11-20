@@ -33,6 +33,26 @@ artwork and evidence logs in local handoffs, not in this public repository.
    Distinguish source textures from render outputs, previews and references.
    A matching basename or a native thumbnail does not recover shader graphs.
 
+## Prop packs and catalog walls
+
+Some folders are libraries, not single assets. Check root groups and their
+bounds before choosing a preview:
+
+- If the source is a product wall/grid, do not turntable the whole catalog.
+  Isolate one representative hero variant by its root and descendants, record
+  why it was chosen, and keep the pack count/context in facts or a collapsed
+  group.
+- Verify the isolated export contains the intended meshes, materials and
+  images. Report hero counts separately from pack counts.
+- Inspect transparent shells, bottles, glass and overlapping parts at full
+  resolution. Alpha dithering, hidden internal rings or z-fighting are reasons
+  to choose another variant; do not promote a hero with artifacts.
+- A pack overview is optional. If it is not readable at gallery size, keep it
+  out of the primary gallery or make a larger, clearly labeled reference
+  image. A tiny catalog thumbnail is worse than no image.
+- Treat supplied exchange variants (for example separate renderer exports) as
+  alternate evidence, not proof that the hero's materials survived.
+
 ## Native scene adapters
 
 - **Maya characters (`.ma`, `.mb`):** Separate stock ingest, shot work,

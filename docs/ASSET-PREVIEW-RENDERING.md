@@ -73,6 +73,16 @@ Use `ffprobe` to confirm dimensions and frame rate, then run
 72 decoded frames for visible pixels, transparency, and clear edges.
 Pass explicit dimensions and frame count for nonstandard proofs.
 
+### Tall props and prop packs
+
+- Keep the shared 16:9 framing for tall, narrow props. Do not change the
+  aspect ratio per asset just to fill the frame; use a collapsed detail crop
+  for the top or mechanism instead.
+- If the source is a catalog wall of variants, render one isolated hero. Keep
+  the pack overview out of the primary gallery unless it is readable at card
+  size. Inspect transparent bottles/shells for dithering or internal geometry
+  before choosing the hero.
+
 ### Characters and layered skin
 
 - Keep the full source pose in the shared 16:9 frame. A T/A pose is wider than
