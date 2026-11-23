@@ -38,7 +38,10 @@ def inventory(source):
                     nodes[node] = match[1].strip()
             else:
                 for parm, value in PARAM.findall(text):
-                    if PATH.search(value) or re.search(r"shop_materialpath|group|^(?:shop_)?material\d*$", parm, re.I):
+                    if PATH.search(value) or re.search(
+                        r"shop_materialpath|group|^(?:(?:shop_)?material|[ml]packedname)\d*$",
+                        parm, re.I,
+                    ):
                         evidence.append({"node": node, "parameter": parm, "value": value})
     raise ValueError("HIP archive exceeded the member limit")
 

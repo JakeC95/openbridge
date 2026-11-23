@@ -147,6 +147,12 @@ bounds before choosing a preview:
   and distinguish input files from render/export destinations. Texture tokens
   such as `<UDIM>` and `latest` are declarations, not proof of tile availability.
   Resolve and record exact publish versions before preparing a preview.
+  Older Packed Edit SOPs can leave `mgroupN` empty but assign a material
+  through `mpackednameN` and `shop_materialpathN`. Match the indexed packed
+  selector to Alembic object paths before translating the look. A blank group
+  field does not mean the assignment is global. A blank texture directory does
+  not mean a smooth surface is correct: inspect procedural shader nodes (such
+  as UV-based perforation or bump) and distinguish them from missing bitmaps.
 
   For trusted scenes use the matching studio Houdini/plugin environment and
   `hython scripts/probe-houdini-scene.py <scene> --geometry /path/to/output`.
