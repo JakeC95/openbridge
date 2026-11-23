@@ -153,6 +153,10 @@ bounds before choosing a preview:
   field does not mean the assignment is global. A blank texture directory does
   not mean a smooth surface is correct: inspect procedural shader nodes (such
   as UV-based perforation or bump) and distinguish them from missing bitmaps.
+  Trace links to the surface or displacement output: an archived generator can
+  be disconnected. A pattern based on its parameters is a preview approximation,
+  not a recovered authored material. Verify tiled UVs and inspect close-ups and
+  normal shading in the delivered GLB, not just the scratch scene.
 
   For trusted scenes use the matching studio Houdini/plugin environment and
   `hython scripts/probe-houdini-scene.py <scene> --geometry /path/to/output`.
