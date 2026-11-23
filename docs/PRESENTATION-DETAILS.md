@@ -127,7 +127,33 @@ Keep the presentation folder portable: use forward slashes, keep media beside
 the GLB, and do not point at a production share. The source package stays local;
 the presentation is the review copy that can be copied to another workstation.
 
-## Acceptance check
+## Visual acceptance gate
+
+Run this before calling a prepared asset ready and after changes to shared
+Library UI. Use the **current packaged app**, record the version/platform and
+viewport size, and actually look at the captures. A fixture, successful build,
+or list of passing selectors does not prove the images look right. For shared
+changes, review the full small prepared comparison set; for a single ingest,
+review that asset alongside the untouched benchmark and a sibling.
+
+| Surface | What to look at and exercise |
+| --- | --- |
+| Grid | Compare Compact and Large, and check a narrow window. Covers should be recognizable, dark-composited and free of clipped edges, distracting halos or moiré. Check footer alignment, readable names/types/format wrapping, and that overflow is still discoverable. |
+| Scopes and comparison | Check All sources, the prepared collection and 3D Assets; names, types and available source formats should agree. Open a four-up comparison, check image loading and that unavailable measurements aren't invented. |
+| Drawer and turntable | Verify default muted looping playback, inspect or pause at several angles, check 1080p alpha on the dark background and confirm available tabs and specs. |
+| Viewing angles and details | Open an angle in the lightbox, browse to the next image and close. Inspect any authored/reference, detail and map groups the asset actually has; absent media should not produce empty sections or broken cards. |
+| Interactive 3D | Load inline, enter fullscreen, orbit to a different view and exit with Escape. Check visible materials and the inspector's actual channels. No LOD is not proof of a single internal mesh. |
+| Resources and handoff | Confirm the actual local file and dependencies. Exercise copy only into a scratch project or via the UI fixture; don't imply published provenance files are included. |
+
+Save a private evidence set: grid at both densities, List / Compare and per-asset
+turntable, gallery and fullscreen/orbit views. Add screenshots for specific
+regressions or exceptions. In the handoff, mark each row pass, fail or not
+tested with a reason; after a fix, revisit the affected surface in the rebuilt
+app. Keep paths, asset names and images private. If the scope includes online
+parity, compare a comparable online asset as well and label any untested
+provider or platform explicitly.
+
+### Supporting file checks
 
 - Compare the prepared card in **All sources**, its collection and List /
   Compare. Check the type, readable name and source formats against the drawer.

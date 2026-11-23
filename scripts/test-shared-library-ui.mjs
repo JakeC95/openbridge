@@ -69,6 +69,8 @@ binaryHeader.write("BIN", 4);
 await writeFile(join(sample, "Prepared prop.glb"), Buffer.concat([header, paddedJson, binaryHeader, binary]));
 await writeFile(join(sample, "Prepared prop.png"), embeddedImage);
 await writeFile(join(sample, "Authored still.png"), embeddedImage);
+const authoredExtras = Array.from({length: 6}, (_, i) => `Authored angle ${i+1}.png`);
+await Promise.all(authoredExtras.map(name => writeFile(join(sample, name), embeddedImage)));
 await writeFile(join(sample, "Alternate.obj"), "v 0 0 0");
 await writeFile(join(sample, "presentation.json"), JSON.stringify({
   schemaVersion: 1,
@@ -84,6 +86,7 @@ await writeFile(join(sample, "presentation.json"), JSON.stringify({
   media: [
     { kind: "image", src: "Prepared prop.png", label: "Beauty still", caption: "Fixture gallery image." },
     { kind: "image", src: "Authored still.png", label: "Authored beauty still", group: "Authored lookdev" },
+    ...authoredExtras.map(src => ({kind: "image", src, label: src, group: "Authored lookdev"})),
     { kind: "image", src: "../outside.png", label: "Unsafe media" }
   ],
   facts: [
@@ -271,6 +274,11 @@ try {
   await until(()=>evaluate(`[...document.querySelectorAll('.drawer button')].some(button=>button.textContent==='3D')`),"Prepared model drawer did not open");
   await evaluate(`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent==='3D').click()`);
   await until(()=>evaluate(`window.uploadedEmbeddedFixture`),"The GLB embedded image was not uploaded to WebGL");
+  await evaluate(`[...document.querySelectorAll('.drawer button')].find(button=>button.textContent==='Full screen').click()`);
+  await until(()=>evaluate(`document.querySelector('.model-viewer.fullscreen .model-viewer-chrome-head span')?.textContent.startsWith('Local model')`),
+    "Fullscreen should not describe the number of internal meshes from the absence of LODs");
+  await evaluate(`document.querySelector('button[aria-label="Close 3D viewer"]').click()`);
+  await until(()=>evaluate(`!document.querySelector('.model-viewer.fullscreen')`),"Prepared model fullscreen did not close");
   await until(()=>evaluate(`Boolean(document.querySelector('[aria-label="Asset details"]'))`),"Curated presentation details did not load");
   await until(()=>evaluate(`Boolean(document.querySelector('.shared-presentation-stat-value .renderer-mark img')?.naturalWidth)`),"Renderer stat badge did not decode");
   await until(()=>evaluate(`document.querySelector('.shared-presentation-map-image img')?.naturalWidth===7`),"Curated map preview did not decode");
@@ -301,7 +309,7 @@ try {
         .some(heading=>heading.textContent.includes("Views (1)")),
       primaryGalleryGrid: getComputedStyle(panel.querySelector('.shared-presentation-gallery-primary')).display === "grid",
       groupedGallery: [...panel.querySelectorAll('.shared-presentation-disclosure summary')]
-        .some(summary=>summary.textContent.includes("Authored lookdev (1)")),
+         .some(summary=>summary.textContent.includes("Authored lookdev (7)")),
       groupedGalleryClosed: [...panel.querySelectorAll('.shared-presentation-disclosure')]
         .some(details=>details.querySelector('summary')?.textContent.includes("Authored lookdev") && !details.open),
       reviewMediaBeforeTechSections: (()=>{const headings=[...panel.querySelectorAll('.shared-presentation-section h3')].map(node=>node.textContent); return headings.indexOf("Views (1)") < headings.indexOf("Anatomy (1)") && headings.indexOf("Views (1)") < headings.indexOf("Textures & masks (2)");})(),
@@ -316,6 +324,16 @@ try {
     };
   })()`);
   assert.deepEqual(curated,{summary:true,byline:true,cardMeta:true,rendererBadge:true,rendererMark:true,noStatus:true,sections:true,noVersionHistory:true,moreFacts:true,originalFormats:true,moreMaps:true,previewDetails:true,humanTitle:true,humanCardName:true,primaryGallery:true,primaryGalleryGrid:true,groupedGallery:true,groupedGalleryClosed:true,reviewMediaBeforeTechSections:true,humanScale:true,noRedundantTechnicalGrid:true,part:true,map:true,warning:true,mapImage:true,partPreview:true});
+  assert(await evaluate(`(()=>{
+    const primary=document.querySelector('.shared-presentation-gallery-primary');
+    const width=primary.clientWidth;
+    const details=[...document.querySelectorAll('.shared-presentation-disclosure')].find(d=>d.querySelector('summary')?.textContent.includes('Authored lookdev'));
+    details.open=true;
+    const rail=details.querySelector('.shared-presentation-gallery');
+    const contained=primary.clientWidth===width && rail.clientWidth<=width && rail.scrollWidth>rail.clientWidth;
+    details.open=false;
+    return contained;
+  })()`),"Opening a long authored gallery widened the drawer instead of scrolling its own strip");
   await evaluate(`document.querySelector('.shared-presentation-gallery-card').click()`);
   await until(()=>evaluate(`Boolean(document.querySelector('.image-viewer'))`),"Curated gallery did not open fullscreen");
   await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);

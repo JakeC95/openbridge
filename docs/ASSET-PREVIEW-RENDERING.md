@@ -72,6 +72,12 @@ Render from the final delivered GLB, after texture resizing, packing or other
 optimization. Recheck its bindings against the texture cards: a map can survive
 in the working export and disappear from the delivery. Refresh or reopen the
 app after changing assets so cached thumbnails and metadata do not mask a fix.
+For dense repeating details, inspect the asset at actual Compact card size,
+in the drawer during playback, and in a fullscreen close-up. If only the
+cover aliases, prefilter a separate RGBA cover at thumbnail scale; do not
+soften the inspection stills or strip the model's detail to fix the card.
+Use the [packaged visual gate](PRESENTATION-DETAILS.md#visual-acceptance-gate)
+before signing off.
 For a texture-recovery pass, compare the old and new GLBs under identical
 lighting and camera angles, including a rear or roof view where fixtures can
 be missed. Archive the previous prepared package outside the scanned root,

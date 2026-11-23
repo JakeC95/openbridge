@@ -6305,6 +6305,7 @@ body {
 }
 .shared-presentation-section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
 }
@@ -6463,6 +6464,7 @@ body {
 .shared-presentation-gallery {
   display: flex;
   gap: 8px;
+  min-width: 0;
   overflow-x: auto;
   padding-bottom: 4px;
   scrollbar-width: thin;

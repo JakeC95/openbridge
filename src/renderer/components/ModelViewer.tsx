@@ -1682,6 +1682,7 @@ export function ModelViewer({ manifest, quality, lod, fullscreen = false, onClos
     if (mesh.parts?.length) {
       return `${mesh.lod === null ? "" : `LOD${mesh.lod} · `}${mesh.parts.length} parts`;
     }
+    if (manifest.provider === "shared" && mesh.lod === null) return "Local model";
     return modelLodLabel(mesh.lod);
   }, [manifest, lod]);
 

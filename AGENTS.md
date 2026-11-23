@@ -9,7 +9,7 @@ application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution 
 
 - Branch: `main`, tracking `origin/main`
 - Latest tag: `v1.9.4` (pushed; verify release assets before calling it published)
-- Current app version: `1.9.4`
+- Current app version: `1.9.5` (local portable build; not tagged or released)
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -20,6 +20,14 @@ clears stale ambientCG and OpenHDRI indexing status and shows when Epic sign-in 
 the current session. A cold start and the upgrade from 1.6.3 were verified on Linux. The subsequent
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
+
+## 1.9.5 local Library visual review
+
+- Long authored galleries scroll inside their own strip; opening them must not
+  resize the primary views or the drawer. A regression fixture opens a seven-item group.
+- A local model with no LOD is labeled **Local model** in fullscreen. An
+  individual GLB file can contain multiple meshes.
+- Use the visual acceptance gate below for every prepared asset and UI pass.
 
 ## 1.9.4 additive build
 
@@ -58,6 +66,11 @@ that caught real problems. Put rendering or presentation lessons in the linked g
 of duplicating them. If an iteration adds nothing reusable, record that in the private handoff.
 Keep asset-specific paths, screenshots, recipes with private inputs and evidence out of git.
 See the playbook's [iteration handoff](docs/ASSET-INGEST-PLAYBOOK.md#iteration-handoff).
+Before calling an asset ready, or calling a Library UI change consistent, personally
+review it in the current packaged app using the [visual acceptance checklist](docs/PRESENTATION-DETAILS.md#visual-acceptance-gate).
+Capture and inspect local screenshots; a build, DOM assertions or a successful script
+is not visual sign-off. After shared UI changes, review the entire small prepared
+comparison set (including its untouched benchmark), and record failures or untested cases.
 
 Treat local and online assets as two sources in one browser. Reuse shared UI
 components and interaction patterns wherever behavior is equivalent. Before
