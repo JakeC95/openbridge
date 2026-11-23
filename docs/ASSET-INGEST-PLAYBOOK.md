@@ -65,6 +65,14 @@ bounds before choosing a preview:
 - Inventory a library by volume or sub-package, and join models, previews and
   textures by confirmed IDs or bindings. Process one representative entry first
   rather than batch-importing unverified variants or guessing from filenames.
+  A directory listing does not establish file access; report inaccessible
+  volumes separately. Match by the stable ID, allowing harmless differences
+  in filename case, prefix or punctuation rather than renaming the source.
+- An Alembic cache can retain UVs and named mesh parts but import without
+  material slots. Try a small proof with exact part-to-map matches and check
+  it against the supplied reference. This establishes a translated binding,
+  not the original shader. Don't assume neighboring asset maps for reused
+  components or treat a file named `Reflection` as roughness without evidence.
 - If the source is a product wall/grid, do not turntable the whole catalog.
   Isolate one representative hero variant by its root and descendants, record
   why it was chosen, and keep the pack count/context in facts or a collapsed
