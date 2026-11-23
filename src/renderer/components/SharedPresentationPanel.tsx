@@ -100,16 +100,31 @@ export function SharedPresentationPanel({ presentation, onOpenImage }: {
     !/\bpreview\b|\bglb\b/i.test(fact.label));
   const primaryFacts = artistFacts.filter(fact => fact.primary);
   const scaleDimensions = presentationScaleDimensions(presentation);
-  const sourceFormatsFact = artistFacts.find(fact => /formats?|model files/i.test(fact.label));
+  const sourceFormatsFact = artistFacts.find(fact => /^(?:(?:available|published|original)\s+)?(?:model\s+)?(?:formats?|model files)$/i.test(fact.label));
+  const sourceSizeFact = artistFacts.find(fact => /^(?:original model|source|model)\s+size$/i.test(fact.label));
+  const rendererFact = artistFacts.find(fact => /^(?:production\s+)?renderer$/i.test(fact.label));
+  const geometryFact = artistFacts.find(fact => /^(?:(?:source|published|hero)\s+geometry|vehicle meshes)$/i.test(fact.label));
   const formats = presentation.original?.formats?.length
     ? presentation.original.formats : [presentation.original?.format].filter(Boolean);
+  const standard = [
+    { label: "Published formats", value: formats.length ? formats.join(" · ") : sourceFormatsFact?.value },
+    { label: "Source size", value: presentation.original?.size ?? sourceSizeFact?.value },
+    { label: "Production renderer", value: presentation.renderer ?? rendererFact?.value },
+  ].map(fact => ({ ...fact, value: fact.value || "Not documented" }));
+  const canonical = [sourceFormatsFact, sourceSizeFact, rendererFact, geometryFact];
+  const remaining = artistFacts.filter(fact => !canonical.includes(fact));
+  const spotlight = geometryFact ?? primaryFacts.find(fact => remaining.includes(fact)) ?? remaining[0];
   const facts = [
-    ...(sourceFormatsFact ? [sourceFormatsFact] : formats.length ? [{ label: "Published formats", value: formats.join(" · ") }] : []),
-    ...(primaryFacts.length ? primaryFacts : artistFacts).filter(fact => fact !== sourceFormatsFact)
+    ...standard,
+    ...(spotlight ? [geometryFact ? {
+      ...geometryFact,
+      label: "Source geometry",
+      value: /^vehicle meshes$/i.test(geometryFact.label) && /^\d[\d,.]*$/.test(geometryFact.value)
+        ? `${geometryFact.value} meshes` : geometryFact.value
+    } : spotlight] : []),
   ];
-  facts.splice(4);
   const moreFacts = [
-    ...artistFacts.filter(fact => !facts.includes(fact)),
+    ...remaining.filter(fact => fact !== spotlight),
   ].sort((a, b) => {
     const priority = (label: string) => {
       const key = label.toLowerCase();

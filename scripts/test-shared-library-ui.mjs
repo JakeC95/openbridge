@@ -253,10 +253,9 @@ try {
   const byArtist = await evaluate(`window.openbridge.queryLibrary({provider:'shared',query:'Fixture artist'}).then(result=>result.total)`);
   assert.equal(byArtist,1);
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${presentation.id}"] img')?.naturalWidth)`),"Prepared asset cover did not load");
-  await until(()=>evaluate(`document.querySelector('.shared-card-meta')?.textContent.includes('Fixture job')`),"Prepared card metadata did not load");
-  await until(()=>evaluate(`document.querySelector('.shared-card-formats')?.textContent.includes('Source: Maya .mb · Alembic .abc')`),"Published model formats did not load on the card");
+  await until(()=>evaluate(`document.querySelector('.shared-card-meta')?.textContent.includes('.mb · .abc')`),"Compact published formats did not load");
   await choose("Local asset source","All sources");
-  await until(()=>evaluate(`document.querySelector('[data-asset-id="${presentation.id}"] .shared-card-meta')?.textContent.includes('Fixture job')`),"Prepared card metadata disappeared in All sources");
+  await until(()=>evaluate(`document.querySelector('[data-asset-id="${presentation.id}"] .shared-card-meta')?.textContent.includes('.mb · .abc')`),"Prepared card metadata disappeared in All sources");
   await choose("Local asset source","Shared folders");
   await until(()=>evaluate(`document.querySelector('button[aria-label="Shared library folder"]')?.textContent.includes('Prepared assets')`),"Shared folders did not return to the prepared collection");
   await evaluate(`(()=>{
@@ -290,10 +289,12 @@ try {
     return {
       summary: !drawer.textContent.includes("Curated details render beside measured source facts."),
       byline: [...drawer.querySelectorAll('.shared-asset-provenance dd')].map(node=>node.textContent).join('|') === "Prop|Fixture job|Fixture artist",
-      cardMeta: document.querySelector('.shared-card-specs')?.title.includes("Maya .mb") &&
-        document.querySelector('.shared-card-specs')?.title.includes("Arnold") &&
-        document.querySelector('.shared-card-specs')?.title.includes("6.9 MB"),
-      rendererBadge: Boolean(document.querySelector('.shared-card-renderer')?.textContent.includes("Arnold")),
+       cardMeta: [...document.querySelectorAll('.shared-card-spec')].map(row=>row.textContent).join('|') ===
+         "Formats.mb · .abc|RendererArnold|Source size6.9 MB" &&
+         document.querySelector('.shared-card-spec')?.title.includes("Maya .mb · Alembic .abc") &&
+         !document.querySelector('.shared-card-meta')?.textContent.includes("Fixture job"),
+       rendererBadge: [...panel.querySelectorAll('.shared-presentation-stat > span')].map(n=>n.textContent).join('|') ===
+         "Published formats|Source size|Production renderer|Parts",
       rendererMark: Boolean(document.querySelector('.shared-presentation-stat-value .renderer-mark img')?.naturalWidth),
       noStatus: !drawer.querySelector('.shared-presentation-status'),
       sections: ["Specs","Anatomy","Relative size","Textures & masks","Sources & credits"].every(label=>panel.textContent.includes(label)),

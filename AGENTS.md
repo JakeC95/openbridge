@@ -9,7 +9,7 @@ application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution 
 
 - Branch: `main`, tracking `origin/main`
 - Latest tag: `v1.9.4` (pushed; verify release assets before calling it published)
-- Current app version: `1.9.5` (local portable build; not tagged or released)
+- Current app version: `1.9.6` (local portable build; not tagged or released)
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -20,6 +20,15 @@ clears stale ambientCG and OpenHDRI indexing status and shows when Epic sign-in 
 the current session. A cold start and the upgrade from 1.6.3 were verified on Linux. The subsequent
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
+
+## 1.9.6 prepared Library information hierarchy
+
+- Use the same labeled Formats, Renderer and Source size rows on all prepared
+  cards. Reserve two lines for names and keep jobs/credits in the drawer.
+- Drawer specs use the same first three fields and prefer the documented
+  source geometry as the fourth. Don't invent facts to fill the layout.
+- Compare the actual typography, row alignment, and name wrapping at compact
+  multi-column widths, not only whether the card data arrived.
 
 ## 1.9.5 local Library visual review
 

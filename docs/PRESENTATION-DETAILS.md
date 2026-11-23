@@ -47,8 +47,11 @@ detached badge or an opaque logo tile.
 This is built for an artist hunting a known asset in a large local library.
 
 - **Library card**: cover, recognizable original name with readable word
-  spacing (keep acronyms and product names intact), category, job, artist,
-  every available model format, renderer and primary model size. The long shared
+  spacing (keep acronyms and product names intact), then type and three aligned
+  rows: **Formats**, **Renderer**, **Source size**. Use compact file extensions
+  with full names available on hover and in the drawer. Use a dash for an
+  undocumented value rather than shifting rows. Keep job and artist in the
+  drawer and in search rather than adding a different last line to some cards. The long shared
   ID, source badge and file-facts line stay out of the grid. Hovering the card
   still exposes the full technical facts, and the inspector has everything.
   Prepared metadata is per-asset: it must follow the card into **All sources**
@@ -62,8 +65,10 @@ This is built for an artist hunting a known asset in a large local library.
 - **Turntable first**: when `hero` is a video, the drawer opens on the
   **Turntable** and plays it muted on a loop. 3D and Resources remain one click
   away. Without a video, the drawer opens on 3D and Render is available.
-- **Specs**: available model formats, published file size, renderer and source
-  face count. The assembled dimensions follow, with the shared human-scale
+- **Specs**: **Published formats**, **Source size**, **Production renderer**,
+  then **Source geometry** when documented (otherwise the best curated fact).
+  Asset-specific details such as the rig, look or pack count go in **More
+  specifications**. The assembled dimensions follow, with the shared human-scale
   comparison where usable measurements are provided.
 - **Anatomy** for named parts, face/vertex counts, material slots, UDIM tiles
   and part thumbnails. Notes stay in the row tooltip.
@@ -138,9 +143,9 @@ review that asset alongside the untouched benchmark and a sibling.
 
 | Surface | What to look at and exercise |
 | --- | --- |
-| Grid | Compare Compact and Large, and check a narrow window. Covers should be recognizable, dark-composited and free of clipped edges, distracting halos or moiré. Check footer alignment, readable names/types/format wrapping, and that overflow is still discoverable. |
+| Grid | Compare Compact and Large, and check a narrow window. Covers should be recognizable and free of clipped edges, distracting halos or moiré. Compare a long two-line name, a card with many formats, and a card with unknown metadata side by side: type and spec rows should align, labels should not clip, and unknown values should not move other fields. |
 | Scopes and comparison | Check All sources, the prepared collection and 3D Assets; names, types and available source formats should agree. Open a four-up comparison, check image loading and that unavailable measurements aren't invented. |
-| Drawer and turntable | Verify default muted looping playback, inspect or pause at several angles, check 1080p alpha on the dark background and confirm available tabs and specs. |
+| Drawer and turntable | Verify default muted looping playback and 1080p alpha on the dark background. Compare the first three Specs labels and their order across assets; any fourth-slot variation should reflect available evidence rather than a different layout. |
 | Viewing angles and details | Open an angle in the lightbox, browse to the next image and close. Inspect any authored/reference, detail and map groups the asset actually has; absent media should not produce empty sections or broken cards. |
 | Interactive 3D | Load inline, enter fullscreen, orbit to a different view and exit with Escape. Check visible materials and the inspector's actual channels. No LOD is not proof of a single internal mesh. |
 | Resources and handoff | Confirm the actual local file and dependencies. Exercise copy only into a scratch project or via the UI fixture; don't imply published provenance files are included. |

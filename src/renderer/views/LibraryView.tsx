@@ -770,7 +770,7 @@ export function LibraryView() {
           })} />}
         {assets.length > 0 && !listView && (
           <VirtualGrid
-            footerHeight={assets.some(asset => isPreparedAsset(asset)) ? 106 : 0}
+             footerHeight={assets.some(asset => isPreparedAsset(asset)) ? 140 : 0}
             items={assets}
             minItemWidth={density === "compact" ? 160 : density === "large" ? 320 : 220}
             gap={28}
@@ -858,7 +858,7 @@ export function LibraryView() {
                     )}
                   </div>
                   <div className={prepared ? "asset-meta prepared-card-meta" : "asset-meta"}>
-                    <strong>{prepared ? assetDisplayName(asset.name) : asset.name}</strong>
+                    <strong title={prepared ? assetDisplayName(asset.name) : undefined}>{prepared ? assetDisplayName(asset.name) : asset.name}</strong>
                     {prepared && <SharedCardMeta asset={asset} />}
                     {localProvider === "all" && !prepared && <em>{isPublicProviderId(asset.provider) ? publicProviderLabel(asset.provider) : asset.provider === "poliigon" ? "Poliigon" : asset.provider === "polyhaven" ? "Poly Haven" : asset.repo}</em>}
                   </div>

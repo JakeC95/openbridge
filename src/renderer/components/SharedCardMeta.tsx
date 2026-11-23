@@ -1,6 +1,13 @@
 import type { AssetRecord } from "../../shared/types";
-import { RendererMark } from "./RendererMark";
 import { usePresentationCard } from "./use-presentation-card";
+
+function compactFormat(format: string) {
+  return format.match(/\.([a-z0-9]+)$/i)?.[0].toLowerCase() ?? format;
+}
+
+function compactSize(size?: string) {
+  return size?.match(/^\s*([\d.,]+\s*(?:bytes?|[kmgt]i?b))\b/i)?.[1] ?? size;
+}
 
 export function PublishedAssetType({ asset, fallback }: { asset: AssetRecord; fallback: string }) {
   return usePresentationCard(asset)?.category || fallback;
@@ -14,26 +21,22 @@ export function PublishedFormats({ asset }: { asset: AssetRecord }) {
 
 export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
   const card = usePresentationCard(asset);
-  if (!card) return null;
-  const byline = [card.category, card.job, card.artist].filter(Boolean).join(" · ");
-  const formats = card.originalFormats?.length
+  const formats = card?.originalFormats?.length
     ? card.originalFormats
-    : card.originalFormat ? [card.originalFormat] : [];
-  const specs = [formats.join(" · "), card.renderer, card.originalSize].filter(Boolean).join(" · ");
-  const detail = [...formats, card.renderer, card.originalSize, card.originalDetail].filter(Boolean).join(" · ");
-  if (!byline && !specs) return null;
+    : card?.originalFormat ? [card.originalFormat] : [];
   return <span className="shared-card-meta">
-    {card.category && <span title={byline}>{card.category}</span>}
-    {specs && <span className="shared-card-specs" title={detail || specs}>
-      {formats.length > 0 && <span className="shared-card-formats">
-        Source: {formats.join(" · ")}
-      </span>}
-      {(card.renderer || card.originalSize) && <span className="shared-card-publish">
-        {card.renderer && <span className="shared-card-renderer"><RendererMark renderer={card.renderer} />{card.renderer}</span>}
-        {card.renderer && card.originalSize && " · "}
-        {card.originalSize}
-      </span>}
-    </span>}
-    {card.job && <span title={byline}>{card.job}</span>}
+    <span className="shared-card-type">{card?.category || "3D Model"}</span>
+    <span className="shared-card-specs">
+      <Spec label="Formats" value={[...new Set(formats.map(compactFormat))].join(" · ")} detail={formats.join(" · ")} />
+      <Spec label="Renderer" value={card?.renderer} />
+      <Spec label="Source size" value={compactSize(card?.originalSize)} detail={card?.originalSize} />
+    </span>
+  </span>;
+}
+
+function Spec({ label, value, detail }: { label: string; value?: string; detail?: string }) {
+  return <span className="shared-card-spec" title={`${label}: ${detail || value || "Not documented"}`}>
+    <span>{label}</span>
+    <span aria-label={value ? undefined : "Not documented"}>{value || "—"}</span>
   </span>;
 }
