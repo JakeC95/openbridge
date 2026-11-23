@@ -4,6 +4,22 @@ Process one asset through discovery, preview and visual review before moving
 to the next. Work read-only on production sources. Keep asset-specific paths,
 artwork and evidence logs in local handoffs, not in this public repository.
 
+## Iteration handoff
+
+`AGENTS.md` requires each agent to add reusable findings before picking up the
+next asset. Capture the symptom, what proved it, what worked, and what to check
+next time. Include failed experiments when they can save another agent time;
+label a tested failure separately from its suspected cause. Put rendering
+recipes in [preview rendering](ASSET-PREVIEW-RENDERING.md) and browsing or
+handoff conventions in [presentation details](PRESENTATION-DETAILS.md).
+
+The private handoff records exact source candidates and versions, matched
+bindings, selected roots or parts, tool versions and limits, preview-only edits,
+acceptance evidence and the next unresolved question. Mark the result as
+authored/native, translated, technical-only, or unverified where applicable.
+Never publish studio files, paths, screenshots or logs. Do not mutate the
+production source or a curated comparison benchmark to make a new asset pass.
+
 ## Discovery
 
 1. Record the original asset name/type and inventory the whole asset folder:
@@ -14,6 +30,9 @@ artwork and evidence logs in local handoffs, not in this public repository.
    publish roots using aliases, asset IDs, normalized spellings and distinctive
    dependency basenames. Bound searches on network shares. Record roots, depth,
    access failures and timeouts; “not found in these locations” is not “absent.”
+   A broken `latest` link is not a version: compare direct versioned files and
+   verify the one used. Matching counts alone do not establish equivalence;
+   compare transforms, bounds and assignments, or hashes for byte identity.
 3. Compare candidates by what they preserve, not extension, size or date.
    Inspect mesh names, hierarchy, material slots, image bindings, UVs, scale
    and animation. Check OBJ `mtllib` and MTL map directives; inspect FBX image
@@ -21,8 +40,9 @@ artwork and evidence logs in local handoffs, not in this public repository.
    Hash companion images to detect duplicate export bundles.
 4. **Inspect native scenes even when exchanges import successfully.** When a
    3ds Max scene is a Compound File, `7z l scene.max` can list its streams.
-   `7z x -so scene.max FileAssetMetaData2 | strings -el` can recover historical
-   bitmap and output filenames. Inspect scene/class strings for plugin
+   `7z x -so scene.max FileAssetMetaData2 | strings -el` (also check
+   `FileAssetMetaData3` where present) can recover historical bitmap and output
+   filenames. Inspect scene/class strings for plugin
    evidence. `SummaryInformation` can contain a clipboard-format thumbnail
    (for example a DIB inside property 17). Extract only with bounded,
    validated parsing and visually check it. These are read-only evidence
@@ -32,12 +52,19 @@ artwork and evidence logs in local handoffs, not in this public repository.
    **present but unbound**, **referenced but unresolved**, or **unverified**.
    Distinguish source textures from render outputs, previews and references.
    A matching basename or a native thumbnail does not recover shader graphs.
+   Record file counts separately from unique bitmaps, bound inputs and exported
+   payloads. A generated 1×1 texture is not a recovered bitmap, and one source
+   image may export twice for color and packed scalar channels. A LUT or grade
+   is not a surface texture.
 
 ## Prop packs and catalog walls
 
 Some folders are libraries, not single assets. Check root groups and their
 bounds before choosing a preview:
 
+- Inventory a library by volume or sub-package, and join models, previews and
+  textures by confirmed IDs or bindings. Process one representative entry first
+  rather than batch-importing unverified variants or guessing from filenames.
 - If the source is a product wall/grid, do not turntable the whole catalog.
   Isolate one representative hero variant by its root and descendants, record
   why it was chosen, and keep the pack count/context in facts or a collapsed
@@ -51,7 +78,10 @@ bounds before choosing a preview:
   out of the primary gallery or make a larger, clearly labeled reference
   image. A tiny catalog thumbnail is worse than no image.
 - Treat supplied exchange variants (for example separate renderer exports) as
-  alternate evidence, not proof that the hero's materials survived.
+  alternate evidence, not proof that the hero's materials survived. Test the
+  alternate in a separate process if one importer crashes. Spatial proximity
+  alone can merge an entire pack; verify root descendants and reference views
+  before isolating a model, and record exactly which source supplied it.
 
 ## Native scene adapters
 
@@ -142,8 +172,9 @@ bounds before choosing a preview:
   plugin declarations and dependency references. Keep includes and external
   paths unresolved unless explicitly permitted. `python3 scripts/inventory-vrscene.py <scene>`
   reports selected node, material, bitmap and proxy links from text scenes
-  up to 32 MiB. It has been checked against a synthetic fixture, not a native
-  production export. It is not a shader or geometry decoder. Use the
+   up to 32 MiB. It is not a shader or geometry decoder. For larger native
+   production exports, inspect supported declarations separately or use the
+   vendor runtime. Use the
   [Chaos App SDK](https://documentation.chaos.com/space/APPSDK/132645055/Getting+Started)
   for authoritative plugin graphs or V-Ray Standalone for reference renders.
   The MIT-licensed [C++ vrscene_parser](https://github.com/nilss0n/vrscene_parser)
@@ -193,7 +224,9 @@ even when the real-time material must remain an approximation.
 - Choose the best verified geometry source and the best verified look source
   independently. If only geometry is reproducible, show a neutral preview and
   label it accordingly. A recovered native thumbnail is useful as optional
-  authored reference, not as proof the interactive look matches.
+  authored reference, not as proof the interactive look matches. If units
+  cannot be verified, keep source-axis bounds as units and omit physical
+  dimensions and human-scale diagrams.
 - Follow [preview rendering](ASSET-PREVIEW-RENDERING.md). Inspect opening,
   side and rear frames plus playback, and compare the turntable to a direct
   render when parts drift. Preserve animated transform channels when adding a

@@ -46,7 +46,8 @@ detached badge or an opaque logo tile.
 
 This is built for an artist hunting a known asset in a large local library.
 
-- **Library card**: cover, pipeline-style PascalCase name, category, job, artist,
+- **Library card**: cover, recognizable original name with readable word
+  spacing (keep acronyms and product names intact), category, job, artist,
   every available model format, renderer and primary model size. The long shared
   ID, source badge and file-facts line stay out of the grid. Hovering the card
   still exposes the full technical facts, and the inspector has everything.
@@ -81,6 +82,31 @@ The rule is selection, not omission. The manifest can carry more than the page
 shows; `primary: true` marks the facts and maps that deserve the first screen.
 The rest remains one click away.
 
+## Local and online in one browser
+
+Keep the same card hierarchy, density, dark preview surface and focus states
+for both sources. Share the grid, List / Compare, selection, keyboard and
+drawer interactions where their behavior matches. Let a local turntable lead
+when available; use the best available online preview when there is no
+turntable. Do not add a checkerboard or a separate visual style for transparent
+local media. Keep the four inspection angles together and put native imagery
+and optional close-ups in labeled, collapsed groups.
+
+| Shared interaction | Local studio asset | Online asset |
+| --- | --- | --- |
+| Browse and compare | Readable name, normalized type, and published formats; job and artist are separate fields only when verified. | Same hierarchy, plus provider and license/availability where relevant. |
+| Inspect | Explain whether the preview is translated or technical-only. Separate verified dimensions, bindings and provenance from what is merely declared. | Keep provider-supplied claims labeled; do not infer missing formats, dimensions, or tiers. |
+| Handoff | **Copy with dependencies** uses the files actually on disk. A published Max or Maya format on a prepared card does not mean that source is included. | **Download** or open acquired files, with entitlement and available tiers checked by the provider workflow. |
+
+In a future mixed view, preserve stable source-aware identities through search,
+filters, sorting, selection, comparison and previous/next. Don't merge two
+records just because their names match. Show origin where it changes a user's
+choice, and route mixed selection to the right per-item action; never turn a
+local copy into an acquisition or imply an online entitlement for a studio
+file. Test a mixed result set end to end once this exists. **Discover → All
+is online-only today**; the Library's **All sources** scope is not that
+integration.
+
 ## Safety and portability
 
 The sidecar is read-only and is validated before anything is returned to the
@@ -112,6 +138,9 @@ the presentation is the review copy that can be copied to another workstation.
   card, a matching filename or a successful export does not prove a binding.
   Label source-only maps and distinguish individual bitmaps from packed or
   generated images. After a GLB optimization, repeat this check.
+- Resources can correctly report no separate map files for a self-contained
+  GLB. Verify embedded materials independently. Don't imply that every packed
+  channel shown in the gallery can be isolated in the 3D inspector.
 - Render the turntable and detail views from the delivered model where possible.
   Use `ffprobe` to check encoded size, frame rate and duration, and
   `scripts/check-preview-alpha.py` to check decoded alpha on the full orbit.
@@ -227,7 +256,7 @@ other auxiliary maps can use a free-form channel such as `brand`.
   "renderer": "Arnold",
   "original": {
     "format": "Maya .mb",
-    "formats": ["Maya .mb", "Alembic .abc", "Substance .spp", "UDIM EXR"],
+    "formats": ["Maya .mb", "Alembic .abc"],
     "size": "6.9 MB",
     "detail": "Maya .mb 6.9 MB · Alembic .abc 4.5 MB"
   },

@@ -68,6 +68,10 @@ studio render separately as an authored reference. See the
 Stage the model, poster, stills and turntable together. Verify frame count,
 resolution, decoded alpha, and playback, then open the interactive model in
 the packaged app. Do not replace a working entry with a partial render.
+Render from the final delivered GLB, after texture resizing, packing or other
+optimization. Recheck its bindings against the texture cards: a map can survive
+in the working export and disappear from the delivery. Refresh or reopen the
+app after changing assets so cached thumbnails and metadata do not mask a fix.
 Use `ffprobe` to confirm dimensions and frame rate, then run
 `python3 scripts/check-preview-alpha.py path/to/turntable.webm` to check all
 72 decoded frames for visible pixels, transparency, and clear edges.
@@ -87,9 +91,11 @@ Pass explicit dimensions and frame count for nonstandard proofs.
 
 - Keep the full source pose in the shared 16:9 frame. A T/A pose is wider than
   a prop; do not crop the arms just to make the character look larger.
-- Add a collapsed `Detail` group with a 16:9 face crop from the three-quarter
-  still. Check the head, eyes and skin at 1080p; whole-body thumbnails hide
-  eye and material errors.
+- Add a collapsed `Detail` group with a 16:9 face close-up. Prefer a dedicated
+  1080p render from the delivered model with the same lighting if a crop from
+  the whole-body still has too few pixels. Inspect both eyes from more than
+  one angle; a correct opacity mask cannot fix misaligned iris, cornea or
+  sclera geometry.
 - Separate rig capability from the static viewer. It is valid to list joints
   and skin clusters in the metadata, but the preview is a geometry snapshot
   unless the viewer actually supports the rig.
@@ -99,7 +105,9 @@ Pass explicit dimensions and frame count for nonstandard proofs.
   imply that displacement or subsurface scattering survived.
 - Use a neutral sclera color rather than a production mask texture. If the
   sclera has a transparency map, invert it for glTF opacity (white often means
-  transparent in DCC shaders) and verify the iris reads through the opening.
+  transparent in DCC shaders), verify alpha is packed and bound in the GLB,
+  and check that both irises read through the openings. Document any
+  preview-only fit correction; never apply it to the production rig.
 - Exclude blendshape targets, collision meshes and simulation inputs with an
   explicit allowlist, then reimport the review export and check part names,
   face counts and UV layers.
@@ -108,8 +116,8 @@ Pass explicit dimensions and frame count for nonstandard proofs.
 
 - Use the generated turntable as the hero and include the same four angles in
   this order: three-quarter, profile, rear three-quarter, opposite profile.
-- Use the shared labels `Blender technical turntable` and
-  `Three-quarter · Blender preview` (likewise for the other angle names).
+- Use concise angle labels and an asset-specific turntable label. Identify
+  translated or technical shading in Specs, not on every thumbnail.
 - Put published formats and other source-publish facts first. Keep generated
   preview settings out of the artist-facing metadata.
 - Put optional authored/production imagery in a named `group` (for example,

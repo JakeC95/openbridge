@@ -52,7 +52,12 @@ for how to register existing model and HDRI roots, test the shared workflows and
 ## 1.9.0 curated presentation details
 
 For studio asset discovery and preparation, follow the [asset ingest playbook](docs/ASSET-INGEST-PLAYBOOK.md).
-After each asset, add reusable lessons there and keep private evidence in local handoff notes.
+Every agent working on an asset must contribute what they learned before moving on. Update
+the playbook with reusable discovery tips, source/format quirks, failed approaches and checks
+that caught real problems. Put rendering or presentation lessons in the linked guides instead
+of duplicating them. If an iteration adds nothing reusable, record that in the private handoff.
+Keep asset-specific paths, screenshots, recipes with private inputs and evidence out of git.
+See the playbook's [iteration handoff](docs/ASSET-INGEST-PLAYBOOK.md#iteration-handoff).
 
 Treat local and online assets as two sources in one browser. Reuse shared UI
 components and interaction patterns wherever behavior is equivalent. Before
