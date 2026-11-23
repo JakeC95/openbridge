@@ -101,6 +101,24 @@ Keep the presentation folder portable: use forward slashes, keep media beside
 the GLB, and do not point at a production share. The source package stays local;
 the presentation is the review copy that can be copied to another workstation.
 
+## Acceptance check
+
+- Compare the prepared card in **All sources**, its collection and List /
+  Compare. Check the type, readable name and source formats against the drawer.
+  Published formats are provenance, not the files delivered by **Copy with
+  dependencies**. Use **Resources** to verify that distinction.
+- Inspect the delivered GLB, not just the working export: trace visible mesh
+  primitives through materials and textures to their embedded images. A texture
+  card, a matching filename or a successful export does not prove a binding.
+  Label source-only maps and distinguish individual bitmaps from packed or
+  generated images. After a GLB optimization, repeat this check.
+- Render the turntable and detail views from the delivered model where possible.
+  Use `ffprobe` to check encoded size, frame rate and duration, and
+  `scripts/check-preview-alpha.py` to check decoded alpha on the full orbit.
+  Open the turntable, interactive 3D, the angle lightbox and any detail/reference
+  groups in the packaged app. For layered or transparent surfaces, inspect a
+  close-up as well as the full asset; one good angle is not enough.
+
 ## Schema
 
 All fields are optional except `schemaVersion`. Unknown fields are ignored.
