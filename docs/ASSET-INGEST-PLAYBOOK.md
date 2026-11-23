@@ -73,6 +73,15 @@ bounds before choosing a preview:
   it against the supplied reference. This establishes a translated binding,
   not the original shader. Don't assume neighboring asset maps for reused
   components or treat a file named `Reflection` as roughness without evidence.
+  Before using filename guesses, run the Alembic SDK's `abcecho` to inspect
+  `.arbGeomParams` for Houdini's `shop_materialpath`. If present, use the
+  matching SDK to expand the indexed string parameter and compare its scope
+  and count to the face counts. An archive-wide string list or a user property
+  cannot establish which faces use a material. A uniform assignment allows
+  a verified whole-mesh binding; mixed assignments also require proving the
+  face order survives import. Match the recovered material IDs against the
+  entire companion folder, including shared or differently named parts,
+  and keep native shader graphs and unresolved channels separately labeled.
 - If the source is a product wall/grid, do not turntable the whole catalog.
   Isolate one representative hero variant by its root and descendants, record
   why it was chosen, and keep the pack count/context in facts or a collapsed
