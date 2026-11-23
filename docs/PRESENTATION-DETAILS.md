@@ -141,6 +141,10 @@ the presentation is the review copy that can be copied to another workstation.
 - Resources can correctly report no separate map files for a self-contained
   GLB. Verify embedded materials independently. Don't imply that every packed
   channel shown in the gallery can be isolated in the 3D inspector.
+- If a model mixes recovered textures with generated materials, name the
+  unresolved parts in **Production sources** and distinguish the number of
+  embedded images from the number of textured meshes. Verify a real orbit
+  in the packaged app as well as the default camera and turntable.
 - Render the turntable and detail views from the delivered model where possible.
   Use `ffprobe` to check encoded size, frame rate and duration, and
   `scripts/check-preview-alpha.py` to check decoded alpha on the full orbit.

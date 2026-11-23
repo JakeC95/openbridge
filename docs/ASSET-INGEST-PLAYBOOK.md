@@ -82,6 +82,12 @@ bounds before choosing a preview:
   face order survives import. Match the recovered material IDs against the
   entire companion folder, including shared or differently named parts,
   and keep native shader graphs and unresolved channels separately labeled.
+  Compare coverage by mesh and material, not just by the number of bundled
+  images. Accessories, interior cards and repeated instances may use a common
+  material name instead of the model ID. Prefer a verified same-package alias
+  over borrowing from a neighboring entry. An assigned glass material with no
+  matching bitmap is not necessarily missing a texture; the native parameters
+  may simply be unavailable.
 - If the source is a product wall/grid, do not turntable the whole catalog.
   Isolate one representative hero variant by its root and descendants, record
   why it was chosen, and keep the pack count/context in facts or a collapsed

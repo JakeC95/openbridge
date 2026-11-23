@@ -72,6 +72,10 @@ Render from the final delivered GLB, after texture resizing, packing or other
 optimization. Recheck its bindings against the texture cards: a map can survive
 in the working export and disappear from the delivery. Refresh or reopen the
 app after changing assets so cached thumbnails and metadata do not mask a fix.
+For a texture-recovery pass, compare the old and new GLBs under identical
+lighting and camera angles, including a rear or roof view where fixtures can
+be missed. Archive the previous prepared package outside the scanned root,
+then replace the entry only after the updated turntable and stills pass QA.
 Use `ffprobe` to confirm dimensions and frame rate, then run
 `python3 scripts/check-preview-alpha.py path/to/turntable.webm` to check all
 72 decoded frames for visible pixels, transparency, and clear edges.
