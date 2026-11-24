@@ -1,5 +1,25 @@
 # Send to Houdini · Linux pilot
 
+## Production input policy
+
+**GLB is for OpenBridge previews only.** Never use a preview GLB, geometry
+extracted from one, or textures recovered from one in a DCC handoff. Prefer
+the asset's original Alembic geometry; use the original FBX when it represents
+the same asset and variant and its bindings can be verified. If neither
+qualifies, report the missing source rather than silently substituting.
+
+During ingest, record the DCC-independent handoff data in a per-asset JSON
+manifest: exact source paths and selected objects/variant, verified units and
+axis, stable assignment keys, source texture paths and roles (including color
+spaces, packed channels, and UDIM tiles), material parameters, and explicit
+limitations. Validate that manifest against the actual geometry and files.
+Keep it separate from preview presentation data; target DCC adapters consume
+the same source facts and build their own renderer graphs.
+
+The current connector predates this policy: Alembic is supported, OBJ is
+retained for the synthetic pilot, and production FBX is not yet implemented.
+An existing successful preview or demonstration HIP is not handoff acceptance.
+
 This is an opt-in prototype for Houdini 20.5 / Python 3.10 or 3.11 and Arnold. It reads
 geometry and textures in place. It does not copy, publish, convert, or version
 the asset. A saved HIP follows those paths; moving or editing the files can
@@ -47,8 +67,8 @@ shared roots. Relative paths resolve next to the indexed file.
     {
       "group": "",
       "maps": {
-        "base_color": { "path": "textures/color.png", "colorSpace": "sRGB - Texture" },
-        "specular_roughness": { "path": "textures/roughness.png", "colorSpace": "Raw" }
+        "base_color": { "path": "textures/color.png", "fileColorSpace": "srgb" },
+        "specular_roughness": { "path": "textures/roughness.png", "fileColorSpace": "raw" }
       }
     }
   ]
@@ -63,8 +83,12 @@ each face after cooking. Every primitive must be covered exactly once.
 The Arnold surface builder handles base color, roughness, metalness and
 tangent-space normal textures. A material without a base-color texture needs
 an explicit `baseColor` RGB value; `roughness` can be specified as a constant.
-Use color-space names valid in
-the target Houdini/OCIO configuration. Do not add a sidecar for an asset whose
+`fileColorSpace` describes file encoding, not the working space or display
+view. The Arnold adapter resolves it against the active OCIO config, checks
+the processor to the scene-linear role and rejects color transforms on
+normal, roughness and metalness data. Record evidence for the encoding; don't
+derive it solely from the file extension or set everything to ACEScg.
+Do not add a sidecar for an asset whose
 verified look requires unsupported channels or geometry formats.
 Before rendering from production paths, check HtoA's texture-cache settings:
 Arnold can generate `.tx` files next to referenced images during rendering.

@@ -7,7 +7,7 @@ from pathlib import Path
 import hou
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "integrations/houdini/scripts/python"))
-from openbridge_houdini import _renderer, import_asset
+from openbridge_houdini import _renderer, _texture_space, import_asset
 
 
 with tempfile.TemporaryDirectory() as temp:
@@ -20,6 +20,14 @@ with tempfile.TemporaryDirectory() as temp:
         {"group": "", "maps": {"base_color": {"path": str(texture), "colorSpace": "auto"}}}
     ]}
     target = hou.node("/obj")
+    assert _texture_space({"fileColorSpace": "srgb"}, "base_color")
+    assert _texture_space({"fileColorSpace": "raw"}, "normal")
+    try:
+        _texture_space({"fileColorSpace": "srgb"}, "normal")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("A color transform was accepted for data")
     driver = target.createNode("ropnet", "LookDev").createNode("arnold")
     assert _renderer("auto") == "arnold"
     driver.bypass(True)

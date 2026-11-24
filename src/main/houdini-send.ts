@@ -8,7 +8,7 @@ const roles = ["base_color", "specular_roughness", "metalness", "normal"] as con
 type Role = typeof roles[number];
 type Material = {
   group: string;
-  maps: Partial<Record<Role, { path: string; colorSpace: string }>>;
+  maps: Partial<Record<Role, { path: string; colorSpace?: string; fileColorSpace?: string }>>;
   baseColor?: [number, number, number];
   roughness?: number;
 };
@@ -58,10 +58,13 @@ export async function houdiniRecipe(indexedPath: string, roots: string[]) {
     for (const role of roles) {
       const map = material.maps[role];
       if (!map) continue;
-      if (typeof map.colorSpace !== "string" || !/^[\w .()+-]{1,80}$/.test(map.colorSpace)) {
+      const encoding = map.fileColorSpace ?? map.colorSpace;
+      if (typeof encoding !== "string" || !/^[\w .()+-]{1,80}$/.test(encoding) ||
+          (map.fileColorSpace !== undefined && encoding.toLowerCase() === "auto")) {
         throw new Error(`Specify the Arnold color space for ${role}.`);
       }
-      maps[role] = { path: await file(map.path), colorSpace: map.colorSpace };
+      maps[role] = { path: await file(map.path),
+        ...(map.fileColorSpace !== undefined ? { fileColorSpace: encoding } : { colorSpace: encoding }) };
     }
     materials.push({ group: material.group, maps,
       ...(color !== undefined ? { baseColor: color } : {}),

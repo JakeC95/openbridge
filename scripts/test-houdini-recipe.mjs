@@ -28,6 +28,14 @@ try {
     geometry: source, metersPerUnit: 0.01,
     materials: [{ group: "", maps: { base_color: { path: map, colorSpace: "sRGB" } } }]
   });
+  input.materials[0].maps.base_color.fileColorSpace = "acescg";
+  await save();
+  assert.deepEqual((await houdiniRecipe(index, [library])).materials[0].maps.base_color,
+    { path: map, fileColorSpace: "acescg" });
+  input.materials[0].maps.base_color.fileColorSpace = "auto";
+  await save();
+  await assert.rejects(houdiniRecipe(index, [library]), /Arnold color space/);
+  delete input.materials[0].maps.base_color.fileColorSpace;
   input.geometry = "preview.glb";
   await save();
   await assert.rejects(houdiniRecipe(index, [library]), /explicit OBJ or Alembic/);

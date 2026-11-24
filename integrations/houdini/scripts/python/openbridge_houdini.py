@@ -14,6 +14,36 @@ import hou
 LIMIT = 65536
 ROLES = {"base_color", "specular_roughness", "metalness", "normal"}
 
+def _texture_space(texture, role):
+    """Resolve the file encoding against the config Houdini/Arnold is using."""
+    name = texture.get("fileColorSpace", texture.get("colorSpace"))
+    if name == "auto" and "fileColorSpace" not in texture:
+        return name  # Old synthetic pilot recipes only; never emit this in ingest.
+    import PyOpenColorIO as ocio
+    path = hou.getenv("OCIO")
+    if not path:
+        raise ValueError("Houdini has no active OCIO config; cannot validate file colorspaces.")
+    config = ocio.Config.CreateFromFile(hou.expandString(path))
+    aliases = {
+        "raw": ("data", "Raw", "Utility - Raw"),
+        "srgb": ("sRGB - Texture", "Utility - sRGB - Texture", "sRGB Encoded Rec.709 (sRGB)"),
+        "linear-rec709": ("Linear Rec.709 (sRGB)", "Utility - Linear - sRGB"),
+        "acescg": ("ACEScg", "ACES - ACEScg"),
+    }
+    for candidate in (name, *aliases.get(str(name).lower(), ())):
+        space = config.getColorSpace(candidate) if candidate else None
+        if space is None:
+            continue
+        if (role != "base_color") != space.isData():
+            raise ValueError(f"{role} requires {'a data' if role != 'base_color' else 'a color'} space, not {space.getName()}.")
+        if not space.isData():
+            working = config.getColorSpace("scene_linear") or config.getColorSpace("rendering")
+            if working is None:
+                raise ValueError("Active OCIO config does not define the scene-linear working space.")
+            config.getProcessor(space.getName(), working.getName())
+        return space.getName()
+    raise ValueError(f"File colorspace {name!r} is not defined in the active OCIO config.")
+
 
 def _source(path, extension=None):
     if not isinstance(path, str) or any(c in path for c in "$`\\\r\n\0"):
@@ -35,7 +65,7 @@ def _arnold_material(network, name, material):
     for role, texture in material["maps"].items():
         image = builder.createNode("arnold::image", role)
         image.parm("filename").set(texture["path"])
-        image.parm("color_space").set(texture["colorSpace"])
+        image.parm("color_space").set(_texture_space(texture, role))
         if role == "normal":
             normal = builder.createNode("arnold::normal_map", "tangent_normal")
             normal.setNamedInput("input", image, 0)

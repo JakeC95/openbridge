@@ -9,7 +9,7 @@ application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution 
 
 - Branch: `main`, tracking `origin/main`
 - Latest tag: `v1.9.4` (pushed; verify release assets before calling it published)
-- Current app version: `1.9.10` (Houdini handoff pilot; not tagged or released)
+- Current app version: `1.9.11` (Houdini handoff pilot; not tagged or released)
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -21,13 +21,15 @@ the current session. A cold start and the upgrade from 1.6.3 were verified on Li
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
 
-## 1.9.8–1.9.10 Houdini handoff pilot
+## 1.9.8–1.9.11 Houdini handoff pilot
 
 - Linux Houdini 20.5 / HtoA prototype. See [connector and acceptance](docs/HOUDINI-HANDOFF.md).
 - Package both Python 3.10 and 3.11 startup hooks around one importer. In
   Auto, detect actual render drivers in nested lookdev ROP networks.
 - Remap unpacked Alembic face material assignments exactly and verify the
   cooked bindings; no generated preview geometry as a fallback.
+- Record file encoding per map and resolve it using the active OCIO config;
+  do not apply display/color transforms to scalar and normal data.
 - Keep direct source references separate from preview media. Do not label
   assets render-ready before the actual Arnold render and saved-scene checks.
 
