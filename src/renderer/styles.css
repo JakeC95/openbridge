@@ -4917,6 +4917,7 @@ body {
 .drawer-footer .download-summary { margin: 0 0 8px; gap: 8px; flex-wrap: wrap; }
 .drawer-footer .download-summary > span { color: #eee; font-size: 14px; }
 .drawer-footer .complete-box { overflow-wrap: anywhere; }
+.houdini-send-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .footer-resolution { display: flex; gap: 6px; margin-bottom: 10px; }
 .footer-resolution .chip { min-width: 48px; }
 .scoped-search { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }

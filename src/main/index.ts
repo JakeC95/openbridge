@@ -1,4 +1,5 @@
 import { modelGeometryThumbnail } from "./model-thumbnail";
+import { houdiniRecipe, houdiniSessions, request as requestHoudini } from "./houdini-send";
 import { withAbort } from "./abortable";
 import { SharedHdrThumbnailCache } from "./shared-hdr-thumbnails";
 import { pathToFileURL } from "node:url";
@@ -11,7 +12,7 @@ import { decodeHdrFile } from "./hdr-decode";
 import { hdrLimitsFor } from "./public/preview-data";
 import { constants } from "node:fs";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
-import { copyFile, cp, mkdir, readFile, realpath, statfs } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, readFile, realpath, statfs } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { AuthService } from "./auth";
 import { LocalApiServer } from "./api-server";
@@ -614,6 +615,43 @@ function registerIpc(): void {
     if (!library || typeof id !== "string" || !sharedRootId(id)) throw new Error("Invalid shared asset.");
     return library.sharedFile(id);
   }
+
+  ipcMain.handle("shared:houdiniAvailable", async (_event, id: string) => {
+    if (process.platform !== "linux") return false;
+    const { asset, path } = await requireSharedFile(id);
+    return asset.type === "3d" && (await lstat(`${path}.houdini.json`).catch(() => null))?.isFile() === true;
+  });
+  let houdiniSending = false;
+  ipcMain.handle("shared:sendHoudini", async (_event, id: string, renderer: "auto" | "arnold") => {
+    if (houdiniSending) throw new Error("A Houdini send is already in progress.");
+    if (!["auto", "arnold"].includes(renderer)) throw new Error("Invalid target renderer.");
+    houdiniSending = true;
+    try {
+      const { asset, path } = await requireSharedFile(id);
+      if (asset.type !== "3d") throw new Error("This is not a model asset.");
+      const recipe = await houdiniRecipe(path, (settings().sharedLibraryRoots ?? []).map(root => root.path));
+      const sessions = await houdiniSessions();
+      if (!sessions.length) throw new Error("Open Houdini with the OpenBridge connector installed.");
+      let session = sessions[0];
+      if (sessions.length > 1) {
+        const choice = await dialog.showMessageBox({
+          title: "Choose Houdini session",
+          message: "Which Houdini network should receive the asset?",
+          buttons: [...sessions.map(item => `${basename(item.scene)} · ${item.target}`), "Cancel"],
+          defaultId: sessions.length,
+          cancelId: sessions.length,
+          noLink: true
+        });
+        if (choice.response === sessions.length) return null;
+        session = sessions[choice.response];
+      }
+      const reply = await requestHoudini(session.path, { action: "send", token: session.token, name: asset.name, recipe, renderer });
+      if (!reply.node) throw new Error("Houdini did not confirm an import.");
+      return reply.node;
+    } finally {
+      houdiniSending = false;
+    }
+  });
 
   ipcMain.handle("shared:stopScanning", () => library?.stopSharedScan());
   ipcMain.handle("shared:variants", (_event, id: string) => library?.sharedVariants(id) ?? []);
@@ -1683,6 +1721,5 @@ if (!gotLock) {
     }
   });
 }
-
 
 

@@ -65,6 +65,9 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
   const showImage = (preview: MapPreview) => openImageItems([preview], 0);
   const chooseView = (next: typeof view) => { viewTouched.current = true; setView(next); };
   const [copying, setCopying] = useState(false);
+  const [houdiniAsset, setHoudiniAsset] = useState("");
+  const [houdiniRenderer, setHoudiniRenderer] = useState<"auto" | "arnold">("auto");
+  const [sendingHoudini, setSendingHoudini] = useState(false);
   const [variants, setVariants] = useState<AssetRecord[]>([]);
   const [organization, setOrganization] = useState({ tags: "", collections: "", notes: "" });
   const [organizationReady, setOrganizationReady] = useState(false);
@@ -191,6 +194,27 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
     try { return await window.openbridge.sharedLibrary.hdr(asset.id); }
     finally { signal?.removeEventListener("abort", cancel); }
   }, [asset.id]);
+
+  useEffect(() => {
+    if (hdrAsset) return;
+    let current = true;
+    void window.openbridge.sharedLibrary.houdiniAvailable(asset.id).then(available => {
+      if (current) setHoudiniAsset(available ? asset.id : "");
+    }).catch(() => { if (current) setHoudiniAsset(""); });
+    return () => { current = false; };
+  }, [asset.id, hdrAsset]);
+
+  async function sendHoudini() {
+    setSendingHoudini(true);
+    try {
+      const node = await window.openbridge.sharedLibrary.sendHoudini(asset.id, houdiniRenderer);
+      if (node) toast(`Imported into Houdini: ${node}`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setSendingHoudini(false);
+    }
+  }
 
   async function run(action: "open" | "reveal" | "copy" | "copyPackage") {
     try {
@@ -351,6 +375,15 @@ export function SharedAssetDrawer({ asset }: { asset: AssetRecord }) {
         {["obj", "gltf", "glb"].includes(asset.tags[0]) && <button type="button" className="btn btn-primary" disabled={copying}
           onClick={() => void run("copyPackage")}>Copy with dependencies</button>}
         {copying && <span className="hint" role="status">Copying…</span>}
+        {houdiniAsset === asset.id && <div className="houdini-send-actions">
+          <button type="button" className="btn btn-primary" disabled={sendingHoudini}
+            onClick={() => void sendHoudini()}>{sendingHoudini ? "Sending…" : "Send to Houdini"}</button>
+          <select className="select" aria-label="Houdini target renderer" value={houdiniRenderer} disabled={sendingHoudini}
+            onChange={event => setHoudiniRenderer(event.target.value as typeof houdiniRenderer)}>
+            <option value="auto">Scene / job renderer</option>
+            <option value="arnold">Arnold</option>
+          </select>
+        </div>}
       </div>
     </aside>
     {viewerItems.length > 0 && <ImageViewer items={viewerItems} index={viewerIndex} onIndex={setViewerIndex} onClose={() => setViewerItems([])} loadHdrSource={loadHdrSource} />}

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -72,6 +73,11 @@ await writeFile(join(sample, "Authored still.png"), embeddedImage);
 const authoredExtras = Array.from({length: 6}, (_, i) => `Authored angle ${i+1}.png`);
 await Promise.all(authoredExtras.map(name => writeFile(join(sample, name), embeddedImage)));
 await writeFile(join(sample, "Alternate.obj"), "v 0 0 0");
+await writeFile(join(sample, "Prepared prop.glb.houdini.json"), JSON.stringify({
+  schemaVersion: 1, upAxis: "Y", metersPerUnit: 1,
+  geometry: "Alternate.obj",
+  materials: [{ group: "", maps: { base_color: { path: "Prepared prop.png", colorSpace: "auto" } } }]
+}));
 await writeFile(join(sample, "presentation.json"), JSON.stringify({
   schemaVersion: 1,
   category: "Prop",
@@ -121,10 +127,31 @@ const wrapper = join(root, "fixture-main.cjs");
 await writeFile(wrapper, `require("electron").dialog.showOpenDialog = async () => ({
   canceled: false, filePaths: [${JSON.stringify(destination)}]
 }); require(${JSON.stringify(resolve("out/main/index.js"))});`);
-const electron = resolve("node_modules/electron/dist", process.platform === "win32" ? "electron.exe" : "electron");
-const child = spawn(electron, [wrapper, `--user-data-dir=${profile}`, "--remote-debugging-port=0",
+const portable = process.env.OPENBRIDGE_TEST_PORTABLE;
+const home = join(root, "isolated-home");
+let connector;
+let received;
+if (process.platform === "linux") {
+  const directory = join(home, `openbridge-houdini-${process.getuid()}`);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  connector = createServer(socket => {
+    socket.once("data", bytes => {
+      const request = JSON.parse(bytes.toString("utf8"));
+      if (request.action === "send") received = request;
+      socket.end(JSON.stringify(request.action === "status" ?
+        { scene: "fixture.hip", target: "/obj", token: "fixture-token" } :
+        { node: "/obj/OB_Fixture" }) + "\n");
+    });
+  });
+  await new Promise((fulfill, reject) => {
+    connector.once("error", reject);
+    connector.listen(join(directory, `${process.pid}.sock`), fulfill);
+  });
+}
+const electron = portable || resolve("node_modules/electron/dist", process.platform === "win32" ? "electron.exe" : "electron");
+const child = spawn(electron, [...(portable ? [] : [wrapper]), `--user-data-dir=${profile}`, "--remote-debugging-port=0",
   ...(process.env.OPENBRIDGE_UI_SOFTWARE_GL === "1" ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [])],
-{ env: {...process.env, TMPDIR: root, OPENBRIDGE_STATE_DIR: join(root, "state")},
+{ env: {...process.env, ...(connector ? { XDG_RUNTIME_DIR: home } : {}), TMPDIR: root, OPENBRIDGE_STATE_DIR: join(root, "state")},
   detached: process.platform !== "win32", stdio: "ignore" });
 let ok = false;
 let ws;
@@ -171,7 +198,11 @@ try {
     return states.length===3 && states.every(root=>root.state==="ready");
   },"The fixture roots did not finish indexing");
   await until(()=>evaluate(`[...document.querySelectorAll(".nav-item")].some(n=>n.textContent.includes("Library"))`),"Library navigation did not mount");
-  const fixture=await evaluate(`(async()=>{
+  let fixture;
+  if (portable) {
+    await evaluate(`[...document.querySelectorAll('.nav-item')].find(n=>n.textContent.includes("Library")).click()`);
+  } else {
+  fixture=await evaluate(`(async()=>{
     const api=window.openbridge;
     const chair=(await api.queryLibrary({provider:"shared",query:"Pilot chair"})).assets[0];
     const sky=(await api.queryLibrary({provider:"shared",query:"Pilot sky"})).assets[0];
@@ -240,6 +271,7 @@ try {
   await evaluate(`[...document.querySelectorAll('.image-viewer button')].find(button=>button.textContent==='Close preview').click()`);
   await until(()=>evaluate(`!document.querySelector('.image-viewer')`),"Fullscreen preview did not close");
   await evaluate(`document.querySelector('.drawer button[title=Close]')?.click()`);
+  }
   async function choose(label, option) {
     await until(()=>evaluate(`Boolean(document.querySelector('button[aria-label="${label}"]'))`),`Missing dropdown: ${label}`,8000);
     await evaluate(`document.querySelector('button[aria-label="${label}"]').click()`);
@@ -260,6 +292,7 @@ try {
   await until(()=>evaluate(`document.querySelector('[data-asset-id="${presentation.id}"] .shared-card-meta')?.textContent.includes('.mb · .abc')`),"Prepared card metadata disappeared in All sources");
   await choose("Local asset source","Shared folders");
   await until(()=>evaluate(`document.querySelector('button[aria-label="Shared library folder"]')?.textContent.includes('Prepared assets')`),"Shared folders did not return to the prepared collection");
+  if (!portable) {
   await evaluate(`(()=>{
     window.uploadedEmbeddedFixture=false;
     const proto=WebGL2RenderingContext.prototype;
@@ -280,7 +313,40 @@ try {
     "Fullscreen should not describe the number of internal meshes from the absence of LODs");
   await evaluate(`document.querySelector('button[aria-label="Close 3D viewer"]').click()`);
   await until(()=>evaluate(`!document.querySelector('.model-viewer.fullscreen')`),"Prepared model fullscreen did not close");
+  } else {
+    await evaluate(`document.querySelector('[data-asset-id="${presentation.id}"]').click()`);
+  }
   await until(()=>evaluate(`Boolean(document.querySelector('[aria-label="Asset details"]'))`),"Curated presentation details did not load");
+  if (process.platform === "linux") {
+    await until(()=>evaluate(`document.querySelector('.drawer [aria-label="Houdini target renderer"]')?.value === "auto" &&
+      [...document.querySelectorAll('.drawer-footer button')].some(button=>button.textContent === "Send to Houdini" && !button.disabled)`),
+    "Houdini pilot controls did not appear for the explicit handoff recipe");
+    await evaluate(`[...document.querySelectorAll('.drawer-footer button')].find(button=>button.textContent === "Send to Houdini").click()`);
+    await until(()=>evaluate(`document.querySelector('.toast')?.textContent.includes('/obj/OB_Fixture')`),
+      "Handoff did not receive an import confirmation");
+    assert.equal(received.token, "fixture-token");
+    assert.equal(received.recipe.geometry, join(sample, "Alternate.obj"));
+    assert.equal(received.recipe.materials[0].maps.base_color.path, join(sample, "Prepared prop.png"));
+  }
+  if (portable) {
+    const png = await new Promise((resolve, reject) => {
+      const id = ++seq;
+      const timer = setTimeout(() => reject(Error("Screenshot timed out")), 10_000);
+      const receive = event => {
+        const message = JSON.parse(event.data);
+        if (message.id !== id) return;
+        clearTimeout(timer);
+        ws.removeEventListener("message", receive);
+        if (message.result?.data) resolve(Buffer.from(message.result.data, "base64"));
+        else reject(Error("Screenshot failed"));
+      };
+      ws.addEventListener("message", receive);
+      ws.send(JSON.stringify({ id, method: "Page.captureScreenshot" }));
+    });
+    await writeFile(process.env.OPENBRIDGE_TEST_SCREENSHOT || "houdini-handoff.png", png);
+    ok = true;
+    console.log("Portable Houdini controls checked.");
+  } else {
   await until(()=>evaluate(`Boolean(document.querySelector('.shared-presentation-stat-value .renderer-mark img')?.naturalWidth)`),"Renderer stat badge did not decode");
   await until(()=>evaluate(`document.querySelector('.shared-presentation-map-image img')?.naturalWidth===7`),"Curated map preview did not decode");
   await until(()=>evaluate(`document.querySelector('.shared-presentation-part-preview img')?.naturalWidth===7`),"Curated part preview did not decode");
@@ -398,9 +464,11 @@ try {
   const assetFolder=(await readdir(join(destination,batch)))[0];
   assert.match(await readFile(join(destination,batch,assetFolder,"Pilot chair.obj"),"utf8"),/v -1/);
   console.log("Bulk copy wrote the selected model into its project folder");
+  }
   ws.close();
   ok=true;
 } finally {
+  connector?.close();
   ws?.close();
   const ended = new Promise(resolve=>child.once("exit",resolve));
   if (process.platform === "win32" && child.pid) {

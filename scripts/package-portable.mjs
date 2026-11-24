@@ -34,6 +34,7 @@ if (platform === "win32" && arch === "x64") {
   await cp(join(root, "out"), join(app, "out"), { recursive: true });
   await cp(join(root, "package.json"), join(app, "package.json"));
   await cp(join(root, "LICENSE"), join(target, "LICENSE"));
+  await cp(join(root, "integrations", "houdini"), join(target, "integrations", "houdini"), { recursive: true });
   try {
     execFileSync("tar", ["--mode=go-w", "-czf", archiveTemp, "-C", dist, name], { stdio: "inherit" });
     await rename(archiveTemp, archive);

@@ -1223,6 +1223,8 @@ export interface OpenBridgeApi {
     open(id: string): Promise<void>;
     copy(id: string): Promise<string | null>;
     copyPackage(id: string): Promise<{ folder: string; files: number } | null>;
+    houdiniAvailable(id: string): Promise<boolean>;
+    sendHoudini(id: string, renderer: "auto" | "arnold"): Promise<string | null>;
     copySelection(ids: string[], scope: LibraryQuery): Promise<SharedCopyReport | null>;
     cancelCopySelection(): Promise<void>;
     onCopyProgress(callback: (progress: SharedCopyProgress) => void): () => void;
