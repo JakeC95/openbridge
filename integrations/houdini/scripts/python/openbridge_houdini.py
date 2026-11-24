@@ -12,7 +12,7 @@ from pathlib import Path
 import hou
 
 LIMIT = 65536
-ROLES = {"base_color", "specular_roughness", "metalness"}
+ROLES = {"base_color", "specular_roughness", "metalness", "normal"}
 
 
 def _source(path, extension=None):
@@ -24,15 +24,24 @@ def _source(path, extension=None):
     return path
 
 
-def _arnold_material(network, name, maps):
+def _arnold_material(network, name, material):
     builder = network.createNode("arnold_materialbuilder", name)
     shader = builder.createNode("arnold::standard_surface", "surface")
     builder.node("OUT_material").setInput(0, shader)
-    for role, texture in maps.items():
+    if "baseColor" in material:
+        shader.parmTuple("base_color").set(material["baseColor"])
+    if "roughness" in material:
+        shader.parm("specular_roughness").set(material["roughness"])
+    for role, texture in material["maps"].items():
         image = builder.createNode("arnold::image", role)
         image.parm("filename").set(texture["path"])
         image.parm("color_space").set(texture["colorSpace"])
-        shader.setNamedInput(role, image, 0)
+        if role == "normal":
+            normal = builder.createNode("arnold::normal_map", "tangent_normal")
+            normal.setNamedInput("input", image, 0)
+            shader.setNamedInput("normal", normal, 0)
+        else:
+            shader.setNamedInput(role, image, 0)
     builder.layoutChildren()
     return builder
 
@@ -51,7 +60,10 @@ def import_asset(target, name, recipe, renderer):
         target.path() != "/obj" and target.childTypeCategory() != hou.sopNodeTypeCategory()
     ):
         raise ValueError("Choose an editable /obj or SOP network in Houdini.")
-    geometry = _source(recipe["geometry"], ".obj")
+    geometry = _source(recipe["geometry"])
+    extension = Path(geometry).suffix.lower()
+    if extension not in {".abc", ".obj"}:
+        raise ValueError("Houdini requires explicit OBJ or Alembic source geometry.")
     scale = recipe["metersPerUnit"]
     if not isinstance(scale, (float, int)) or not 0 < scale < float("inf"):
         raise ValueError("Invalid source scale.")
@@ -60,7 +72,7 @@ def import_asset(target, name, recipe, renderer):
         raise ValueError("No verified material bindings.")
     for material in materials:
         maps = material["maps"]
-        if "base_color" not in maps or not set(maps) <= ROLES:
+        if ("base_color" not in maps and "baseColor" not in material) or not set(maps) <= ROLES:
             raise ValueError("Unsupported texture roles.")
         for texture in maps.values():
             _source(texture["path"])
@@ -70,23 +82,38 @@ def import_asset(target, name, recipe, renderer):
     with hou.undos.group("OpenBridge import"):
         try:
             root = target.createNode("geo" if at_object else "subnet", f"OB_{safe_name}", run_init_scripts=False)
-            source = root.createNode("file", "library_geometry")
-            source.parm("file").set(geometry)
+            alembic = extension == ".abc"
+            source = root.createNode("alembic" if alembic else "file", "library_geometry")
+            source.parm("fileName" if alembic else "file").set(geometry)
+            if alembic:
+                source.parm("loadmode").set("unpack")
             mesh = source.geometry()
             if not mesh.prims() or not (mesh.findVertexAttrib("uv") or mesh.findPointAttrib("uv")):
                 raise ValueError("Source geometry has no polygons or UVs.")
             # Check that the declared groups cover each primitive exactly once.
             covered = set()
+            index_by_material = {}
+            if alembic:
+                if not mesh.findPrimAttrib("shop_materialpath"):
+                    raise ValueError("Alembic is missing its authored face material assignments.")
+                for index, value in enumerate(mesh.primStringAttribValues("shop_materialpath")):
+                    index_by_material.setdefault(value, set()).add(index)
+            expected_bindings = {}
             for material in materials:
                 group = material["group"]
-                if not re.fullmatch(r"[a-zA-Z0-9_]*", group) or (not group and len(materials) != 1):
+                pattern = r"(?:/[a-zA-Z0-9_.-]+)+" if alembic else r"[a-zA-Z0-9_]*"
+                if not re.fullmatch(pattern, group) or (not group and len(materials) != 1):
                     raise ValueError("Invalid material group selector.")
-                primitive_group = mesh.findPrimGroup(group) if group else None
-                indices = ({p.number() for p in primitive_group.prims()} if primitive_group is not None else
-                           set(range(len(mesh.prims()))) if not group else set())
+                if alembic:
+                    indices = index_by_material.get(group, set())
+                else:
+                    primitive_group = mesh.findPrimGroup(group) if group else None
+                    indices = ({p.number() for p in primitive_group.prims()} if primitive_group is not None else
+                               set(range(len(mesh.prims()))) if not group else set())
                 if not indices or covered.intersection(indices):
                     raise ValueError(f"Empty or overlapping material group: {group}")
                 covered.update(indices)
+                expected_bindings[group] = indices
             if len(covered) != len(mesh.prims()):
                 raise ValueError("Some imported faces have no verified material binding.")
             stream = source
@@ -98,10 +125,13 @@ def import_asset(target, name, recipe, renderer):
             assign = root.createNode("material", "assign_materials")
             assign.setInput(0, stream)
             assign.parm("num_materials").set(len(materials))
+            material_paths = {}
             for index, material in enumerate(materials, 1):
-                shader = build_material(matnet, f"look_{index}", material["maps"])
-                assign.parm(f"group{index}").set(material["group"])
+                shader = build_material(matnet, f"look_{index}", material)
+                group = material["group"]
+                assign.parm(f"group{index}").set(f"@shop_materialpath={group}" if alembic else group)
                 assign.parm(f"shop_materialpath{index}").set(shader.path())
+                material_paths[group] = shader.path()
             out = root.createNode("null", "OUT")
             out.setInput(0, assign)
             if not at_object:
@@ -110,8 +140,11 @@ def import_asset(target, name, recipe, renderer):
             out.setDisplayFlag(True)
             out.setRenderFlag(True)
             cooked = root.geometry() if not at_object else out.geometry()
-            bindings = cooked.findPrimAttrib("shop_materialpath")
-            if not bindings or any(not value or not hou.node(value) for value in cooked.primStringAttribValues("shop_materialpath")):
+            bindings = cooked.primStringAttribValues("shop_materialpath") if cooked.findPrimAttrib("shop_materialpath") else ()
+            if len(bindings) != len(mesh.prims()) or any(
+                bindings[index] != material_paths[group]
+                for group, indices in expected_bindings.items() for index in indices
+            ):
                 raise ValueError("Material assignments did not survive the SOP cook.")
             root.layoutChildren()
             root.moveToGoodPosition(move_inputs=False, move_outputs=False, move_unconnected=False)

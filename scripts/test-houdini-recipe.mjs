@@ -30,8 +30,20 @@ try {
   });
   input.geometry = "preview.glb";
   await save();
-  await assert.rejects(houdiniRecipe(index, [library]), /explicit OBJ/);
+  await assert.rejects(houdiniRecipe(index, [library]), /explicit OBJ or Alembic/);
+  const alembic = join(library, "source.abc");
+  await writeFile(alembic, "fixture");
+  input.geometry = "source.abc";
+  input.materials[0] = { group: "/source/materials/glass", maps: {}, baseColor: [0.1, 0.2, 0.3], roughness: 0.2 };
+  await save();
+  assert.deepEqual(await houdiniRecipe(index, [library]), {
+    geometry: alembic, metersPerUnit: 0.01, materials: input.materials
+  });
+  input.materials[0].group = "/source/*";
+  await save();
+  await assert.rejects(houdiniRecipe(index, [library]), /unique source assignments/);
   input.geometry = "source.obj";
+  input.materials[0] = { group: "", maps: { base_color: { path: "color.png", colorSpace: "sRGB" } } };
   input.materials[0].maps.base_color.path = "missing.png";
   await save();
   await assert.rejects(houdiniRecipe(index, [library]), /missing.png/);

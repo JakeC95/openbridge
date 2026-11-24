@@ -4,11 +4,13 @@ import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { isInside } from "./shared-library";
 
 const maxMessage = 64 * 1024;
-const roles = ["base_color", "specular_roughness", "metalness"] as const;
+const roles = ["base_color", "specular_roughness", "metalness", "normal"] as const;
 type Role = typeof roles[number];
 type Material = {
   group: string;
   maps: Partial<Record<Role, { path: string; colorSpace: string }>>;
+  baseColor?: [number, number, number];
+  roughness?: number;
 };
 
 export async function houdiniRecipe(indexedPath: string, roots: string[]) {
@@ -34,14 +36,22 @@ export async function houdiniRecipe(indexedPath: string, roots: string[]) {
     return path;
   }
   const geometry = await file(raw.geometry);
-  if (extname(geometry).toLowerCase() !== ".obj") throw new Error("The initial Houdini pilot accepts explicit OBJ geometry only.");
+  const format = extname(geometry).toLowerCase();
+  if (![".obj", ".abc"].includes(format)) throw new Error("Houdini requires explicit OBJ or Alembic source geometry.");
   const materials: Material[] = [];
   const groups = new Set();
   for (const material of raw.materials) {
-    if (typeof material?.group !== "string" || !/^[a-zA-Z0-9_]*$/.test(material.group) ||
+    const groupPattern = format === ".abc" ? /^(?:\/[a-zA-Z0-9_.-]+)+$/ : /^[a-zA-Z0-9_]*$/;
+    const unit = (value: unknown): value is number => typeof value === "number" && value >= 0 && value <= 1;
+    const color = material?.baseColor;
+    if (typeof material?.group !== "string" || !groupPattern.test(material.group) ||
         (!material.group && raw.materials.length !== 1) || groups.has(material.group) ||
-        !material.maps?.base_color || Object.keys(material.maps).some(role => !roles.includes(role as Role))) {
-      throw new Error("The Houdini recipe requires unique primitive groups and a base-color texture for each material.");
+        !material.maps || typeof material.maps !== "object" || Array.isArray(material.maps) ||
+        Object.keys(material.maps).some(role => !roles.includes(role as Role)) ||
+        (color !== undefined && !(Array.isArray(color) && color.length === 3 && color.every(unit))) ||
+        (material.roughness !== undefined && !unit(material.roughness)) ||
+        (!material.maps.base_color && color === undefined)) {
+      throw new Error("The Houdini recipe needs unique source assignments and an explicit base-color map or value for every material.");
     }
     groups.add(material.group);
     const maps: Material["maps"] = {};
@@ -53,7 +63,9 @@ export async function houdiniRecipe(indexedPath: string, roots: string[]) {
       }
       maps[role] = { path: await file(map.path), colorSpace: map.colorSpace };
     }
-    materials.push({ group: material.group, maps });
+    materials.push({ group: material.group, maps,
+      ...(color !== undefined ? { baseColor: color } : {}),
+      ...(material.roughness !== undefined ? { roughness: material.roughness } : {}) });
   }
   return { geometry, metersPerUnit: raw.metersPerUnit as number, materials };
 }

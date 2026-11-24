@@ -57,8 +57,13 @@ shared roots. Relative paths resolve next to the indexed file.
 
 An empty group means all faces and is only valid for a single material.
 Otherwise, supply the exact primitive group names Houdini reads from the OBJ.
-Every primitive must be covered exactly once. The initial surface builder
-handles base color, roughness and metalness. Use color-space names valid in
+For an Alembic source, use the exact authored `shop_materialpath` string from
+the unpacked faces as `group`; the importer checks the remapped material on
+each face after cooking. Every primitive must be covered exactly once.
+The Arnold surface builder handles base color, roughness, metalness and
+tangent-space normal textures. A material without a base-color texture needs
+an explicit `baseColor` RGB value; `roughness` can be specified as a constant.
+Use color-space names valid in
 the target Houdini/OCIO configuration. Do not add a sidecar for an asset whose
 verified look requires unsupported channels or geometry formats.
 Before rendering from production paths, check HtoA's texture-cache settings:
