@@ -22,6 +22,11 @@ production source or a curated comparison benchmark to make a new asset pass.
 
 ## Discovery
 
+Create the [canonical `asset.json` record](ASSET-MANIFEST.md) during the source
+audit, not after generating the preview. Keep source geometry, maps, native
+graphs and unsupported assignment facts even when no current adapter can use
+them. Store audit and handoff state per variant and target.
+
 1. Record the original asset name/type and inventory the whole asset folder:
    native scenes, exchange publishes, texture roots, render output, references,
    delivery archives, manifests and version folders. Ignore AppleDouble

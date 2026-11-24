@@ -94,6 +94,9 @@ def import_asset(target, name, recipe, renderer):
     extension = Path(geometry).suffix.lower()
     if extension not in {".abc", ".obj"}:
         raise ValueError("Houdini requires explicit OBJ or Alembic source geometry.")
+    binding_attribute = recipe.get("bindingAttribute", "shop_materialpath")
+    if binding_attribute not in {"path", "shop_materialpath"} or (binding_attribute == "path" and extension != ".abc"):
+        raise ValueError("Unsupported source binding attribute.")
     scale = recipe["metersPerUnit"]
     if not isinstance(scale, (float, int)) or not 0 < scale < float("inf"):
         raise ValueError("Invalid source scale.")
@@ -117,16 +120,24 @@ def import_asset(target, name, recipe, renderer):
             source.parm("fileName" if alembic else "file").set(geometry)
             if alembic:
                 source.parm("loadmode").set("unpack")
+                if binding_attribute == "path":
+                    source.parm("loadmode").set("alembic")
+                    unpack = root.createNode("unpack", "unpack_source_parts")
+                    unpack.setInput(0, source)
+                    unpack.parm("transfer_attributes").set("path")
+                    unpack.parm("convertpolysoup").set(1)
+                    source = unpack
             mesh = source.geometry()
-            if not mesh.prims() or not (mesh.findVertexAttrib("uv") or mesh.findPointAttrib("uv")):
-                raise ValueError("Source geometry has no polygons or UVs.")
+            if not mesh.prims() or (any(m["maps"] for m in materials) and
+                                    not (mesh.findVertexAttrib("uv") or mesh.findPointAttrib("uv"))):
+                raise ValueError("Source geometry is empty or textured geometry has no UVs.")
             # Check that the declared groups cover each primitive exactly once.
             covered = set()
             index_by_material = {}
             if alembic:
-                if not mesh.findPrimAttrib("shop_materialpath"):
+                if not mesh.findPrimAttrib(binding_attribute):
                     raise ValueError("Alembic is missing its authored face material assignments.")
-                for index, value in enumerate(mesh.primStringAttribValues("shop_materialpath")):
+                for index, value in enumerate(mesh.primStringAttribValues(binding_attribute)):
                     index_by_material.setdefault(value, set()).add(index)
             expected_bindings = {}
             for material in materials:
@@ -159,7 +170,7 @@ def import_asset(target, name, recipe, renderer):
             for index, material in enumerate(materials, 1):
                 shader = build_material(matnet, f"look_{index}", material)
                 group = material["group"]
-                assign.parm(f"group{index}").set(f"@shop_materialpath={group}" if alembic else group)
+                assign.parm(f"group{index}").set(f"@{binding_attribute}={group}" if alembic else group)
                 assign.parm(f"shop_materialpath{index}").set(shader.path())
                 material_paths[group] = shader.path()
             out = root.createNode("null", "OUT")

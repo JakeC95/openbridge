@@ -52,10 +52,12 @@ with Arnold. V-Ray selection is recognized but its adapter is not implemented.
 
 ## Asset recipe
 
-Only shared Library models with a `<indexed filename>.houdini.json` sidecar
-show the action. This is not `presentation.json`: the preview is never an
-implicit import source. Paths must resolve to regular files in registered
-shared roots. Relative paths resolve next to the indexed file.
+Shared Library models in an asset folder with a canonical
+[`asset.json`](ASSET-MANIFEST.md) show the action. Send requires an approved
+Houdini/Arnold route and reports unsupported features before contacting Houdini.
+The following `<indexed filename>.houdini.json` format is retained only for
+pilot compatibility when the canonical record is absent. Relative legacy
+paths resolve next to the indexed file.
 
 ```json
 {

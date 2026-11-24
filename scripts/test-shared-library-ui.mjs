@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { assetFixture } from "./fixtures/asset-manifest.mjs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -73,11 +74,9 @@ await writeFile(join(sample, "Authored still.png"), embeddedImage);
 const authoredExtras = Array.from({length: 6}, (_, i) => `Authored angle ${i+1}.png`);
 await Promise.all(authoredExtras.map(name => writeFile(join(sample, name), embeddedImage)));
 await writeFile(join(sample, "Alternate.obj"), "v 0 0 0");
-await writeFile(join(sample, "Prepared prop.glb.houdini.json"), JSON.stringify({
-  schemaVersion: 1, upAxis: "Y", metersPerUnit: 1,
-  geometry: "Alternate.obj",
-  materials: [{ group: "", maps: { base_color: { path: "Prepared prop.png", colorSpace: "auto" } } }]
-}));
+await writeFile(join(sample, "Source.abc"), "Synthetic source for the socket fixture; no DCC cooks this file.");
+await writeFile(join(sample, "Source Color.png"), embeddedImage);
+await writeFile(join(sample, "asset.json"), JSON.stringify(assetFixture("prepared", "Prepared prop/")));
 await writeFile(join(sample, "presentation.json"), JSON.stringify({
   schemaVersion: 1,
   category: "Prop",
@@ -325,8 +324,9 @@ try {
     await until(()=>evaluate(`document.querySelector('.toast')?.textContent.includes('/obj/OB_Fixture')`),
       "Handoff did not receive an import confirmation");
     assert.equal(received.token, "fixture-token");
-    assert.equal(received.recipe.geometry, join(sample, "Alternate.obj"));
-    assert.equal(received.recipe.materials[0].maps.base_color.path, join(sample, "Prepared prop.png"));
+    assert.equal(received.recipe.geometry, join(sample, "Source.abc"));
+    assert.deepEqual(received.recipe.materials[0].maps.base_color,
+      { path: join(sample, "Source Color.png"), fileColorSpace: "srgb" });
   }
   if (portable) {
     const png = await new Promise((resolve, reject) => {

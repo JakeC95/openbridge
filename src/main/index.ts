@@ -1,5 +1,5 @@
 import { modelGeometryThumbnail } from "./model-thumbnail";
-import { houdiniRecipe, houdiniSessions, request as requestHoudini } from "./houdini-send";
+import { hasHoudiniManifest, houdiniRecipe, houdiniSessions, request as requestHoudini } from "./houdini-send";
 import { withAbort } from "./abortable";
 import { SharedHdrThumbnailCache } from "./shared-hdr-thumbnails";
 import { pathToFileURL } from "node:url";
@@ -12,7 +12,7 @@ import { decodeHdrFile } from "./hdr-decode";
 import { hdrLimitsFor } from "./public/preview-data";
 import { constants } from "node:fs";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from "electron";
-import { copyFile, cp, lstat, mkdir, readFile, realpath, statfs } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, realpath, statfs } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { AuthService } from "./auth";
 import { LocalApiServer } from "./api-server";
@@ -619,7 +619,7 @@ function registerIpc(): void {
   ipcMain.handle("shared:houdiniAvailable", async (_event, id: string) => {
     if (process.platform !== "linux") return false;
     const { asset, path } = await requireSharedFile(id);
-    return asset.type === "3d" && (await lstat(`${path}.houdini.json`).catch(() => null))?.isFile() === true;
+    return asset.type === "3d" && await hasHoudiniManifest(path);
   });
   let houdiniSending = false;
   ipcMain.handle("shared:sendHoudini", async (_event, id: string, renderer: "auto" | "arnold") => {
@@ -629,7 +629,7 @@ function registerIpc(): void {
     try {
       const { asset, path } = await requireSharedFile(id);
       if (asset.type !== "3d") throw new Error("This is not a model asset.");
-      const recipe = await houdiniRecipe(path, (settings().sharedLibraryRoots ?? []).map(root => root.path));
+      const recipe = await houdiniRecipe(path, settings().sharedLibraryRoots ?? []);
       const sessions = await houdiniSessions();
       if (!sessions.length) throw new Error("Open Houdini with the OpenBridge connector installed.");
       let session = sessions[0];
@@ -1721,5 +1721,4 @@ if (!gotLock) {
     }
   });
 }
-
 

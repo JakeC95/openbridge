@@ -1,6 +1,6 @@
 {
   "name": "openbridge",
-  "version": "1.9.11",
+  "version": "1.9.12",
   "private": true,
   "description": "Open-source, portable multi-provider asset and HDRI browser for Windows and Linux",
   "productName": "OpenBridge",
@@ -30,6 +30,7 @@
     "catalog:pack:sample": "npm run build && electron . --build-catalog-pack=dist/catalog-metadata-sample.json.gz --catalog-limit=50",
     "catalog:import": "electron . --import-catalog-pack=dist/catalog-metadata-sample.json.gz",
     "test:shared-library:ui": "node scripts/test-shared-library-ui.mjs",
+    "test:asset-manifest": "node scripts/test-asset-manifest.mjs && node scripts/test-houdini-recipe.mjs",
     "test:model-thumbnail:ui": "node scripts/test-model-thumbnail.mjs",
     "test:lookdev": "node scripts/test-study-houdini-preview.mjs"
   },
@@ -39,6 +40,7 @@
     "react-dom": "^19.3.1",
     "three": "^0.187.0",
     "yauzl": "^3.4.0",
+    "zod": "4.6.7",
     "zustand": "^5.0.16"
   },
   "devDependencies": {

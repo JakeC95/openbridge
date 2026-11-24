@@ -2,6 +2,9 @@ import { createConnection } from "node:net";
 import { dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { isInside } from "./shared-library";
+import { parseAssetManifest } from "../shared/asset-manifest";
+import type { SharedLibraryRoot } from "../shared/types";
+import { compileHoudiniArnold } from "./asset-handoff";
 
 const maxMessage = 64 * 1024;
 const roles = ["base_color", "specular_roughness", "metalness", "normal"] as const;
@@ -13,7 +16,19 @@ type Material = {
   roughness?: number;
 };
 
-export async function houdiniRecipe(indexedPath: string, roots: string[]) {
+export async function hasHoudiniManifest(indexedPath: string) {
+  return (await lstat(join(dirname(indexedPath), "asset.json")).catch(() => null))?.isFile() ||
+    (await lstat(`${indexedPath}.houdini.json`).catch(() => null))?.isFile() || false;
+}
+
+export async function houdiniRecipe(indexedPath: string, roots: SharedLibraryRoot[] | string[]) {
+  const manifest = join(dirname(indexedPath), "asset.json");
+  const assetInfo = await lstat(manifest).catch(() => null);
+  if (assetInfo) {
+    if (!assetInfo.isFile() || assetInfo.size > 32 * 1024 * 1024) throw new Error("Invalid or oversized asset.json.");
+    return compileHoudiniArnold(parseAssetManifest(JSON.parse(await readFile(manifest, "utf8"))),
+      roots.filter((root): root is SharedLibraryRoot => typeof root !== "string"));
+  }
   const sidecar = `${indexedPath}.houdini.json`;
   const info = await lstat(sidecar).catch(() => null);
   if (!info) throw new Error("This asset has no verified Houdini handoff recipe. Its preview is not an import source.");
@@ -25,7 +40,7 @@ export async function houdiniRecipe(indexedPath: string, roots: string[]) {
       !raw.materials.length || raw.materials.length > 64) {
     throw new Error("The Houdini recipe needs verified source units, Y-up geometry and material bindings.");
   }
-  const allowed = (await Promise.all(roots.map(root => realpath(root).catch(() => null)))).filter(x => x !== null);
+  const allowed = (await Promise.all(roots.map(root => realpath(typeof root === "string" ? root : root.path).catch(() => null)))).filter(x => x !== null);
   async function file(value: unknown) {
     if (typeof value !== "string" || !value || /[\x00-\x1f$`\\]/.test(value)) throw new Error("Invalid source path.");
     const path = await realpath(isAbsolute(value) ? value : resolve(dirname(indexedPath), value))

@@ -45,6 +45,23 @@ with tempfile.TemporaryDirectory() as temp:
     assert original.isDisplayFlagSet()
     assert not original.outputs()
     assert branch.geometry().primStringAttribValues("shop_materialpath")
+    # Exercise the canonical Alembic object-path request with an actual cache.
+    archive = root / "source.abc"
+    export = hou.node("/out").createNode("alembic")
+    export.parm("filename").set(str(archive))
+    export.parm("objects").set(object_path)
+    export.render()
+    probe = existing.createNode("alembic", "inspect_source_path")
+    probe.parm("fileName").set(str(archive))
+    keys = set(probe.geometry().primStringAttribValues("path"))
+    probe.destroy()
+    assert len(keys) == 1
+    alembic_path = import_asset(existing, "Source cache", {
+        "geometry": str(archive), "bindingAttribute": "path", "metersPerUnit": 1.0,
+        "materials": [{"group": keys.pop(), "maps": {},
+                       "baseColor": [0.2, 0.3, 0.4], "roughness": 0.5}]
+    }, "arnold")
+    assert hou.node(alembic_path).geometry().primStringAttribValues("shop_materialpath")
     old = existing.children()
     recipe["materials"][0]["group"] = "not_a_group"
     try:
@@ -56,6 +73,7 @@ with tempfile.TemporaryDirectory() as temp:
     hip = root / "fixture.hip"
     hou.hipFile.save(str(hip))
     hou.hipFile.load(str(hip), suppress_save_prompt=True)
+    assert hou.node(alembic_path).geometry().primStringAttribValues("shop_materialpath")
     for path in (object_path, sop_path):
         out = hou.node(path + "/OUT").geometry()
         material = hou.node(out.primStringAttribValues("shop_materialpath")[0])
