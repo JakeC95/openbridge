@@ -101,7 +101,7 @@ def import_asset(target, name, recipe, renderer):
     if not isinstance(scale, (float, int)) or not 0 < scale < float("inf"):
         raise ValueError("Invalid source scale.")
     materials = recipe["materials"]
-    if not isinstance(materials, list) or not 1 <= len(materials) <= 64:
+    if not isinstance(materials, list) or not 1 <= len(materials) <= 256:
         raise ValueError("No verified material bindings.")
     for material in materials:
         maps = material["maps"]
@@ -167,8 +167,20 @@ def import_asset(target, name, recipe, renderer):
             assign.setInput(0, stream)
             assign.parm("num_materials").set(len(materials))
             material_paths = {}
+            builders = {}
             for index, material in enumerate(materials, 1):
-                shader = build_material(matnet, f"look_{index}", material)
+                # One portable look may be assigned to many cached objects.
+                # Reuse by declared ID, not by coincidentally equal parameters.
+                material_id = material.get("materialId")
+                definition = {key: value for key, value in material.items() if key not in {"group", "materialId"}}
+                if material_id and material_id in builders:
+                    shader, previous = builders[material_id]
+                    if previous != definition:
+                        raise ValueError(f"Conflicting definitions for material {material_id}.")
+                else:
+                    shader = build_material(matnet, f"look_{index}", material)
+                    if material_id:
+                        builders[material_id] = (shader, definition)
                 group = material["group"]
                 assign.parm(f"group{index}").set(f"@{binding_attribute}={group}" if alembic else group)
                 assign.parm(f"shop_materialpath{index}").set(shader.path())

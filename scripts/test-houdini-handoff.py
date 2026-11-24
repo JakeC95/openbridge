@@ -49,19 +49,21 @@ with tempfile.TemporaryDirectory() as temp:
     archive = root / "source.abc"
     export = hou.node("/out").createNode("alembic")
     export.parm("filename").set(str(archive))
-    export.parm("objects").set(object_path)
+    other_path = import_asset(target, "Second mesh", recipe, "arnold")
+    export.parm("objects").set(f"{object_path} {other_path}")
     export.render()
     probe = existing.createNode("alembic", "inspect_source_path")
     probe.parm("fileName").set(str(archive))
     keys = set(probe.geometry().primStringAttribValues("path"))
     probe.destroy()
-    assert len(keys) == 1
+    assert len(keys) == 2
     alembic_path = import_asset(existing, "Source cache", {
         "geometry": str(archive), "bindingAttribute": "path", "metersPerUnit": 1.0,
-        "materials": [{"group": keys.pop(), "maps": {},
-                       "baseColor": [0.2, 0.3, 0.4], "roughness": 0.5}]
+        "materials": [{"group": key, "materialId": "shared-look", "maps": {},
+                       "baseColor": [0.2, 0.3, 0.4], "roughness": 0.5} for key in sorted(keys)]
     }, "arnold")
-    assert hou.node(alembic_path).geometry().primStringAttribValues("shop_materialpath")
+    bindings = hou.node(alembic_path).geometry().primStringAttribValues("shop_materialpath")
+    assert len(bindings) == 2 and len(set(bindings)) == 1
     old = existing.children()
     recipe["materials"][0]["group"] = "not_a_group"
     try:

@@ -75,7 +75,7 @@ export async function compileHoudiniArnold(asset: AssetManifest, roots: SharedLi
   if (!r.coordinates.metersPerUnit || r.coordinates.up !== "+Y" || r.coordinates.handedness !== "right" ||
       !r.coordinates.evidence.some(id => asset.evidence.some(e => e.id === id && e.status === "verified")))
     throw new Error("Houdini Send needs verified right-handed Y-up geometry, source units and axis evidence.");
-  if (!bindings?.complete || bindings.table || !bindings.assignments.length || bindings.assignments.length > 64)
+  if (!bindings?.complete || bindings.table || !bindings.assignments.length || bindings.assignments.length > 256)
     throw new Error("Houdini Send needs complete inline material assignments within the connector limit.");
   const kinds = new Set(bindings.assignments.map(x => x.kind));
   if (kinds.size !== 1 || (!kinds.has("source-material") && !kinds.has("object-path")))
@@ -119,7 +119,7 @@ export async function compileHoudiniArnold(asset: AssetManifest, roots: SharedLi
   }
   const result = await Promise.all(bindings.assignments.map(async a => {
     if (!/^(?:\/[a-zA-Z0-9_.-]+)+$/.test(a.key)) throw new Error(`Unsupported Alembic assignment selector: ${a.key}.`);
-    return { group: a.key, ...(await look(a.material)) };
+    return { group: a.key, materialId: a.material, ...(await look(a.material)) };
   }));
   return { geometry, bindingAttribute, metersPerUnit: r.coordinates.metersPerUnit, materials: result };
 }

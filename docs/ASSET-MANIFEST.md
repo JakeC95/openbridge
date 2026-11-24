@@ -49,6 +49,9 @@ or native parameters, but never assume another adapter implements them.
    transforms, and FBX with explicit errors; the manifest retains them.
    The second-target test demonstrates native Maya representation selection
    from the same record; it is not a live Maya adapter.
+   Repeated assignments to one material ID share the same Arnold builder;
+   the current connector accepts up to 256 inline assignments within its
+   message size limit.
 
 The legacy `.houdini.json` is only a pilot compatibility path for assets
 without a canonical manifest. If `asset.json` exists, OpenBridge prefers it
