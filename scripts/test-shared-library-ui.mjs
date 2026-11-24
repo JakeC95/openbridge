@@ -254,6 +254,8 @@ try {
   assert.equal(byArtist,1);
   await until(()=>evaluate(`Boolean(document.querySelector('[data-asset-id="${presentation.id}"] img')?.naturalWidth)`),"Prepared asset cover did not load");
   await until(()=>evaluate(`document.querySelector('.shared-card-meta')?.textContent.includes('.mb · .abc')`),"Compact published formats did not load");
+  await until(()=>evaluate(`Boolean(document.querySelector('.shared-card-meta .renderer-mark img')?.naturalWidth)`),
+    "Prepared grid production renderer icon did not decode");
   await choose("Local asset source","All sources");
   await until(()=>evaluate(`document.querySelector('[data-asset-id="${presentation.id}"] .shared-card-meta')?.textContent.includes('.mb · .abc')`),"Prepared card metadata disappeared in All sources");
   await choose("Local asset source","Shared folders");
@@ -346,7 +348,9 @@ try {
     const row=document.querySelector('.asset-list tbody tr');
     return row?.querySelector('.asset-list-name')?.textContent==='Prepared Prop' &&
       row.cells[2]?.textContent==='Prop' &&
-      row.querySelector('.asset-list-published-formats')?.textContent==='Source: Maya .mb · Alembic .abc' &&
+       row.querySelector('.asset-list-published-formats')?.textContent==='Source: Maya .mb · Alembic .abc' &&
+       row.querySelector('.asset-list-production-renderer')?.textContent==='Arnold' &&
+       Boolean(row.querySelector('.asset-list-production-renderer .renderer-mark img')?.naturalWidth) &&
       row.cells[5]?.textContent==='Local library';
   })()`),"Prepared list row lost its browsing identity or published formats");
   await evaluate(`[...document.querySelectorAll('.view.library button')].find(button=>button.textContent==='Grid view').click()`);

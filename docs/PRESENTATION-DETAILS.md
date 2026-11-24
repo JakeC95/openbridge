@@ -35,12 +35,21 @@ indexed search text. **Rescan** after editing a manifest while the app is
 running; a restart scans the collection again. The card metadata itself is read
 on demand, so a manifest edit updates the card and drawer immediately.
 
-When a renderer has a bundled product mark, the card and its primary spec show
-that mark beside the renderer name. Unknown renderers remain text-only rather
-than receiving a guessed logo. Renderer artwork and source attribution live in
-`src/renderer/renderers/`. The Arnold SVG keeps its transparent canvas and the
-card uses the Autodesk Arnold symbol inline beside the renderer name, avoiding a
-detached badge or an opaque logo tile.
+Show the vendor's genuine product mark beside the readable production renderer
+name in the grid, List / Compare, and drawer Specs and provenance. Use the
+shared renderer registry and components, not per-view graphics. When a vendor
+doesn't publish a standalone logo, a documented renderer-specific vendor icon
+(such as SideFX's Mantra render-node icon) is acceptable. Don't substitute a
+corporate or DCC logo for the renderer, redraw one, or infer a renderer from the
+model format. If the source renderer is unknown, leave it unbranded. If the
+renderer is known but its artwork cannot be verified or used, keep its name
+visible and record why the mark is missing. A production mark never describes
+the generated turntable or interactive viewer engine.
+
+Bundle vetted artwork for offline use and record the first-party reference,
+artwork URL, and any adaptations or usage constraints in
+`src/renderer/renderers/NOTICE.txt`. When ingest brings a new production
+renderer, update the registry and verify the displayed mark before sign-off.
 
 ## What it enables
 
@@ -146,6 +155,7 @@ review that asset alongside the untouched benchmark and a sibling.
 | Grid | Compare Compact and Large, and check a narrow window. Covers should be recognizable and free of clipped edges, distracting halos or moiré. Compare a long two-line name, a card with many formats, and a card with unknown metadata side by side: type and spec rows should align, labels should not clip, and unknown values should not move other fields. |
 | Scopes and comparison | Check All sources, the prepared collection and 3D Assets; names, types and available source formats should agree. Open a four-up comparison, check image loading and that unavailable measurements aren't invented. |
 | Drawer and turntable | Verify default muted looping playback and 1080p alpha on the dark background. Compare the first three Specs labels and their order across assets; any fourth-slot variation should reflect available evidence rather than a different layout. |
+| Renderer identity | Visually match the mark to the vendor artwork and the recorded renderer. Check grid (including Compact), List / Compare, and drawer at narrow widths: the name and mark both remain readable, with no clipped or distorted mark. Test an unknown renderer and confirm no logo; verify logo images load from the package without a network request. |
 | Viewing angles and details | Open an angle in the lightbox, browse to the next image and close. Inspect any authored/reference, detail and map groups the asset actually has; absent media should not produce empty sections or broken cards. |
 | Interactive 3D | Load inline, enter fullscreen, orbit to a different view and exit with Escape. Check visible materials and the inspector's actual channels. No LOD is not proof of a single internal mesh. |
 | Resources and handoff | Confirm the actual local file and dependencies. Exercise copy only into a scratch project or via the UI fixture; don't imply published provenance files are included. |

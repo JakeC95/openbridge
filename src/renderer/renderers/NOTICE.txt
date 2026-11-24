@@ -10,6 +10,20 @@ to identify the renderer in the OpenBridge UI.
   that file identifies Autodesk's Arnold product page as its source:
   https://www.autodesk.com/products/arnold/overview.
 
+- vray.svg: unmodified V-Ray color product icon from the Chaos V-Ray page
+  https://www.chaos.com/vray. Artwork:
+  https://static.chaos.com/images/assets/000/025/506/original/workflow-widget-v-ray-icon-color-32.svg
+- mental-ray.png: NVIDIA's original compact mental ray product icon, not the
+  NVIDIA corporate logo. See https://www.nvidia.com/es-la/nvem4/nvidia-mental-ray/
+  and https://la.nvidia.com/content/company-info/images/nvidia-mentalray-icon.png.
+- mantra.svg: SideFX's original Mantra render-node icon, not a standalone
+  marketing logo. Removed an editor-only export path; artwork unchanged.
+  See https://www.sidefx.com/docs/houdini/nodes/out/ifd.html
+  and https://www.sidefx.com/docs/houdini/icons/ROP/mantra.svg.
+
+The additional artwork and associated marks belong to their respective
+owners. They identify renderer provenance and do not imply endorsement.
+
 The Autodesk Maya, Houdini, and Nuke symbols are single-color Simple Icons
 marks. Simple Icons is CC0-licensed; the marks remain trademarks of their
 respective owners and are used only to identify software in the OpenBridge UI.

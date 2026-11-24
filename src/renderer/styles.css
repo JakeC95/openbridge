@@ -1038,6 +1038,14 @@ code {
   color: var(--text);
   font-weight: 600;
 }
+.asset-meta .shared-card-spec .renderer-mark,
+.asset-list-production-renderer .renderer-mark {
+  width: 14px;
+  height: 14px;
+}
+.asset-list-production-renderer {
+  margin-top: 3px;
+}
 .asset-meta .shared-card-spec:first-child > span:last-child {
   min-height: 28px;
   white-space: normal;
@@ -6416,6 +6424,26 @@ body {
 }
 .renderer-mark img.monochrome {
   filter: brightness(0) invert(1);
+}
+.renderer-identity,
+.shared-presentation-source-value {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+.asset-meta .shared-card-spec .renderer-identity {
+  display: flex;
+}
+.asset-meta .shared-card-spec .renderer-identity-name,
+.shared-presentation-stat-value .renderer-identity-name {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+}
+.asset-meta .shared-card-spec .renderer-identity-name {
+  letter-spacing: normal;
 }
 .shared-inline-software-mark {
   width: 14px;

@@ -1,7 +1,7 @@
 import type { MapPreview, SharedPresentation, SharedPresentationFact, SharedPresentationMap } from "../../shared/types";
 import { assetBoundsFromDimensions } from "../../shared/asset-scale";
 import { AssetScaleDiagram } from "./AssetScaleDiagram";
-import { RendererMark, SoftwareMark } from "./RendererMark";
+import { RendererIdentity, SoftwareMarks } from "./RendererMark";
 
 function countLabel(value: number | undefined): string | undefined {
   return value === undefined ? undefined : value.toLocaleString();
@@ -35,12 +35,6 @@ function Fact({ fact }: { fact: SharedPresentationFact }) {
     <strong className="shared-presentation-stat-value"><SoftwareMarks text={fact.value} />{fact.value}</strong>
     {fact.detail && <small className="shared-presentation-fact-detail"><SoftwareMarks text={fact.detail} />{fact.detail}</small>}
   </div>;
-}
-
-function SoftwareMarks({ text }: { text: string }) {
-  const names = ["Arnold", "Maya", "Houdini", "Nuke"];
-  const matches = names.filter(name => new RegExp(`\\b${name}\\b`, "i").test(text));
-  return <>{matches.map(name => <SoftwareMark key={name} software={name} className="shared-inline-software-mark" />)}</>;
 }
 
 function presentationScaleDimensions(presentation: SharedPresentation): string | undefined {
@@ -177,7 +171,7 @@ export function SharedPresentationPanel({ presentation, onOpenImage }: {
           {facts.map((fact, index) => /renderer/i.test(fact.label)
             ? <div className="shared-presentation-stat" key={`${fact.label}-${index}`}>
               <span>{fact.label}</span>
-              <strong className="shared-presentation-stat-value"><RendererMark renderer={fact.value} />{fact.value}</strong>
+              <strong className="shared-presentation-stat-value"><RendererIdentity renderer={fact.value} /></strong>
             </div>
             : <Stat fact={fact} key={`${fact.label}-${index}`} />)}
       </div>
@@ -270,7 +264,7 @@ export function SharedPresentationPanel({ presentation, onOpenImage }: {
               {presentation.links.map((link, index) => <li key={`${link.label}-${index}`}>
                 {link.href ? <button type="button" className="text-btn" onClick={() => void window.openbridge.openExternal(link.href!)}>{link.label}</button>
                   : <strong>{link.label}</strong>}
-              {link.value && <span>{link.value}</span>}
+               {link.value && <span className="shared-presentation-source-value"><SoftwareMarks text={link.value} />{link.value}</span>}
               {link.note && <small>{link.note}</small>}
               </li>)}
             </ul>

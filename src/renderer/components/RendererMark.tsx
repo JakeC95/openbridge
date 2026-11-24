@@ -1,4 +1,17 @@
-import { rendererLogo, softwareLogo } from "../renderer-logos";
+import { rendererLogo, softwareLogo, softwareLogos } from "../renderer-logos";
+
+export function RendererIdentity({ renderer }: { renderer: string }) {
+  return <span className="renderer-identity">
+    <RendererMark renderer={renderer} />
+    <span className="renderer-identity-name">{renderer}</span>
+  </span>;
+}
+
+export function SoftwareMarks({ text }: { text: string }) {
+  return <>{softwareLogos(text).map(logo =>
+    <Mark key={logo.name} logo={logo} className="shared-inline-software-mark" />
+  )}</>;
+}
 
 export function RendererMark({ renderer, className = "" }: { renderer?: string; className?: string }) {
   const logo = rendererLogo(renderer);

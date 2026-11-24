@@ -1,4 +1,5 @@
 import type { AssetRecord } from "../../shared/types";
+import { RendererIdentity } from "./RendererMark";
 import { usePresentationCard } from "./use-presentation-card";
 
 function compactFormat(format: string) {
@@ -16,7 +17,10 @@ export function PublishedAssetType({ asset, fallback }: { asset: AssetRecord; fa
 export function PublishedFormats({ asset }: { asset: AssetRecord }) {
   const card = usePresentationCard(asset);
   const formats = card?.originalFormats?.length ? card.originalFormats : [card?.originalFormat].filter(Boolean);
-  return formats.length ? <div className="hint asset-list-published-formats">Source: {formats.join(" · ")}</div> : null;
+  return <>
+    {formats.length > 0 && <div className="hint asset-list-published-formats">Source: {formats.join(" · ")}</div>}
+    {card?.renderer && <div className="hint asset-list-production-renderer"><RendererIdentity renderer={card.renderer} /></div>}
+  </>;
 }
 
 export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
@@ -37,6 +41,6 @@ export function SharedCardMeta({ asset }: { asset: AssetRecord }) {
 function Spec({ label, value, detail }: { label: string; value?: string; detail?: string }) {
   return <span className="shared-card-spec" title={`${label}: ${detail || value || "Not documented"}`}>
     <span>{label}</span>
-    <span aria-label={value ? undefined : "Not documented"}>{value || "—"}</span>
+    <span aria-label={value ? undefined : "Not documented"}>{label === "Renderer" && value ? <RendererIdentity renderer={value} /> : value || "—"}</span>
   </span>;
 }
