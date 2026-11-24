@@ -6,8 +6,8 @@ from pathlib import Path
 
 import hou
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "integrations/houdini/python3.11libs"))
-from openbridge_houdini import import_asset
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "integrations/houdini/scripts/python"))
+from openbridge_houdini import _renderer, import_asset
 
 
 with tempfile.TemporaryDirectory() as temp:
@@ -20,6 +20,13 @@ with tempfile.TemporaryDirectory() as temp:
         {"group": "", "maps": {"base_color": {"path": str(texture), "colorSpace": "auto"}}}
     ]}
     target = hou.node("/obj")
+    driver = target.createNode("ropnet", "LookDev").createNode("arnold")
+    assert _renderer("auto") == "arnold"
+    driver.bypass(True)
+    hou.putenv("OPENBRIDGE_JOB_RENDERER", "vray")
+    assert _renderer("auto") == "vray"
+    assert _renderer("arnold") == "arnold"
+    hou.unsetenv("OPENBRIDGE_JOB_RENDERER")
     existing = target.createNode("geo", "existing", run_init_scripts=False)
     original = existing.createNode("box", "original")
     original.setDisplayFlag(True)

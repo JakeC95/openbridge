@@ -126,8 +126,15 @@ def import_asset(target, name, recipe, renderer):
 def _renderer(override):
     if override in ("arnold", "vray"):
         return override
-    names = {node.type().name().lower() for node in hou.node("/out").children()
-             if not node.isBypassed()}
+    # Studio lookdev rigs can contain the render driver in an object-level ROP
+    # network. Count actual Driver nodes, not shader names or links.
+    names = set()
+    for path in ("/out", "/obj"):
+        root = hou.node(path)
+        if root is not None:
+            for node in root.allSubChildren(recurse_in_locked_nodes=False):
+                if node.type().category() == hou.ropNodeTypeCategory() and not node.isBypassed():
+                    names.add(node.type().name().lower())
     candidates = ({"arnold"} if "arnold" in names else set()) | ({"vray"} if names & {"vray", "vray_renderer"} else set())
     if len(candidates) == 1:
         return candidates.pop()

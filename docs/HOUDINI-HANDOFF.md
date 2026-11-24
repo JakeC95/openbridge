@@ -1,6 +1,6 @@
 # Send to Houdini · Linux pilot
 
-This is an opt-in prototype for Houdini 20.5 / Python 3.11 and Arnold. It reads
+This is an opt-in prototype for Houdini 20.5 / Python 3.10 or 3.11 and Arnold. It reads
 geometry and textures in place. It does not copy, publish, convert, or version
 the asset. A saved HIP follows those paths; moving or editing the files can
 change later renders. Do not use a disposable preview cache as a source.
@@ -25,7 +25,8 @@ switching to OpenBridge. **Send to Houdini** creates a Geometry object at
 into existing nodes. If several sessions are running, choose the destination
 in the session picker. Check the scene before retrying a timed-out send.
 
-The default uses the scene's supported render driver when unambiguous, then
+The default uses the scene's supported render driver when unambiguous
+(including drivers nested in object-level lookdev ROP networks), then
 `OPENBRIDGE_JOB_RENDERER` from the Houdini environment. The artist can override
 with Arnold. V-Ray selection is recognized but its adapter is not implemented.
 
