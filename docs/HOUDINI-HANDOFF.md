@@ -20,6 +20,14 @@ The current connector predates this policy: Alembic is supported, OBJ is
 retained for the synthetic pilot, and production FBX is not yet implemented.
 An existing successful preview or demonstration HIP is not handoff acceptance.
 
+For FBX, use a **File SOP** as the source reader, not Houdini's whole-scene
+FBX importer. Keep variant selection, unit conversion and renderer
+assignment downstream in the same SOP network, and verify counts and
+bindings against the original FBX. The File SOP may extract embedded media
+beside its input. Do not enable production FBX Send until that behavior is
+handled without writing into the source library. In a scratch review only,
+an explicitly labeled byte-identical FBX copy can isolate that side effect.
+
 This is an opt-in prototype for Houdini 20.5 / Python 3.10 or 3.11 and Arnold. It reads
 geometry and textures in place. It does not copy, publish, convert, or version
 the asset. A saved HIP follows those paths; moving or editing the files can
