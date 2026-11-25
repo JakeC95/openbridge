@@ -16,8 +16,9 @@ limitations. Validate that manifest against the actual geometry and files.
 Keep it separate from preview presentation data; target DCC adapters consume
 the same source facts and build their own renderer graphs.
 
-The current connector predates this policy: Alembic is supported, OBJ is
-retained for the synthetic pilot, and production FBX is not yet implemented.
+The current connector supports packed Alembic and the synthetic OBJ pilot;
+live production FBX send is not yet implemented. The Audi/FBX review was
+built offline and is not evidence that live FBX send is ready.
 An existing successful preview or demonstration HIP is not handoff acceptance.
 
 For FBX, use a **File SOP** as the source reader, not Houdini's whole-scene

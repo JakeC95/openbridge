@@ -49,8 +49,9 @@ never assume another adapter implements them.
    dependencies, and checks size/mtime against the ingest fingerprint where
    provided. SHA-256 is recorded for deeper audits, not recomputed at send.
 4. Compile a small renderer/DCC request. The Houdini/Arnold adapter currently
-   supports original static Alembic, complete inline source-material or
-   object-path assignments, and its four supported map roles. It rejects
+   supports explicitly packed original Alembic with complete inline
+   object-path assignments, plus File SOP inputs with source-material
+   assignments, and its four supported map roles. It rejects
    selected pack roots, unsupported shader features, UDIMs, custom OCIO
    transforms, and FBX with explicit errors; the manifest retains them.
    The second-target test demonstrates native Maya representation selection

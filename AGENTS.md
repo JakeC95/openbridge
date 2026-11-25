@@ -28,8 +28,8 @@ for how to register existing model and HDRI roots, test the shared workflows and
   it cannot preserve rather than silently simplify it.
 - Reuse Arnold builders by canonical material ID across distinct source parts;
   do not duplicate graphs per assignment or combine different material IDs.
-- Do Alembic unpacking and transform-name groups in the reader SOP itself;
-  keep exact source binding keys separate from browsing group labels.
+- Keep Alembic packed on the delayed-load reader and bind by its exact
+  authored `path`; do not add an unpack node or an alternative polygon output.
 - Record baked texture transforms separately from file encoding. Reject baked
   color conversions on normal, roughness, metalness and other data inputs.
 - Keep Geometry object transforms at identity, ground and center using Match
