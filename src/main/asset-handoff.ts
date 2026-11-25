@@ -106,6 +106,7 @@ export async function compileHoudiniArnold(asset: AssetManifest, roots: SharedLi
         if (!roles.includes(role) || maps[role] || input.alphaMeaning || input.sampling || input.uvSet ||
             (input.component !== undefined && input.component !== "rgb") || texture.source.kind !== "file" ||
             !encoding.space || !/^[\w .()+-]{1,80}$/.test(encoding.space) || encoding.space.toLowerCase() === "auto" ||
+            (role !== "base_color" && encoding.bakedTransform) ||
             encoding.customConfig || encoding.gamma || encoding.downstreamSpace || encoding.expectedWorkingSpace ||
             !encoding.evidence.some(id => asset.evidence.some(e => e.id === id && e.status === "verified")))
           throw new Error(`Arnold cannot preserve ${InputLabel(input.role, m.name)} or its file encoding is unverified.`);

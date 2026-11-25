@@ -52,7 +52,8 @@ const representation = z.strictObject({
 });
 const encoding = z.strictObject({
   space: text.nullable(), customConfig: id.optional(), expectedWorkingSpace: text.optional(),
-  gamma: z.number().positive().optional(), downstreamSpace: text.optional(), evidence: refs
+  bakedTransform: text.optional(), gamma: z.number().positive().optional(),
+  downstreamSpace: text.optional(), evidence: refs
 });
 const texture = z.strictObject({
   id, encoding,
@@ -185,12 +186,27 @@ export const assetManifestSchema = z.strictObject({
       issue(`Invalid UDIM set: ${t.id}.`);
     if (s.kind === "sequence" && s.end - s.start + 1 !== s.files.length) issue(`Invalid texture sequence: ${t.id}.`);
   }
+  const dataRoles = new Set([
+    "normal", "specular_roughness", "roughness", "gloss", "metalness",
+    "opacity", "displacement", "height"
+  ]);
   for (const m of data.materials) {
     ev(m.evidence);
     if (m.native?.graph) require(files, m.native.graph, "native graph");
     for (const input of m.portable?.inputs ?? []) {
-      require(textures, input.texture, "material input texture");
+      const texture = require(textures, input.texture, "material input texture");
       ev(input.evidence);
+      if (!texture) continue;
+      if (dataRoles.has(input.role.toLowerCase())) {
+        if (texture.encoding.bakedTransform &&
+            !/^none$/i.test(texture.encoding.bakedTransform.trim()))
+          issue(`Texture ${texture.id} has a baked color transform and cannot feed ${input.role} as data.`);
+        if (!texture.encoding.space ||
+            !/^(raw|data|linear|utility - raw|utility - linear - srgb)$/i.test(texture.encoding.space.trim()))
+          issue(`Data input ${input.role} requires a Raw/data file encoding, not ${texture.encoding.space ?? "undocumented"}.`);
+      }
+      if (texture.encoding.bakedTransform && !texture.encoding.space)
+        issue(`Texture ${texture.id} records a baked transform but not the resulting file encoding.`);
     }
   }
   const routes = new Set<string>();

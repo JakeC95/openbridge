@@ -27,8 +27,14 @@ view or desired working space. Preserve any custom OCIO config, gamma, or
 downstream transform; use `null` where encoding is unknown. A normal or scalar
 channel is data even when stored in an RGB file. Do not use file extensions to
 guess color encoding and do not silently reapply a transform already baked in.
-Adapter-specific details not yet standardized can be preserved in `extensions`
-or native parameters, but never assume another adapter implements them.
+If an ingest tool baked a transform into the texture, record it in
+`bakedTransform` and record the **resulting** encoding in `space`. A baked
+color transform must never feed a normal, roughness, gloss, metalness,
+opacity, displacement or height input; those inputs require Raw/data
+encoding. This catches the common failure where `maketx --colorconvert`
+is applied to every map, not only color maps. Adapter-specific details not
+yet standardized can be preserved in `extensions` or native parameters, but
+never assume another adapter implements them.
 
 ## Validation and adapter workflow
 

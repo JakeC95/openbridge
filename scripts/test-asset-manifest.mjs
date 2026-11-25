@@ -35,6 +35,25 @@ try {
   assert.throws(() => parseAssetManifest(mutate(d => d.representations[0].file = "preview")), /preview/i);
   assert.throws(() => parseAssetManifest(mutate(d => d.bindingSets[0].assignments[0].material = "not-there")), /Unresolved assigned material/);
   assert.throws(() => parseAssetManifest(mutate(d => d.handoffs[0].evidence = [])), /verification evidence/);
+  const dataMap = mutate(d => {
+    d.textures.push({ id: "normalmap", encoding: {
+      space: "ACES - ACEScg", bakedTransform: "srgb_texture -> ACES - ACEScg", evidence: ["audit"] },
+      source: { kind: "file", file: "color2" } });
+    d.materials[0].portable.inputs.push({ role: "normal", texture: "normalmap" });
+  });
+  assert.throws(() => parseAssetManifest(dataMap), /baked color transform/);
+  const dataMapColor = mutate(d => {
+    d.textures.push({ id: "normalmap", encoding: { space: "ACES - ACEScg", evidence: ["audit"] },
+      source: { kind: "file", file: "color2" } });
+    d.materials[0].portable.inputs.push({ role: "normal", texture: "normalmap" });
+  });
+  assert.throws(() => parseAssetManifest(dataMapColor), /Raw\/data file encoding/);
+  const dataMapOkay = mutate(d => {
+    d.textures.push({ id: "normalmap", encoding: { space: "raw", evidence: ["audit"] },
+      source: { kind: "file", file: "color2" } });
+    d.materials[0].portable.inputs.push({ role: "normal", texture: "normalmap" });
+  });
+  assert.doesNotThrow(() => parseAssetManifest(dataMapOkay));
   for (const [change, expected] of [
     [d => d.materials[0].portable.inputs[0].texture = "tile-data", /cannot preserve/],
     [d => d.materials[0].portable.inputs[0].component = "g", /cannot preserve/],
