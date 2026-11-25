@@ -105,8 +105,12 @@ negative and whose normals oppose almost every face, reverse its polygon
 winding before the normal pass; that repairs coherently mirrored closed
 shells without guessing the outside of an open surface. Zero-area degenerate
 polygons remain in the source and are reported rather than silently deleted.
-Pack the finished editable output by default; set `use_packed_output` to
-input 0 for the editable polygon version.
+Pack the finished editable output unconditionally. There is no polygon-output
+switch and no Unpack SOP. Before the normal pass, repair polygon winding with
+`polydoctor` (`fixwindings=1`, all other repairs disabled); aligning vertex
+normals alone does not remove Houdini's backface tint on reversed faces.
+`MaxHandle` is FBX import metadata, not a material key or a safe repair key.
+Lay out every material network after creating its builders.
 The Arnold surface builder handles base color, roughness, metalness and
 tangent-space normal textures. A material without a base-color texture needs
 an explicit `baseColor` RGB value; `roughness` can be specified as a constant.

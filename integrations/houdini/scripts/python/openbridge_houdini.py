@@ -168,6 +168,17 @@ def _normal_repair_subnet(network, stream):
         normal.setInput(0, current)
         normal.parm("type").set("typevertex")
         current = normal
+    # Vertex-normal alignment cannot fix a polygon whose winding is reversed
+    # relative to its neighbours. Repair only winding here; leave every other
+    # polydoctor repair disabled so topology is not silently changed.
+    winding = sub.createNode("polydoctor", "repair_polygon_winding")
+    winding.setInput(0, current)
+    winding.parm("fixwindings").set(1)
+    winding.parm("ignorewindings").set(0)
+    for name in ("illformed", "manyedges", "nonconvex", "overlapping", "intersect"):
+        winding.parm(name).set("ignore")
+    winding.parm("deletesmallmanifolds").set(0)
+    current = winding
     current = _reverse_inverted_parts(sub, current)
     repair = sub.createNode("attribwrangle", "check_vertex_normals")
     repair.setInput(0, current)
@@ -188,12 +199,7 @@ def _pack_output(network, stream):
     pack = network.createNode("pack", "pack_output")
     pack.setInput(0, stream)
     pack.parm("pivot").set("origin")
-    switch = network.createNode("switch", "use_packed_output")
-    switch.setInput(0, stream)
-    switch.setInput(1, pack)
-    switch.parm("input").set(1)
-    switch.setComment("1: packed by default. 0: editable polygon output.")
-    return switch
+    return pack
 
 
 def import_asset(target, name, recipe, renderer):
@@ -303,6 +309,7 @@ def import_asset(target, name, recipe, renderer):
                 assign.parm(f"group{index}").set(f"@path={group}" if alembic else group)
                 assign.parm(f"shop_materialpath{index}").set(shader.path())
                 material_paths[group] = shader.path()
+            matnet.layoutChildren()
             out = root.createNode("null", "OUT")
             out.setInput(0, assign if alembic else _pack_output(root, assign))
             if not at_object:
