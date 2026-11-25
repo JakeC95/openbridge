@@ -143,8 +143,8 @@ def _reverse_inverted_parts(network, stream):
     return cleanup
 
 
-def _prepare_geometry(network, stream):
-    """Keep authored smoothing and reconcile vertex normals to source winding."""
+def _ground_geometry(network, stream):
+    """Center X/Z and put minimum Y at local origin, without scaling."""
     ground = network.createNode("matchsize", "center_and_ground")
     ground.setInput(0, stream)
     ground.parm("justifytarget").set("origin")
@@ -153,23 +153,39 @@ def _prepare_geometry(network, stream):
     for axis, side in (("x", "center"), ("y", "min"), ("z", "center")):
         ground.parm(f"justify_{axis}").set(side)
         ground.parm(f"goal_{axis}").set("same")
-    stream = ground
+    return ground
+
+
+def _normal_repair_subnet(network, stream):
+    """Keep all editable-polygon normal work inside one visible subnet."""
+    subnet = network.createNode("subnet", "normal_repair")
+    subnet.setInput(0, stream)
+    sub = subnet
+    current = sub.indirectInputs()[0]
     geo = stream.geometry()
     if not (geo.findVertexAttrib("N") or geo.findPointAttrib("N") or geo.findPrimAttrib("N")):
-        normal = network.createNode("normal", "generate_missing_normals")
-        normal.setInput(0, stream)
+        normal = sub.createNode("normal", "generate_missing_normals")
+        normal.setInput(0, current)
         normal.parm("type").set("typevertex")
-        stream = normal
-    stream = _reverse_inverted_parts(network, stream)
-    repair = network.createNode("attribwrangle", "check_vertex_normals")
-    repair.setInput(0, stream)
+        current = normal
+    current = _reverse_inverted_parts(sub, current)
+    repair = sub.createNode("attribwrangle", "check_vertex_normals")
+    repair.setInput(0, current)
     repair.parm("class").set("vertex")
     repair.parm("snippet").set(_NORMAL_VEX)
-    return repair
+    output = sub.createNode("output", "output")
+    output.setInput(0, repair)
+    subnet.setComment("All normal repair nodes. Input -> output; packed Alembic bypasses this.")
+    return subnet
 
 
-def _pack_alembic_output(network, stream):
-    pack = network.createNode("pack", "pack_alembic_output")
+def _prepare_geometry(network, stream):
+    """Ground, then repair normals on editable polygons (never packed refs)."""
+    return _normal_repair_subnet(network, _ground_geometry(network, stream))
+
+
+def _pack_output(network, stream):
+    pack = network.createNode("pack", "pack_output")
     pack.setInput(0, stream)
     pack.parm("pivot").set("origin")
     switch = network.createNode("switch", "use_packed_output")
@@ -196,8 +212,8 @@ def import_asset(target, name, recipe, renderer):
     if extension not in {".abc", ".obj"}:
         raise ValueError("Houdini requires explicit OBJ or Alembic source geometry.")
     binding_attribute = recipe.get("bindingAttribute", "shop_materialpath")
-    if binding_attribute not in {"path", "shop_materialpath"} or (binding_attribute == "path" and extension != ".abc"):
-        raise ValueError("Unsupported source binding attribute.")
+    if (extension == ".abc") != (binding_attribute == "path"):
+        raise ValueError("Packed Alembic binds by path; editable File SOPs bind by shop_materialpath.")
     scale = recipe["metersPerUnit"]
     if not isinstance(scale, (float, int)) or not 0 < scale < float("inf"):
         raise ValueError("Invalid source scale.")
@@ -220,15 +236,16 @@ def import_asset(target, name, recipe, renderer):
             source = root.createNode("alembic" if alembic else "file", "library_geometry")
             source.parm("fileName" if alembic else "file").set(geometry)
             if alembic:
-                source.parm("loadmode").set("unpack")
-                source.parm("groupnames").set("xformbase")
-                # Keep polygons editable through the normal and material
-                # operations. Pack only the finished output.
-                source.parm("polysoup").set("none")
+                # Packed by default. No unpack node and no editable-subnet
+                # normal pass: source normals are preserved in the cache.
+                source.parm("loadmode").set("alembic")
             mesh = source.geometry()
-            if not mesh.prims() or (any(m["maps"] for m in materials) and
-                                    not (mesh.findVertexAttrib("uv") or mesh.findPointAttrib("uv"))):
-                raise ValueError("Source geometry is empty or textured geometry has no UVs.")
+            if not mesh.prims():
+                raise ValueError("Source geometry is empty.")
+            if not alembic and any(m["maps"] for m in materials) and not (
+                mesh.findVertexAttrib("uv") or mesh.findPointAttrib("uv")
+            ):
+                raise ValueError("Textured editable geometry has no UVs.")
             # Check that the declared groups cover each primitive exactly once.
             covered = set()
             index_by_material = {}
@@ -260,7 +277,9 @@ def import_asset(target, name, recipe, renderer):
                 stream = root.createNode("xform", "source_units_to_metres")
                 stream.setInput(0, source)
                 stream.parm("scale").set(scale)
-            stream = _prepare_geometry(root, stream)
+            stream = _ground_geometry(root, stream)
+            if not alembic:
+                stream = _normal_repair_subnet(root, stream)
             matnet = root.createNode("matnet", "materials")
             assign = root.createNode("material", "assign_materials")
             assign.setInput(0, stream)
@@ -281,11 +300,11 @@ def import_asset(target, name, recipe, renderer):
                     if material_id:
                         builders[material_id] = (shader, definition)
                 group = material["group"]
-                assign.parm(f"group{index}").set(f"@{binding_attribute}={group}" if alembic else group)
+                assign.parm(f"group{index}").set(f"@path={group}" if alembic else group)
                 assign.parm(f"shop_materialpath{index}").set(shader.path())
                 material_paths[group] = shader.path()
             out = root.createNode("null", "OUT")
-            out.setInput(0, _pack_alembic_output(root, assign) if alembic else assign)
+            out.setInput(0, assign if alembic else _pack_output(root, assign))
             if not at_object:
                 output = root.createNode("output", "output")
                 output.setInput(0, out)
@@ -299,8 +318,10 @@ def import_asset(target, name, recipe, renderer):
             ):
                 raise ValueError("Material assignments did not survive the SOP cook.")
             final_geo = out.geometry()
-            if not final_geo.prims() or (alembic and final_geo.prims()[0].type() != hou.primType.PackedGeometry):
-                raise ValueError("The final SOP output did not cook as requested.")
+            if not final_geo.prims() or final_geo.prims()[0].type() not in (
+                hou.primType.PackedGeometry, hou.primType.AlembicRef
+            ):
+                raise ValueError("The final SOP output must be packed or an Alembic reference.")
             root.layoutChildren()
             root.moveToGoodPosition(move_inputs=False, move_outputs=False, move_unconnected=False)
             root.setSelected(True, clear_all_selected=True)

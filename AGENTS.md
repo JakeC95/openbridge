@@ -9,7 +9,7 @@ application using `node:sqlite`, esbuild, FTS5 and a portable-only distribution 
 
 - Branch: `main`, tracking `origin/main`
 - Latest tag: `v1.9.4` (pushed; verify release assets before calling it published)
-- Current app version: `1.9.17` (grounded Houdini handoff; not tagged or released)
+- Current app version: `1.9.18` (grounded Houdini handoff; not tagged or released)
 - Shared folders ship in the 1.7.0 release.
 - Repo visibility: public
 - Distribution: Windows portable ZIP and Linux portable tar.gz
@@ -21,7 +21,7 @@ the current session. A cold start and the upgrade from 1.6.3 were verified on Li
 test fixture commit `268f32b` passed Quality on Ubuntu and Windows. See [shared library design](docs/SHARED-LIBRARY.md)
 for how to register existing model and HDRI roots, test the shared workflows and extend them.
 
-## 1.9.12–1.9.17 canonical ingest manifest
+## 1.9.12–1.9.18 canonical ingest manifest
 
 - Use [asset.json](docs/ASSET-MANIFEST.md) to preserve source and portable
   facts independently of any one DCC. Target compilation must reject data
@@ -33,8 +33,10 @@ for how to register existing model and HDRI roots, test the shared workflows and
 - Record baked texture transforms separately from file encoding. Reject baked
   color conversions on normal, roughness, metalness and other data inputs.
 - Keep Geometry object transforms at identity, ground and center using Match
-  Size at real scale, repair invalid/opposed vertex normals without guessing
-  winding, and pack Alembic output only after geometry and look operations.
+  Size at real scale. Keep Alembic on the packed delayed-load reader and bind
+  by its authored `path`; never add an unpack node. For editable File SOP
+  inputs, put every normal-repair node in one `normal_repair` subnet, repair
+  invalid/opposed normals without guessing winding, then pack the output.
 
 ## 1.9.8–1.9.11 Houdini handoff pilot
 

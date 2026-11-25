@@ -87,27 +87,26 @@ paths resolve next to the indexed file.
 
 An empty group means all faces and is only valid for a single material.
 Otherwise, supply the exact primitive group names Houdini reads from the OBJ.
-For an Alembic source, use the exact authored `shop_materialpath` string from
-the unpacked faces as `group`; the importer checks the remapped material on
-each face after cooking. Every primitive must be covered exactly once.
-Unpack on the Alembic SOP and generate primitive groups from transform
-node names there, without adding an Unpack SOP. Full Alembic paths remain
-the source keys for object bindings; the visible group names are for browsing.
-Keep polygons editable through the normal and material operations. The final
-Alembic result is packed by default after assignment; set `use_packed_output`
-to input 0 to work on the polygon version.
+For an Alembic source, keep the Alembic SOP on **Alembic Delayed Load
+Primitives** and bind by the exact authored `path` of each packed primitive.
+Every packed primitive must be covered exactly once. There is no unpack node
+and no unpack load mode. Packed Alembic retains its authored normals; the
+editable normal repair subnet applies to File SOP inputs only.
 
 Imported Geometry objects have identity transforms. Convert verified source
 units in SOPs when needed, then use Match Size to center X/Z and put minimum Y
 at zero without scaling. In an existing SOP network this is that network's
 local origin; the connector does not counteract its parent transforms.
-Keep existing vertex smoothing where valid, generate missing normals,
-normalize them, and reconcile opposite vertex normals to face direction.
-For a whole source part whose signed volume is negative and whose normals
-oppose almost every face, reverse its polygon winding before the normal pass;
-that repairs coherently mirrored closed shells without guessing the outside
-of an open surface. Zero-area degenerate polygons remain in the source and
-are reported rather than silently deleted.
+For editable File SOP inputs, keep existing vertex smoothing where valid,
+generate missing normals, normalize them, and reconcile opposite vertex
+normals to face direction. Every normal-related node lives inside one
+`normal_repair` subnet. For a whole source part whose signed volume is
+negative and whose normals oppose almost every face, reverse its polygon
+winding before the normal pass; that repairs coherently mirrored closed
+shells without guessing the outside of an open surface. Zero-area degenerate
+polygons remain in the source and are reported rather than silently deleted.
+Pack the finished editable output by default; set `use_packed_output` to
+input 0 for the editable polygon version.
 The Arnold surface builder handles base color, roughness, metalness and
 tangent-space normal textures. A material without a base-color texture needs
 an explicit `baseColor` RGB value; `roughness` can be specified as a constant.

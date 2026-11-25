@@ -81,6 +81,8 @@ export async function compileHoudiniArnold(asset: AssetManifest, roots: SharedLi
   if (kinds.size !== 1 || (!kinds.has("source-material") && !kinds.has("object-path")))
     throw new Error("Houdini Send does not support these assignment selectors.");
   const bindingAttribute = kinds.has("object-path") ? "path" : "shop_materialpath";
+  if (source.format.toLowerCase() === "abc" && bindingAttribute !== "path")
+    throw new Error("Packed Alembic needs object-path assignments; source-material face bindings require unpacking.");
   const resolveFile = assetFileResolver(asset, roots);
   const geometry = await resolveFile(r.file);
   if (extname(geometry).toLowerCase() !== ".abc") throw new Error("Production geometry is not an Alembic file.");

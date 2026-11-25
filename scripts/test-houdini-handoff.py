@@ -44,8 +44,10 @@ with tempfile.TemporaryDirectory() as temp:
     assert not branch.inputs() or not any(branch.inputs())
     assert original.isDisplayFlagSet()
     assert not original.outputs()
-    assert branch.geometry().primStringAttribValues("shop_materialpath")
-    prepared = branch.geometry()
+    assert branch.geometry().prims()[0].type() == hou.primType.PackedGeometry
+    assert branch.node("normal_repair")
+    assert not any(n.type().name() == "unpack" for n in branch.allSubChildren())
+    prepared = branch.node("assign_materials").geometry()
     bounds = prepared.boundingBox()
     assert abs(bounds.center()[0]) < 1e-6 and abs(bounds.center()[2]) < 1e-6
     assert abs(bounds.minvec()[1]) < 1e-6 and abs(bounds.sizevec()[0] - 1) < 1e-6
@@ -78,19 +80,13 @@ with tempfile.TemporaryDirectory() as temp:
                        "baseColor": [0.2, 0.3, 0.4], "roughness": 0.5} for key in sorted(keys)]
     }, "arnold")
     cached = hou.node(alembic_path)
-    assert cached.geometry().prims()[0].type() == hou.primType.PackedGeometry
+    assert cached.geometry().prims()[0].type() in (hou.primType.PackedGeometry, hou.primType.AlembicRef)
     bindings = cached.node("assign_materials").geometry().primStringAttribValues("shop_materialpath")
     assert len(bindings) == 2 and len(set(bindings)) == 1
-    check = existing.createNode("unpack", "verify_packed_materials")
-    check.setInput(0, cached)
-    assert check.geometry().primStringAttribValues("shop_materialpath") == bindings
-    assert check.geometry().findVertexAttrib("N")
-    check.destroy()
+    assert cached.geometry().primStringAttribValues("shop_materialpath") == bindings
     sop = hou.node(alembic_path + "/library_geometry")
-    assert sop.parm("loadmode").evalAsString() == "unpack"
-    assert sop.parm("groupnames").evalAsString() == "xformbase"
-    assert len(sop.geometry().primGroups()) == 2
-    assert not any(n.type().name() == "unpack" for n in hou.node(alembic_path).children())
+    assert sop.parm("loadmode").evalAsString() == "alembic"
+    assert not any(n.type().name() == "unpack" for n in hou.node(alembic_path).allSubChildren())
     old = existing.children()
     recipe["materials"][0]["group"] = "not_a_group"
     try:
@@ -102,10 +98,10 @@ with tempfile.TemporaryDirectory() as temp:
     hip = root / "fixture.hip"
     hou.hipFile.save(str(hip))
     hou.hipFile.load(str(hip), suppress_save_prompt=True)
-    assert hou.node(alembic_path).geometry().prims()[0].type() == hou.primType.PackedGeometry
+    assert hou.node(alembic_path).geometry().prims()[0].type() in (hou.primType.PackedGeometry, hou.primType.AlembicRef)
     assert hou.node(alembic_path + "/assign_materials").geometry().primStringAttribValues("shop_materialpath")
     for path in (object_path, sop_path):
-        out = hou.node(path + "/OUT").geometry()
+        out = hou.node(path + "/assign_materials").geometry()
         material = hou.node(out.primStringAttribValues("shop_materialpath")[0])
         assert material.node("base_color").parm("filename").eval() == str(texture)
     print("Houdini Arnold OBJ and SOP handoff, rollback, and HIP reopen passed.", flush=True)

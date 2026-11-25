@@ -24,7 +24,7 @@ try {
   const asset = parseAssetManifest(data);
   const arnold = await compileHoudiniArnold(asset, roots);
   assert.equal(arnold.geometry, abc);
-  assert.equal(arnold.bindingAttribute, "shop_materialpath");
+  assert.equal(arnold.bindingAttribute, "path");
   assert.deepEqual(arnold.materials[0].maps.base_color, { path: color, fileColorSpace: "srgb" });
   assert.equal(selectAssetHandoff(asset, "maya").representation.file, "rig");
   assert.equal(asset.materials[0].native.parameters.coat, 0.7);

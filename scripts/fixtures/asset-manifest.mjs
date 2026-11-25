@@ -31,7 +31,7 @@ export function assetFixture(root, folder = "") {
           inputs: [{ role: "base_color", texture: "albedo" }] } }
     ],
     bindingSets: [{ id: "surface-bindings", representation: "geometry", complete: true,
-      assignments: [{ kind: "source-material", key: "/materials/paint", material: "surface" }] }],
+      assignments: [{ kind: "object-path", key: "/source/materials/paint", material: "surface" }] }],
     handoffs: [
       { variant: "hero", representation: "geometry", target: "houdini", renderer: "arnold", status: "ready", evidence: ["audit"] },
       { variant: "hero", representation: "maya-rig", target: "maya", status: "ready", evidence: ["audit"] },
