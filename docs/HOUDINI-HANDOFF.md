@@ -93,8 +93,18 @@ each face after cooking. Every primitive must be covered exactly once.
 Unpack on the Alembic SOP and generate primitive groups from transform
 node names there, without adding an Unpack SOP. Full Alembic paths remain
 the source keys for object bindings; the visible group names are for browsing.
-Use polygon soups for object-path bindings, but keep polygons separate
-when remapping authored face material assignments.
+Keep polygons editable through the normal and material operations. The final
+Alembic result is packed by default after assignment; set `use_packed_output`
+to input 0 to work on the polygon version.
+
+Imported Geometry objects have identity transforms. Convert verified source
+units in SOPs when needed, then use Match Size to center X/Z and put minimum Y
+at zero without scaling. In an existing SOP network this is that network's
+local origin; the connector does not counteract its parent transforms.
+Keep existing vertex smoothing where valid, generate missing normals,
+normalize them, and reconcile opposite vertex normals to face direction.
+This does not guess the outside of open or ambiguous shells, change source
+face winding, or delete degenerate polygons.
 The Arnold surface builder handles base color, roughness, metalness and
 tangent-space normal textures. A material without a base-color texture needs
 an explicit `baseColor` RGB value; `roughness` can be specified as a constant.

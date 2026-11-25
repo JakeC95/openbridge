@@ -78,6 +78,55 @@ def _arnold_material(network, name, material):
 
 ADAPTERS = {"arnold": ("arnold_materialbuilder", _arnold_material)}
 
+_NORMAL_VEX = '''
+int p = vertexprim(0, @vtxnum);
+vector f = prim_normal(0, p, 0.5, 0.5);
+int usable_face = isfinite(f.x) && isfinite(f.y) && isfinite(f.z) && length2(f) > 1e-12;
+vector n = hasvertexattrib(0, "N") ? vertex(0, "N", @vtxnum) :
+    (haspointattrib(0, "N") ? point(0, "N", @ptnum) : prim(0, "N", p));
+if (!isfinite(n.x) || !isfinite(n.y) || !isfinite(n.z) || length2(n) < 1e-12)
+    n = usable_face ? f : {0, 1, 0};
+else if (usable_face && dot(n, f) < 0)
+    n = -n;
+v@N = normalize(n);
+'''
+
+
+def _prepare_geometry(network, stream):
+    """Keep authored smoothing and reconcile vertex normals to source winding."""
+    ground = network.createNode("matchsize", "center_and_ground")
+    ground.setInput(0, stream)
+    ground.parm("justifytarget").set("origin")
+    ground.parm("dotranslate").set(1)
+    ground.parm("doscale").set(0)
+    for axis, side in (("x", "center"), ("y", "min"), ("z", "center")):
+        ground.parm(f"justify_{axis}").set(side)
+        ground.parm(f"goal_{axis}").set("same")
+    stream = ground
+    geo = stream.geometry()
+    if not (geo.findVertexAttrib("N") or geo.findPointAttrib("N") or geo.findPrimAttrib("N")):
+        normal = network.createNode("normal", "generate_missing_normals")
+        normal.setInput(0, stream)
+        normal.parm("type").set("typevertex")
+        stream = normal
+    repair = network.createNode("attribwrangle", "check_vertex_normals")
+    repair.setInput(0, stream)
+    repair.parm("class").set("vertex")
+    repair.parm("snippet").set(_NORMAL_VEX)
+    return repair
+
+
+def _pack_alembic_output(network, stream):
+    pack = network.createNode("pack", "pack_alembic_output")
+    pack.setInput(0, stream)
+    pack.parm("pivot").set("origin")
+    switch = network.createNode("switch", "use_packed_output")
+    switch.setInput(0, stream)
+    switch.setInput(1, pack)
+    switch.parm("input").set(1)
+    switch.setComment("1: packed by default. 0: editable polygon output.")
+    return switch
+
 
 def import_asset(target, name, recipe, renderer):
     """Create only new nodes; roll them back on any failure."""
@@ -121,9 +170,9 @@ def import_asset(target, name, recipe, renderer):
             if alembic:
                 source.parm("loadmode").set("unpack")
                 source.parm("groupnames").set("xformbase")
-                # Group labels are for browsing; exact full paths remain
-                # the keys. Keep separate polygons for face-level bindings.
-                source.parm("polysoup").set("polymesh" if binding_attribute == "path" else "none")
+                # Keep polygons editable through the normal and material
+                # operations. Pack only the finished output.
+                source.parm("polysoup").set("none")
             mesh = source.geometry()
             if not mesh.prims() or (any(m["maps"] for m in materials) and
                                     not (mesh.findVertexAttrib("uv") or mesh.findPointAttrib("uv"))):
@@ -159,6 +208,7 @@ def import_asset(target, name, recipe, renderer):
                 stream = root.createNode("xform", "source_units_to_metres")
                 stream.setInput(0, source)
                 stream.parm("scale").set(scale)
+            stream = _prepare_geometry(root, stream)
             matnet = root.createNode("matnet", "materials")
             assign = root.createNode("material", "assign_materials")
             assign.setInput(0, stream)
@@ -183,19 +233,22 @@ def import_asset(target, name, recipe, renderer):
                 assign.parm(f"shop_materialpath{index}").set(shader.path())
                 material_paths[group] = shader.path()
             out = root.createNode("null", "OUT")
-            out.setInput(0, assign)
+            out.setInput(0, _pack_alembic_output(root, assign) if alembic else assign)
             if not at_object:
                 output = root.createNode("output", "output")
                 output.setInput(0, out)
             out.setDisplayFlag(True)
             out.setRenderFlag(True)
-            cooked = root.geometry() if not at_object else out.geometry()
+            cooked = assign.geometry()
             bindings = cooked.primStringAttribValues("shop_materialpath") if cooked.findPrimAttrib("shop_materialpath") else ()
             if len(bindings) != len(mesh.prims()) or any(
                 bindings[index] != material_paths[group]
                 for group, indices in expected_bindings.items() for index in indices
             ):
                 raise ValueError("Material assignments did not survive the SOP cook.")
+            final_geo = out.geometry()
+            if not final_geo.prims() or (alembic and final_geo.prims()[0].type() != hou.primType.PackedGeometry):
+                raise ValueError("The final SOP output did not cook as requested.")
             root.layoutChildren()
             root.moveToGoodPosition(move_inputs=False, move_outputs=False, move_unconnected=False)
             root.setSelected(True, clear_all_selected=True)
