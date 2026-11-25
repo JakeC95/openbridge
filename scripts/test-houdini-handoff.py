@@ -64,6 +64,11 @@ with tempfile.TemporaryDirectory() as temp:
     }, "arnold")
     bindings = hou.node(alembic_path).geometry().primStringAttribValues("shop_materialpath")
     assert len(bindings) == 2 and len(set(bindings)) == 1
+    sop = hou.node(alembic_path + "/library_geometry")
+    assert sop.parm("loadmode").evalAsString() == "unpack"
+    assert sop.parm("groupnames").evalAsString() == "xformbase"
+    assert len(sop.geometry().primGroups()) == 2
+    assert not any(n.type().name() == "unpack" for n in hou.node(alembic_path).children())
     old = existing.children()
     recipe["materials"][0]["group"] = "not_a_group"
     try:

@@ -90,6 +90,11 @@ Otherwise, supply the exact primitive group names Houdini reads from the OBJ.
 For an Alembic source, use the exact authored `shop_materialpath` string from
 the unpacked faces as `group`; the importer checks the remapped material on
 each face after cooking. Every primitive must be covered exactly once.
+Unpack on the Alembic SOP and generate primitive groups from transform
+node names there, without adding an Unpack SOP. Full Alembic paths remain
+the source keys for object bindings; the visible group names are for browsing.
+Use polygon soups for object-path bindings, but keep polygons separate
+when remapping authored face material assignments.
 The Arnold surface builder handles base color, roughness, metalness and
 tangent-space normal textures. A material without a base-color texture needs
 an explicit `baseColor` RGB value; `roughness` can be specified as a constant.

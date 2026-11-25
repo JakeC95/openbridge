@@ -120,13 +120,10 @@ def import_asset(target, name, recipe, renderer):
             source.parm("fileName" if alembic else "file").set(geometry)
             if alembic:
                 source.parm("loadmode").set("unpack")
-                if binding_attribute == "path":
-                    source.parm("loadmode").set("alembic")
-                    unpack = root.createNode("unpack", "unpack_source_parts")
-                    unpack.setInput(0, source)
-                    unpack.parm("transfer_attributes").set("path")
-                    unpack.parm("convertpolysoup").set(1)
-                    source = unpack
+                source.parm("groupnames").set("xformbase")
+                # Group labels are for browsing; exact full paths remain
+                # the keys. Keep separate polygons for face-level bindings.
+                source.parm("polysoup").set("polymesh" if binding_attribute == "path" else "none")
             mesh = source.geometry()
             if not mesh.prims() or (any(m["maps"] for m in materials) and
                                     not (mesh.findVertexAttrib("uv") or mesh.findPointAttrib("uv"))):
