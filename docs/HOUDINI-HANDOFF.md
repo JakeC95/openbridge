@@ -103,8 +103,11 @@ at zero without scaling. In an existing SOP network this is that network's
 local origin; the connector does not counteract its parent transforms.
 Keep existing vertex smoothing where valid, generate missing normals,
 normalize them, and reconcile opposite vertex normals to face direction.
-This does not guess the outside of open or ambiguous shells, change source
-face winding, or delete degenerate polygons.
+For a whole source part whose signed volume is negative and whose normals
+oppose almost every face, reverse its polygon winding before the normal pass;
+that repairs coherently mirrored closed shells without guessing the outside
+of an open surface. Zero-area degenerate polygons remain in the source and
+are reported rather than silently deleted.
 The Arnold surface builder handles base color, roughness, metalness and
 tangent-space normal textures. A material without a base-color texture needs
 an explicit `baseColor` RGB value; `roughness` can be specified as a constant.

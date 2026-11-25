@@ -52,6 +52,14 @@ with tempfile.TemporaryDirectory() as temp:
     normal = prepared.prims()[0].normal()
     assert all(hou.Vector3(v.attribValue("N")).dot(normal) > 0.9 for v in prepared.prims()[0].vertices())
     assert hou.node(object_path).worldTransform().isAlmostEqual(hou.hmath.identityTransform())
+    ground = hou.node(object_path + "/center_and_ground")
+    assert ground.parm("justify_x").evalAsString() == "center"
+    assert ground.parm("justify_y").evalAsString() == "min"
+    assert ground.parm("justify_z").evalAsString() == "center"
+    assert ground.parm("goal_x").evalAsString() == "same"
+    assert ground.parm("goal_y").evalAsString() == "same"
+    assert ground.parm("goal_z").evalAsString() == "same"
+    assert ground.parm("dotranslate").eval() == 1 and ground.parm("doscale").eval() == 0
     # Exercise the canonical Alembic object-path request with an actual cache.
     archive = root / "source.abc"
     export = hou.node("/out").createNode("alembic")

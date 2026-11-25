@@ -82,14 +82,65 @@ _NORMAL_VEX = '''
 int p = vertexprim(0, @vtxnum);
 vector f = prim_normal(0, p, 0.5, 0.5);
 int usable_face = isfinite(f.x) && isfinite(f.y) && isfinite(f.z) && length2(f) > 1e-12;
-vector n = hasvertexattrib(0, "N") ? vertex(0, "N", @vtxnum) :
-    (haspointattrib(0, "N") ? point(0, "N", @ptnum) : prim(0, "N", p));
+vector n = hasvertexattrib(0, "N") ? vector(vertex(0, "N", @vtxnum)) :
+    (haspointattrib(0, "N") ? vector(point(0, "N", @ptnum)) : vector(prim(0, "N", p)));
 if (!isfinite(n.x) || !isfinite(n.y) || !isfinite(n.z) || length2(n) < 1e-12)
     n = usable_face ? f : {0, 1, 0};
 else if (usable_face && dot(n, f) < 0)
     n = -n;
 v@N = normalize(n);
 '''
+
+_REVERSE_VEX = '''
+// Only reverse whole, coherently inverted shells. Signed volume is
+// reliable for closed shells; open surfaces with a negative volume and
+// every vertex normal opposed are also treated as inverted.
+dict counts; dict fulls; dict vols;
+for (int i = 0; i < nprimitives(0); i++) {
+    string key = hasprimattrib(0, "name") ? prim(0, "name", i) :
+        (hasprimattrib(0, "path") ? prim(0, "path", i) : "");
+    counts[key] += 1;
+    int vs[] = primvertices(0, i);
+    vector fn = prim_normal(0, i, 0.5, 0.5);
+    if (length2(fn) <= 1e-12) continue;
+    int opp = 0;
+    foreach (int v; vs) {
+        vector n = vector(vertex(0, "N", v));
+        if (length2(n) > 1e-12 && dot(normalize(n), normalize(fn)) < -0.05) opp++;
+    }
+    if (len(vs) > 0 && opp == len(vs)) fulls[key] += 1;
+    if (len(vs) >= 3) {
+        vector a = point(0, "P", vertexpoint(0, vs[0]));
+        for (int j = 1; j < len(vs) - 1; j++) {
+            vector b = point(0, "P", vertexpoint(0, vs[j]));
+            vector c = point(0, "P", vertexpoint(0, vs[j + 1]));
+            vols[key] += dot(a, cross(b, c)) / 6.0;
+        }
+    }
+}
+for (int i = 0; i < nprimitives(0); i++) {
+    string key = hasprimattrib(0, "name") ? prim(0, "name", i) :
+        (hasprimattrib(0, "path") ? prim(0, "path", i) : "");
+    if (vols[key] < 0 && fulls[key] > counts[key] * 0.95)
+        setprimattrib(0, "openbridge_reverse", i, 1, "set");
+}
+'''
+
+def _reverse_inverted_parts(network, stream):
+    marks = network.createNode("attribwrangle", "mark_inverted_shells")
+    marks.setInput(0, stream)
+    marks.parm("class").set("detail")
+    marks.parm("snippet").set(_REVERSE_VEX)
+    reverse = network.createNode("reverse", "reverse_inverted_shells")
+    reverse.setInput(0, marks)
+    reverse.parm("group").set("@openbridge_reverse=1")
+    cleanup = network.createNode("attribdelete", "remove_reverse_marker")
+    cleanup.setInput(0, reverse)
+    cleanup.parm("primdel").set("openbridge_reverse")
+    cleanup.parm("dovtxdel").set(0)
+    cleanup.parm("doptdel").set(0)
+    cleanup.parm("dodtldel").set(0)
+    return cleanup
 
 
 def _prepare_geometry(network, stream):
@@ -109,6 +160,7 @@ def _prepare_geometry(network, stream):
         normal.setInput(0, stream)
         normal.parm("type").set("typevertex")
         stream = normal
+    stream = _reverse_inverted_parts(network, stream)
     repair = network.createNode("attribwrangle", "check_vertex_normals")
     repair.setInput(0, stream)
     repair.parm("class").set("vertex")
