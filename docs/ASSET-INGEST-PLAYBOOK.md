@@ -288,3 +288,17 @@ even when the real-time material must remain an approximation.
 - Before starting the next asset, update this playbook with any reusable
   discovery technique, failure mode or verification check. Keep the detailed
   source inventory, evidence and unresolved leads in the private local handoff.
+
+## Source Houdini lookdev
+
+If the source asset folder contains a Houdini lookdev `.hip`, treat it as
+high-value **evidence**, not automatically as production geometry. Record the
+exact file, version, renderer and plug-in versions, Houdini version, matching
+asset variant/LOD, resolvable dependencies, approval status and hashes. A
+lookdev scene can establish shader graphs and parameters, assignments, texture
+roles and OCIO choices, UDIMs, render overrides, cameras/lights and the artist's
+final intent. It cannot recover missing dependencies, prove physical scale,
+turn a different variant into the ingested variant, or guarantee parity in
+another renderer. Shot/animation archives are not interchangeable with the
+approved asset look. Keep the benchmark or approved lookdev read-only and use
+its rendered result for acceptance when it is the agreed reference.
