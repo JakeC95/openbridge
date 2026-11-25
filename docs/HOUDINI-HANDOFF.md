@@ -146,3 +146,9 @@ per-face bindings, and each map's role before adding a recipe. An asset whose
 indexed entry contains only a preview can point to separate production files
 once those paths are registered and audited. Keep private recipes and
 acceptance evidence out of the public repository.
+
+A winding audit found the remaining same-direction edge pairs and duplicate
+face on the Audi grille only: coincident chrome and black-plastic layers with
+different materials. Do not delete one layer to silence viewport backface
+tint; it would remove a source material region. `MaxHandle` was a constant on
+all Audi faces and is not a material, group, or winding key.
